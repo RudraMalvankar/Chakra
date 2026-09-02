@@ -1,15 +1,82 @@
 import hashlib
-from typing import Dict, Any
+from typing import Dict, Any, Union
+from pydantic import BaseModel
+from backend.app.models.payment import PaymentContext
 
-def redact_for_llm(payment: Dict[str, Any]) -> Dict[str, Any]:
+
+def _safe_int(val: Any, fallback: int = 0) -> int:
+    if val is None or val == "":
+        return fallback
+    try:
+        if isinstance(val, (int, float)):
+            return int(val)
+        return int(str(val).strip())
+    except (ValueError, TypeError):
+        try:
+            return int(float(str(val).strip()))
+        except (ValueError, TypeError):
+            return fallback
+
+
+def redact_for_llm(payment: Union[Dict[str, Any], PaymentContext]) -> Dict[str, Any]:
     """
-    Strips PII (exact amounts, names, phone numbers) before sending to Gemini.
-    Logs `pii_redacted: True` to guarantee compliance.
+    Strips PII (exact amounts, names, phone numbers, customer IDs) before sending to Gemini.
+    Accepts both PaymentContext Pydantic instances and raw/seed dictionaries seamlessly.
+    Guarantees DPDP Act compliance by returning `pii_redacted: True`.
     """
-    redacted = {}
-    
-    # 1. Bucket Amount (e.g., instead of 16000 INR, say '15k-100k')
-    amt_inr = payment.get("amount", 0) / 100
+    if isinstance(payment, BaseModel):
+        amt_inr_raw = getattr(payment, "amount_inr", 0.0)
+        try:
+            amt_inr = float(amt_inr_raw) if amt_inr_raw is not None else 0.0
+        except (ValueError, TypeError):
+            amt_inr = 0.0
+        error_code = getattr(payment, "error_code", "unknown")
+        is_first_transaction = bool(getattr(payment, "is_first_transaction", False))
+        bank = getattr(payment, "bank_name", "unknown") or "unknown"
+        network = getattr(payment, "network", "unknown") or "unknown"
+        raw_alerts = getattr(payment, "alerts_ignored", 0)
+        alerts_ignored = _safe_int(raw_alerts, 0)
+    elif isinstance(payment, dict):
+        if "amount_inr" in payment and payment["amount_inr"] is not None:
+            try:
+                amt_inr = float(payment["amount_inr"])
+            except (ValueError, TypeError):
+                amt_inr = 0.0
+        elif "amount" in payment and payment["amount"] is not None:
+            try:
+                amt_inr = float(payment["amount"]) / 100.0
+            except (ValueError, TypeError):
+                amt_inr = 0.0
+        elif "amount_paise" in payment and payment["amount_paise"] is not None:
+            try:
+                amt_inr = float(payment["amount_paise"]) / 100.0
+            except (ValueError, TypeError):
+                amt_inr = 0.0
+        else:
+            amt_inr = 0.0
+
+        error_code = payment.get("error_code", "unknown")
+        is_first_transaction = bool(payment.get("is_first_transaction", False))
+        metadata = payment.get("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+        bank = metadata.get("bank_name") or payment.get("bank_name", "unknown") or "unknown"
+        network = metadata.get("network") or payment.get("network", "unknown") or "unknown"
+
+        raw_alerts = None
+        if "pre_debit_alerts_ignored" in metadata:
+            raw_alerts = metadata.get("pre_debit_alerts_ignored")
+        elif "alerts_ignored" in metadata:
+            raw_alerts = metadata.get("alerts_ignored")
+
+        if raw_alerts is None:
+            raw_alerts = payment.get("alerts_ignored", 0)
+
+        alerts_ignored = _safe_int(raw_alerts, 0)
+    else:
+        raise TypeError(f"Expected dict or PaymentContext, got {type(payment)}")
+
+    # 1. Bucket Amount (exact RBI/Chakra thresholds)
     if amt_inr < 5000:
         amt_bucket = "<5k"
     elif amt_inr <= 15000:
@@ -18,21 +85,18 @@ def redact_for_llm(payment: Dict[str, Any]) -> Dict[str, Any]:
         amt_bucket = "15k-100k"
     else:
         amt_bucket = ">100k"
-        
-    redacted["amount_bucket"] = amt_bucket
-    redacted["error_code"] = payment.get("error_code")
-    redacted["is_first_transaction"] = payment.get("is_first_transaction")
-    
-    # 2. Hash Bank Name
-    metadata = payment.get("metadata", {})
-    bank = metadata.get("bank_name", "unknown")
-    redacted["bank_hash"] = hashlib.sha256(bank.encode()).hexdigest()[:8]
-    
-    # 3. Safe Metadata
-    redacted["network"] = metadata.get("network")
-    redacted["alerts_ignored"] = metadata.get("pre_debit_alerts_ignored", 0)
-    
-    # 4. Explicitly mark as redacted
-    redacted["pii_redacted"] = True
-    
-    return redacted
+
+    # 2. Hash Bank Name with SHA256[:8]
+    bank_str = str(bank)
+    bank_hash = hashlib.sha256(bank_str.encode("utf-8")).hexdigest()[:8]
+
+    # 3. Build Safe Output Dictionary
+    return {
+        "amount_bucket": amt_bucket,
+        "error_code": str(error_code) if error_code is not None else "unknown",
+        "is_first_transaction": is_first_transaction,
+        "bank_hash": bank_hash,
+        "network": str(network).lower() if network else "unknown",
+        "alerts_ignored": alerts_ignored,
+        "pii_redacted": True,
+    }
