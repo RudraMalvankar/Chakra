@@ -1,0 +1,30 @@
+{
+  "metrics": {
+    "payments_processed": 100,
+    "payments_recovery_eligible": 68,
+    "payments_blocked": 3,
+    "payments_escalated": 29,
+    "interventions_attempted": 68,
+    "interventions_succeeded": 42,
+    "payments_recovered": 42,
+    "payments_failed_recovery": 26,
+    "revenue_at_risk_inr": 431154.0,
+    "revenue_attempted_inr": 297469.0,
+    "revenue_recovered_inr": 141475.0,
+    "revenue_recovery_rate_pct": 32.81,
+    "payment_recovery_rate_pct": 42.0,
+    "intervention_success_rate_pct": 61.76,
+    "safety_block_rate_pct": 3.0,
+    "escalation_rate_pct": 29.0
+  },
+  "invariants": {
+    "revenue_hierarchy_invariant": true,
+    "count_hierarchy_invariant": true,
+    "partition_sum_invariant": true,
+    "all_passed": true
+  },
+  "simulation_disclosure": "Recovery outcomes are modeled probabilistically based on stated assumptions. This is a synthetic benchmark, not a claim of production throughput.",
+  "audit_event_count": 300,
+  "audit_log_path": "C:\\Users\\mypc\\Desktop\\Chakra\\audit_log.jsonl",
+  "voice_notes_generated": 0
+}

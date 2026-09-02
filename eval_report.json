@@ -1,0 +1,209 @@
+{
+  "summary": {
+    "total_cases": 18,
+    "correct": 18,
+    "accuracy_pct": 100.0,
+    "failures_count": 0
+  },
+  "failures": [],
+  "all_results": [
+    {
+      "id": 1,
+      "name": "Standard insufficient_funds under AFA threshold",
+      "expected": "retry",
+      "predicted": "retry",
+      "predicted_reason": "TRANSIENT_FAILURE | TRANSIENT_FAILURE | insufficient_funds | insufficient_funds",
+      "confidence": 0.98,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 2,
+      "name": "AFA threshold exceeded (16K INR)",
+      "expected": "send_payment_link",
+      "predicted": "send_payment_link",
+      "predicted_reason": "AFA_THRESHOLD_EXCEEDED | AFA_THRESHOLD_EXCEEDED | insufficient_funds | insufficient_funds | afa_threshold",
+      "confidence": 0.98,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 3,
+      "name": "First transaction requires AFA",
+      "expected": "send_payment_link",
+      "predicted": "send_payment_link",
+      "predicted_reason": "NEW_MANDATE_AFA_REQUIRED | NEW_MANDATE_AFA_REQUIRED | card_declined | card_declined | first_transaction | afa_threshold",
+      "confidence": 0.9,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 4,
+      "name": "Fraud flag - hard escalate",
+      "expected": "escalate",
+      "predicted": "escalate",
+      "predicted_reason": "HARD_COMPLIANCE_BLOCK | FRAUD_FLAG | fraud_flag | fraud_flag",
+      "confidence": 1.0,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 5,
+      "name": "Mandate revoked - hard escalate",
+      "expected": "escalate",
+      "predicted": "escalate",
+      "predicted_reason": "HARD_COMPLIANCE_BLOCK | MANDATE_REVOKED_NO_RETRY | mandate_revoked | mandate_revoked",
+      "confidence": 1.0,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 6,
+      "name": "High pre-debit alerts ignored (churn signal)",
+      "expected": "escalate",
+      "predicted": "escalate",
+      "predicted_reason": "HIGH_ALERTS_IGNORED_CHURN_RISK | TRANSIENT_TIMEOUT | transient_timeout | payment_timed_out",
+      "confidence": 0.95,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 7,
+      "name": "Visa network retry cap reached",
+      "expected": "escalate",
+      "predicted": "escalate",
+      "predicted_reason": "NETWORK_RETRY_CAP_REACHED | ALTERNATIVE_PAYMENT_LINK_CARD_DECLINED | card_declined | card_declined",
+      "confidence": 0.9,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 8,
+      "name": "Mastercard retry cap reached (10/30d)",
+      "expected": "escalate",
+      "predicted": "escalate",
+      "predicted_reason": "NETWORK_RETRY_CAP_REACHED | TRANSIENT_FAILURE | insufficient_funds | insufficient_funds",
+      "confidence": 0.98,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 9,
+      "name": "High-value category exceeds 1L threshold",
+      "expected": "send_payment_link",
+      "predicted": "send_payment_link",
+      "predicted_reason": "ALTERNATIVE_PAYMENT_LINK_CARD_DECLINED | ALTERNATIVE_PAYMENT_LINK_CARD_DECLINED | card_declined | card_declined | afa_threshold",
+      "confidence": 0.9,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 10,
+      "name": "Payment timed out - standard retry",
+      "expected": "retry",
+      "predicted": "retry",
+      "predicted_reason": "TRANSIENT_TIMEOUT | TRANSIENT_TIMEOUT | transient_timeout | payment_timed_out",
+      "confidence": 0.95,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 11,
+      "name": "Expired card - send update link",
+      "expected": "send_payment_link",
+      "predicted": "send_payment_link",
+      "predicted_reason": "ALTERNATIVE_PAYMENT_LINK_EXPIRED_CARD | ALTERNATIVE_PAYMENT_LINK_EXPIRED_CARD | expired_card | expired_card",
+      "confidence": 0.99,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 12,
+      "name": "Card declined with low retry count - payment link",
+      "expected": "send_payment_link",
+      "predicted": "send_payment_link",
+      "predicted_reason": "ALTERNATIVE_PAYMENT_LINK_CARD_DECLINED | ALTERNATIVE_PAYMENT_LINK_CARD_DECLINED | card_declined | card_declined",
+      "confidence": 0.9,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 13,
+      "name": "Boundary case - exactly 15K INR (just at threshold)",
+      "expected": "retry",
+      "predicted": "retry",
+      "predicted_reason": "TRANSIENT_FAILURE | TRANSIENT_FAILURE | insufficient_funds | insufficient_funds",
+      "confidence": 0.98,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 14,
+      "name": "Pre-debit alerts at threshold (2)",
+      "expected": "escalate",
+      "predicted": "escalate",
+      "predicted_reason": "HIGH_ALERTS_IGNORED_CHURN_RISK | ALTERNATIVE_PAYMENT_LINK_CARD_DECLINED | card_declined | card_declined",
+      "confidence": 0.9,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 15,
+      "name": "Insufficient funds with high retry count but not capped",
+      "expected": "retry",
+      "predicted": "retry",
+      "predicted_reason": "TRANSIENT_FAILURE | TRANSIENT_FAILURE | insufficient_funds | insufficient_funds",
+      "confidence": 0.98,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 16,
+      "name": "UPI Autopay insufficient_funds on first retry",
+      "expected": "retry",
+      "predicted": "retry",
+      "predicted_reason": "TRANSIENT_FAILURE | TRANSIENT_FAILURE | insufficient_funds | insufficient_funds",
+      "confidence": 0.98,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 17,
+      "name": "Fraud flag on first transaction",
+      "expected": "escalate",
+      "predicted": "escalate",
+      "predicted_reason": "HARD_COMPLIANCE_BLOCK | NEW_MANDATE_AFA_REQUIRED | fraud_flag | fraud_flag | first_transaction | afa_threshold",
+      "confidence": 1.0,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    },
+    {
+      "id": 18,
+      "name": "Customer hitting monthly intervention budget",
+      "expected": "escalate",
+      "predicted": "escalate",
+      "predicted_reason": "CUSTOMER_BUDGET_EXCEEDED | TRANSIENT_FAILURE | insufficient_funds | insufficient_funds",
+      "confidence": 0.98,
+      "action_match": true,
+      "reason_match": true,
+      "correct": true
+    }
+  ]
+}
