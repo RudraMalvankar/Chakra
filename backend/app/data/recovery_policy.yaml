@@ -1,0 +1,8 @@
+policy:
+  id: chakra_adaptive_recovery_v1
+  rules:
+    max_interventions_per_customer_per_month: 3
+    high_alerts_ignored_threshold: 2
+    transient_failure_retry_delay_hours: 1
+    standard_retry_delay_hours: 24
+    llm_confidence_threshold: 0.90
