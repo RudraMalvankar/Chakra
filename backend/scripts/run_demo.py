@@ -28,8 +28,11 @@ async def main():
     try:
         # NOTE: If not using mock server running on port 8001, we fetch directly from seed for demo simplicity
         if settings.use_mock_razorpay:
-            from mock_razorpay.seed import SEED_DATA
-            payments = SEED_DATA
+            import importlib.util
+            spec = importlib.util.spec_from_file_location("seed", "mock-razorpay/seed.py")
+            seed_mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(seed_mod)
+            payments = seed_mod.SEED_DATA
             print(f"Loaded {len(payments)} mock payments from local seed (bypassing HTTP for demo stability).")
         else:
             payments = await razorpay_client.get_payments()
