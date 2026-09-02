@@ -1,45 +1,98 @@
-# Chakra: Mandate-Aware Revenue Recovery Engine
+<div align="center">
+  
+# Chakra
+**The Autonomous, Mandate-Aware Revenue Recovery Engine**
 
-**Pitch Line:** "We don't just recover payments. We recover them through the safest, highest-value path."
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Failed subscription payments represent billions in lost revenue, but blindly retrying every failure burns network retry slots and violates regulations (like RBI's e-mandate rules in India). Chakra is an intelligent middleware that ingests failed payment webhooks, understands the failure context, checks regulatory and merchant constraints, and acts safely.
+*"We don't just recover payments. We recover them through the safest, most compliant path."*
 
-> **Note:** Chakra's recovery outcomes are modeled using a deterministic/seeded synthetic simulation based on stated assumptions. These results do not represent real bank behavior, production recovery rates, or actual recovered merchant funds. This is a synthetic benchmark, not a claim of production throughput.
+</div>
 
-## Architecture
+---
 
-Chakra relies on a 5-stage pipeline:
-1. **Webhook Ingestion:** Verifies HMAC signatures and ensures event authenticity.
-2. **Context Builder:** Reconstructs the payment history and redacts PII.
-3. **Triage Engine:** Uses deterministic heuristics for obvious cases and a fallback Gemini LLM for ambiguous errors.
-4. **Safety Engine:** A hard-coded, non-overridable policy gate. It blocks interventions if they violate retry caps, AFA limits, or customer budgets. It also enforces idempotency.
-5. **Recovery Executor:** Dispatches the final action (Retry, Payment Link, or Escalate).
+## 📖 Overview
 
-## Features
-- **Revenue-First Metrics:** We measure `revenue_recovered_inr`, not just actions taken.
-- **Compliance-by-Design:** PII is bucketed/hashed before LLM ingestion.
-- **Graceful Degradation:** If Gemini is unavailable or rate-limited, Chakra falls back to safe heuristics or human escalation instead of crashing.
-- **Idempotency & Rate Limiting:** Built-in safeguards against double-charging.
+Failed subscription payments represent billions in lost revenue globally. However, blindly retrying every failure burns network slots, frustrates customers, and violates strict regional regulations (such as the RBI's e-mandate rules in India). 
 
-## Demo / Benchmark
+**Chakra** is an intelligent, fintech-grade middleware that ingests failed payment webhooks, understands the lifecycle of the underlying mandate, checks strict regulatory and merchant constraints, and executes the optimal recovery strategy.
 
-You can run the full benchmark suite locally to process 100 seeded mock payments.
+> **Disclaimer:** Chakra's recovery outcomes are currently modeled using a deterministic/seeded synthetic mock provider based on stated assumptions. These results are synthetic benchmarks for the architecture, not claims of production throughput or actual recovered merchant funds.
 
-### Requirements
+---
+
+## 🏛️ Core Architecture
+
+Chakra abandons the flawed "LLM-as-a-router" design pattern in favor of a strict, deterministically governed multi-stage pipeline:
+
+1. **Context Builder**: Normalizes raw webhook payloads into strictly typed Pydantic structures (`PaymentContext`, `Mandate`), aggregating history, retry counts, and redacting PII to ensure DPDP Act compliance.
+2. **Triage Engine**: Operates purely as a diagnostic layer ("What happened?"). It handles known failures deterministically and falls back to **Google Gemini** *only* for ambiguous failure classification.
+3. **Mandate-Aware Recovery Router**: The strategic core. It evaluates the triage classification against the mandate's lifecycle (e.g., `NEW`, `ACTIVE`, `REVOKED`) to orchestrate a structured `RecoveryDecision`.
+4. **Safety Enforcer Gate**: A hard-coded, non-overridable policy gate. It blocks the router's proposed actions if they violate hard limits:
+   - RBI Additional Factor of Authentication (AFA) limits (>₹15,000 INR).
+   - Network retry caps and cooldown periods.
+   - Fraud flags or revoked mandates.
+   - Customer intervention fatigue (monthly budgets).
+5. **Recovery Executor**: A clean execution layer that triggers the approved action (e.g., `RETRY_NOW`, `AFA_PAYMENT_LINK`, `ESCALATE`) without making safety assumptions.
+6. **Outcome Evaluator**: Monitors the external provider's response, ensuring only mathematically proven `PAYMENT_SUCCEEDED` events trigger revenue metrics.
+
+---
+
+## 🚀 Key Features
+
+* **Compliance-by-Design**: Absolute separation between LLM intelligence and policy execution. AI classifies; deterministic code governs.
+* **Revenue-First Metrics**: Chakra tracks actual `revenue_recovered_inr`, filtering out failed attempts, scheduled links, and blocks.
+* **Idempotency & Safety**: Built-in, SHA-256 cryptographic idempotency safeguards against double-charging and duplicate webhook processing.
+* **Graceful Degradation**: If external intelligence (LLM) is unavailable, Chakra falls back to safe heuristics or human escalation instead of crashing.
+
+---
+
+## 🛠️ Quickstart & Synthetic Benchmark
+
+Chakra includes a built-in Mock Razorpay API to simulate deterministic and probabilistic network conditions, allowing you to benchmark the engine locally against 100 seeded payment failures.
+
+### Prerequisites
 - Python 3.11+
-- `.env` file with `GEMINI_API_KEY`
+- A `.env` file containing:
+  ```env
+  GEMINI_API_KEY=your_api_key_here
+  RAZORPAY_KEY_ID=test_key
+  RAZORPAY_KEY_SECRET=test_secret
+  WEBHOOK_SECRET=your_secret
+  ```
 
-### Running the System
+### Running the Suite
+
+Chakra leverages a unified `Makefile` for streamlined testing and execution.
+
 ```bash
-# Install dependencies
+# 1. Install dependencies
 make install
 
-# Start the mock Razorpay API and Chakra Backend 
+# 2. Start the Mock Razorpay Provider (Port 8001)
 make mock
+
+# 3. Start the Chakra Engine (Port 8000)
 make backend
 
-# In a new terminal, trigger the webhook ingestion
+# 4. In a new terminal, trigger the webhook ingestion
 make trigger
 ```
 
-Once the benchmark finishes, check `audit_log.jsonl` for a mathematically provable audit trail of every decision, safety check, and outcome.
+### Analyzing the Results
+Once the benchmark concludes, Chakra will output a mathematically verifiable metrics report, isolating `revenue_at_risk_inr` from `revenue_recovered_inr`. You can also inspect the generated `audit_log.jsonl` for a granular, legally auditable trail of every decision, safety check, and outcome.
+
+---
+
+## 🧪 Testing
+Run the comprehensive Pytest suite (which validates the router, safety gates, metric invariants, and DPDP PII redaction) via:
+```bash
+make test
+```
+
+---
+<div align="center">
+Built for the Razorpay AI Buildathon 2026.
+</div>
