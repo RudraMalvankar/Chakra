@@ -1,0 +1,25 @@
+# backend/app/data/templates.yaml
+templates:
+  - id: dlt_upi_alternate_v1
+    channel: whatsapp
+    body: "Hi {name}, your {merchant} subscription payment of ₹{amount} failed. Pay via UPI: {link}"
+    variables: [name, merchant, amount, link]
+    registered_with: jio_dlt
+
+  - id: dlt_card_update_v1
+    channel: email
+    body: "Your card ending {last4} expired. Update here: {link}"
+    variables: [last4, link]
+    registered_with: airtel_dlt
+
+  - id: dlt_afa_threshold_v1
+    channel: sms
+    body: "Your {merchant} payment of ₹{amount} exceeds RBI limits for auto-debit. Approve with OTP: {link}"
+    variables: [merchant, amount, link]
+    registered_with: vi_dlt
+
+  - id: dlt_first_txn_v1
+    channel: whatsapp
+    body: "To activate your {merchant} subscription mandate, your first payment of ₹{amount} requires approval: {link}"
+    variables: [merchant, amount, link]
+    registered_with: jio_dlt
