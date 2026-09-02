@@ -17,11 +17,20 @@ class RazorpayClient:
             return response.json().get("items", [])
 
     async def retry_payment(self, payment_id: str, delay_hours: int) -> Dict[str, Any]:
-        """Schedules a retry via Subscriptions/Orders API."""
-        return {"status": "scheduled", "payment_id": payment_id, "delay_hours": delay_hours}
+        """Schedules a retry via API. Returns the simulated outcome."""
+        async with httpx.AsyncClient() as client:
+            response = await client.post(f"{self.base_url}/v1/payments/{payment_id}/retry", auth=self.auth)
+            if response.status_code == 200:
+                return response.json()
+            return {"status": "failed", "payment_id": payment_id}
 
-    async def create_payment_link(self, customer_id: str, amount: int, template: str) -> Dict[str, Any]:
-        """Creates a payment link and triggers notification via DLT template."""
-        return {"status": "link_sent", "customer_id": customer_id, "template_used": template}
+    async def create_payment_link(self, customer_id: str, amount: int, template: str, payment_id: str) -> Dict[str, Any]:
+        """Creates a payment link. Returns the simulated outcome."""
+        payload = {"customer": {"id": customer_id}, "amount": amount, "notes": {"payment_id": payment_id}}
+        async with httpx.AsyncClient() as client:
+            response = await client.post(f"{self.base_url}/v1/payment_links", json=payload, auth=self.auth)
+            if response.status_code == 200:
+                return response.json()
+            return {"status": "failed"}
 
 razorpay_client = RazorpayClient()

@@ -51,7 +51,12 @@ def gemini_classify(redacted_payment: Dict[str, Any]) -> TriageDecision:
         return response.parsed
     except Exception as e:
         # The requested "Graceful failure shown live"
-        print(f"LLM Fallback triggered due to error: {e}")
+        # Print concise version to avoid flooding console with 429 details
+        err_short = str(e)[:120] if len(str(e)) > 120 else str(e)
+        if "429" in str(e) or "RESOURCE_EXHAUSTED" in str(e):
+            print(f"LLM Fallback triggered: API rate limit (Gemini free tier) - safe escalation")
+        else:
+            print(f"LLM Fallback triggered due to error: {err_short}")
         return TriageDecision(
             action="escalate",
             reason="llm_api_failure_fallback",
