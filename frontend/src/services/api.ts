@@ -1,6 +1,8 @@
 import type { Case, Metrics, Payment } from '../types';
+import { AuditLogSchema } from '../types/schemas';
 
 const API_BASE = 'http://localhost:8001';
+const GATEWAY_BASE = 'http://localhost:8002'; // Mock Razorpay
 
 export const fetchMetrics = async (): Promise<Metrics> => {
   const res = await fetch(`${API_BASE}/api/metrics`);
@@ -12,7 +14,13 @@ export const fetchAuditLog = async (limit = 2000) => {
   const res = await fetch(`${API_BASE}/api/audit?limit=${limit}`);
   if (!res.ok) throw new Error("Failed to fetch audit log");
   const data = await res.json();
-  return data.events || [];
+  try {
+      const valid = AuditLogSchema.parse(data);
+      return valid.events;
+  } catch (err) {
+      console.warn("Zod validation failed on audit log, falling back to raw data", err);
+      return data.events || [];
+  }
 };
 
 export const simulatePayment = async (payload: any) => {
@@ -23,4 +31,21 @@ export const simulatePayment = async (payload: any) => {
   });
   if (!res.ok) throw new Error("Failed to simulate payment");
   return res.json();
+};
+
+export const fetchMockPayments = async () => {
+    try {
+        const res = await fetch(`${GATEWAY_BASE}/v1/payments`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.items || [];
+    } catch (err) {
+        return [];
+    }
+};
+
+export const retryMockPayment = async (id: string) => {
+    const res = await fetch(`${GATEWAY_BASE}/v1/payments/${id}/retry`, { method: 'POST' });
+    if (!res.ok) throw new Error("Failed");
+    return res.json();
 };

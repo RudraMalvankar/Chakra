@@ -12,7 +12,7 @@ export const AppShell = ({ children, data }: any) => {
     const navGroups = [
         { title: 'MAIN', items: [{ path: '/', label: 'Command Center' }] },
         { title: 'OPERATE', items: [{ path: '/opportunities', label: 'Opportunities' }, { path: '/cases', label: 'Cases' }, { path: '/recovery', label: 'Recovery' }] },
-        { title: 'SIMULATOR', items: [{ path: '/simulator', label: 'Create Payment' }] },
+        { title: 'SIMULATOR', items: [{ path: '/simulator', label: 'Create Payment' }, { path: '/gateway', label: 'Gateway Console' }] },
         { title: 'CONTROL', items: [{ path: '/safety', label: 'Safety' }, { path: '/analytics', label: 'Analytics' }, { path: '/audit', label: 'Audit Log' }] }
     ];
 
