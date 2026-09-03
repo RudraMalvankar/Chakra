@@ -17,6 +17,72 @@
     "intervention_success_rate_pct": 60.38,
     "safety_block_rate_pct": 3.33,
     "escalation_rate_pct": 27.5,
+    "by_intervention": {
+      "RETRY_NOW": {
+        "attempted": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "pending": 0,
+        "revenue_attempted_inr": 0.0,
+        "revenue_recovered_inr": 0.0
+      },
+      "RETRY_LATER": {
+        "attempted": 26,
+        "succeeded": 0,
+        "failed": 0,
+        "pending": 26,
+        "revenue_attempted_inr": 21185.0,
+        "revenue_recovered_inr": 0.0
+      },
+      "PAYMENT_LINK": {
+        "attempted": 34,
+        "succeeded": 20,
+        "failed": 14,
+        "pending": 0,
+        "revenue_attempted_inr": 29177.0,
+        "revenue_recovered_inr": 16586.0
+      },
+      "AFA_PAYMENT_LINK": {
+        "attempted": 19,
+        "succeeded": 12,
+        "failed": 7,
+        "pending": 0,
+        "revenue_attempted_inr": 450500.0,
+        "revenue_recovered_inr": 260500.0
+      },
+      "VOICE_RECOVERY": {
+        "attempted": 0,
+        "succeeded": 0,
+        "failed": 0,
+        "pending": 0,
+        "revenue_attempted_inr": 0.0,
+        "revenue_recovered_inr": 0.0
+      },
+      "REMINDER": {
+        "attempted": 3,
+        "succeeded": 0,
+        "failed": 0,
+        "pending": 3,
+        "revenue_attempted_inr": 45000.0,
+        "revenue_recovered_inr": 0.0
+      },
+      "ESCALATE": {
+        "attempted": 33,
+        "succeeded": 0,
+        "failed": 33,
+        "pending": 0,
+        "revenue_attempted_inr": 209885.0,
+        "revenue_recovered_inr": 0.0
+      },
+      "BLOCK": {
+        "attempted": 4,
+        "succeeded": 0,
+        "failed": 4,
+        "pending": 0,
+        "revenue_attempted_inr": 4198.0,
+        "revenue_recovered_inr": 0.0
+      }
+    },
     "by_case_type": {
       "PAYMENT_FAILURE": {
         "processed": 100,

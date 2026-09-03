@@ -138,6 +138,67 @@ def generate_metrics_report(audit_file: Optional[str] = None) -> Dict[str, Any]:
 
     payments_failed_recovery = interventions_attempted - payments_recovered
 
+    # NEW: By Intervention Tracking
+    intervention_metrics = {
+        k: {
+            "attempted": 0, "succeeded": 0, "failed": 0, "pending": 0,
+            "revenue_attempted_inr": 0.0, "revenue_recovered_inr": 0.0
+        }
+        for k in [
+            "RETRY_NOW", "RETRY_LATER", "PAYMENT_LINK", "AFA_PAYMENT_LINK",
+            "VOICE_RECOVERY", "REMINDER", "ESCALATE", "BLOCK"
+        ]
+    }
+
+    with open(log_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line_str = line.strip()
+            if not line_str:
+                continue
+            try:
+                event = json.loads(line_str)
+            except json.JSONDecodeError:
+                continue
+
+            pid = str(event.get("payment_id", "unknown"))
+            etype = event.get("event_type", "")
+            details = event.get("details", {})
+            if not isinstance(details, dict):
+                details = {}
+
+            amt = payment_amounts.get(pid, 0.0)
+            
+            # The executor logs the effective_action in execution_outcome, retry_scheduled, voice_artifact_generated, reminder_artifact_generated, execution_blocked, execution_escalated
+            action = details.get("effective_action")
+            if not action:
+                continue
+            
+            if action not in intervention_metrics:
+                intervention_metrics[action] = {
+                    "attempted": 0, "succeeded": 0, "failed": 0, "pending": 0,
+                    "revenue_attempted_inr": 0.0, "revenue_recovered_inr": 0.0
+                }
+            
+            if etype in ["execution_blocked", "execution_escalated"]:
+                intervention_metrics[action]["attempted"] += 1
+                intervention_metrics[action]["revenue_attempted_inr"] += amt
+                intervention_metrics[action]["failed"] += 1
+            elif etype in ["retry_scheduled", "voice_artifact_generated", "reminder_artifact_generated"]:
+                intervention_metrics[action]["attempted"] += 1
+                intervention_metrics[action]["revenue_attempted_inr"] += amt
+                intervention_metrics[action]["pending"] += 1
+            elif etype == "execution_outcome":
+                intervention_metrics[action]["attempted"] += 1
+                intervention_metrics[action]["revenue_attempted_inr"] += amt
+                status = str(details.get("status", "")).strip().lower()
+                outcome = str(details.get("outcome", "")).strip().lower()
+                is_rec = details.get("recovered") is True or status == "captured" or outcome in ["captured", "success"]
+                if is_rec:
+                    intervention_metrics[action]["succeeded"] += 1
+                    intervention_metrics[action]["revenue_recovered_inr"] += amt
+                else:
+                    intervention_metrics[action]["failed"] += 1
+
     metrics = {
         "payments_processed": payments_processed,
         "payments_recovery_eligible": payments_recovery_eligible,
@@ -156,6 +217,7 @@ def generate_metrics_report(audit_file: Optional[str] = None) -> Dict[str, Any]:
         "intervention_success_rate_pct": round((interventions_succeeded / interventions_attempted) * 100, 2) if interventions_attempted > 0 else 0.0,
         "safety_block_rate_pct": round((payments_blocked / payments_processed) * 100, 2) if payments_processed > 0 else 0.0,
         "escalation_rate_pct": round((payments_escalated / payments_processed) * 100, 2) if payments_processed > 0 else 0.0,
+        "by_intervention": intervention_metrics,
     }
     
     # By Case Type Breakdown
