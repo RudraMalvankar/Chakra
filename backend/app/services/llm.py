@@ -5,8 +5,15 @@ Catches 429/timeouts/exceptions and safely escalates without crashing the pipeli
 """
 from typing import Dict, Any, Optional
 import json
-from google import genai
-from google.genai import types
+try:
+    from google import genai
+    from google.genai import types
+    GEMINI_AVAILABLE = True
+except ImportError:
+    genai = None
+    types = None
+    GEMINI_AVAILABLE = False
+
 from pydantic import BaseModel, Field
 
 from backend.app.config import settings
@@ -43,6 +50,13 @@ def gemini_classify(redacted_payment: Dict[str, Any]) -> TriageDecision:
     """
 
     try:
+        if not GEMINI_AVAILABLE:
+            return TriageDecision(
+                action="escalate",
+                reason="llm_dependency_missing",
+                confidence=1.0,
+            )
+
         api_key = settings.gemini_api_key
         if not api_key:
             return TriageDecision(

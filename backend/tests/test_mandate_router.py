@@ -1,8 +1,7 @@
 import pytest
 from backend.app.models.payment import PaymentContext, TriageResult, RecoveryDecision, InterventionType
 from backend.app.models.mandate import MandateState
-from backend.app.services.mandate_router import MandateRouter, route, route_payment
-from backend.app.services.recovery_router import route_payment as legacy_route_payment
+from backend.app.services.mandate_router import MandateRouter, route
 
 
 def test_mandate_revoked_routes_to_block():
@@ -145,14 +144,4 @@ def test_router_with_explicit_triage():
     assert decision.reason_code == "high_risk_flag"
 
 
-def test_recovery_router_backward_compatibility():
-    ctx = PaymentContext(
-        payment_id="p11",
-        amount_inr=1000.0,
-        error_code="insufficient_funds",
-        mandate_state=MandateState.ACTIVE,
-    )
-    dec1 = route(ctx)
-    dec2 = legacy_route_payment(ctx)
-    assert dec1.decision == dec2.decision
-    assert dec1.reason_code == dec2.reason_code
+
