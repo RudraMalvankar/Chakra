@@ -22,6 +22,13 @@ def verify_signature(body: bytes, signature: str, secret: str) -> bool:
     return hmac.compare_digest(expected_mac, signature.strip())
 
 
+import json
+from collections import OrderedDict
+
+# Simple OrderedDict as an LRU cache for webhook idempotency
+_processed_events = OrderedDict()
+_MAX_PROCESSED = 10000
+
 @router.post("/razorpay")
 async def razorpay_webhook(
     request: Request,
@@ -37,8 +44,19 @@ async def razorpay_webhook(
     body = await request.body()
     if not verify_signature(body, x_razorpay_signature, settings.webhook_secret):
         raise HTTPException(status_code=400, detail="Invalid signature")
+        
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Malformed JSON payload")
 
-    payload = await request.json()
+    # Idempotency check: use the valid HMAC signature as the idempotency key
+    if x_razorpay_signature in _processed_events:
+        return {"status": "ignored", "reason": "duplicate_webhook"}
+    _processed_events[x_razorpay_signature] = True
+    if len(_processed_events) > _MAX_PROCESSED:
+        _processed_events.popitem(last=False)
+
     event_type = payload.get("event")
 
     # Ingest failure events

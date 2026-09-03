@@ -4,6 +4,9 @@ from .seed import SEED_DATA
 import random
 import time
 
+# Explicit seed for benchmark reproducibility
+random.seed(42)
+
 app = FastAPI(title="Mock Razorpay API")
 
 # In-memory DB for demo
