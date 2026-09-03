@@ -11,11 +11,9 @@
 
 **[TERMINAL: title card, then a single number]**
 
-> "UPI Autopay success rates have collapsed from 50% in 2024 to 30-36% in 2025. 20 million UPI Autopay mandates get revoked every month.
+> "Recurring payment failures can create significant revenue leakage.
 >
-> Razorpay's own subscription retry is a fixed daily schedule. Same card. Same reason ignored. No awareness of why the payment failed.
->
-> The result: ~25% recovery on failed recurring payments. The other 75% becomes involuntary churn — money you already earned, walking out the door."
+> Fixed retry strategies may not adapt to the reason a payment failed. This can lead to involuntary churn — money you already earned, walking out the door."
 
 ---
 
@@ -39,7 +37,7 @@
 python backend/scripts/trigger_webhooks.py
 ```
 
-> "Let me show you. We seed 100 failed payments. The agent processes all 100.
+> "Let me show you. We seed a 120-case mixed benchmark. The agent processes all 120.
 >
 > Watch what happens:
 > - The fraud-flagged payments? Escalated. Hard-coded, no AI can override.
@@ -91,7 +89,7 @@ python backend/scripts/trigger_webhooks.py
 
 **[TERMINAL: final metrics card]**
 
-> "Autonomous recovery on the simulation. Zero crashes when the AI fails. 100 payments in, 100 decisions out, every one auditable.
+> "Autonomous recovery on the simulation. Zero crashes when the AI fails. 120 cases in, 120 decisions out, every one auditable.
 >
 > This is Chakra. Mandate-aware, regulation-aware, audit-first revenue recovery.
 >

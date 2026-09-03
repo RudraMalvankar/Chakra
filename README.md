@@ -51,7 +51,7 @@ Chakra abandons the flawed "LLM-as-a-router" design pattern in favor of a strict
 
 ## 🛠️ Quickstart & Synthetic Benchmark
 
-Chakra includes a built-in Mock Razorpay API to simulate deterministic and probabilistic network conditions, allowing you to benchmark the engine locally against 100 seeded payment failures.
+Chakra includes a built-in Mock Razorpay API to simulate deterministic and probabilistic network conditions, allowing you to benchmark the engine locally against a 120-case mixed benchmark.
 
 ### Prerequisites
 - Python 3.11+

@@ -1,5 +1,5 @@
 """
-Chakra Revenue Recovery Agent - One-command end-to-end demo & 100-payment benchmark runner.
+Chakra Revenue Recovery Agent - One-command end-to-end demo & 120-case mixed benchmark runner.
 
 Usage:
     python backend/scripts/run_demo.py                    # Live run (mock Razorpay server or in-process simulation)
@@ -38,7 +38,7 @@ from backend.app.services.recovery_executor import execute_recovery_pipeline
 from backend.app.services.razorpay_client import razorpay_client
 from backend.app.services.metrics_aggregator import generate_metrics_report
 from backend.app.services.eval_runner import run_eval
-from backend.app.services.voice import generate_hinglish_voice_note, should_use_voice
+from backend.app.services.voice import generate_hinglish_voice_note
 from backend.scripts.write_metrics import write_metrics_report
 
 import importlib.util
@@ -140,25 +140,10 @@ async def main():
 
     # 2. Process each payment through the 6-stage pipeline
     print("\n[*] Processing 120 cases through the shared 6-stage recovery pipeline...")
-    voice_count = 0
 
     async def _run_batch():
-        nonlocal voice_count
         for i, p in enumerate(payments, 1):
-            final_ctx = await execute_recovery_pipeline(p, dry_run=is_dry)
-
-            # Generate voice note for eligible high-value payments
-            if not is_dry and not args.skip_voice and should_use_voice(final_ctx):
-                amount_inr = int(final_ctx.amount_inr)
-                cust_id = final_ctx.customer_id
-                customer_name = f"customer_{cust_id[-4:]}"
-                audio_path = generate_hinglish_voice_note(
-                    customer_name=customer_name,
-                    amount_inr=amount_inr,
-                    payment_link=f"https://rzp.io/l/{final_ctx.case_id[:8]}",
-                )
-                if audio_path:
-                    voice_count += 1
+            await execute_recovery_pipeline(p, dry_run=is_dry)
 
     if not is_dry and not server_active:
         with patch("backend.app.services.recovery_executor.razorpay_client.retry_payment", side_effect=in_process_retry_payment), \
@@ -167,12 +152,11 @@ async def main():
     else:
         await _run_batch()
 
-    print(f"[+] 120 cases successfully processed. ({voice_count} voice notes generated)")
+    print(f"[+] 120 cases successfully processed.")
 
     # 3. Build and write metrics report
     print("\n[*] Aggregating revenue-first metrics...")
     metrics_report = write_metrics_report()
-    metrics_report["voice_notes_generated"] = voice_count
 
     with open("metrics_report.json", "w", encoding="utf-8") as f:
         json.dump(metrics_report, f, indent=2)
@@ -207,8 +191,6 @@ async def main():
     print("    - metrics_report.json   (summary metrics & invariants)")
     if not args.skip_eval:
         print("    - eval_report.json      (18-case accuracy eval)")
-    if not args.skip_voice and voice_count > 0:
-        print(f"    - voice_notes/          ({voice_count} Hinglish voice notes)")
     print("\n" + "=" * 60)
     print("  CHAKRA COMMAND CENTER - BY CASE TYPE:")
     print("=" * 60)

@@ -91,8 +91,22 @@ class MandateRouter:
         return RecoveryDecision(decision=InterventionType.ESCALATE, eligibility="PENDING_SAFETY", reason_code=triage.reason if triage.reason else "TRIAGE_ESCALATE", policy_id="mandate_triage_escalate_v1", confidence=triage.confidence, requires_human=True)
 
     @staticmethod
+    def _extract_nested_value(ctx: RecoveryCase, key: str, default: Any = None) -> Any:
+        if key in ctx.context:
+            return ctx.context[key]
+        if key in ctx.metadata:
+            return ctx.metadata[key]
+        notes = ctx.context.get("notes") or ctx.metadata.get("notes") or {}
+        if isinstance(notes, dict) and key in notes:
+            return notes[key]
+        return default
+
+    @staticmethod
     def _route_subscription(ctx: RecoveryCase, triage: TriageResult) -> RecoveryDecision:
-        days = ctx.context.get("days_overdue", 0)
+        try:
+            days = int(MandateRouter._extract_nested_value(ctx, "days_overdue", 0))
+        except (ValueError, TypeError):
+            days = 0
         if days == 0:
             return RecoveryDecision(decision=InterventionType.RETRY_LATER, reason_code="SUB_DAY_0_RETRY", policy_id="sub_policy_v1")
         if days < 7:
@@ -109,7 +123,10 @@ class MandateRouter:
 
     @staticmethod
     def _route_receivable(ctx: RecoveryCase, triage: TriageResult) -> RecoveryDecision:
-        days = ctx.context.get("days_overdue", 0)
+        try:
+            days = int(MandateRouter._extract_nested_value(ctx, "days_overdue", 0))
+        except (ValueError, TypeError):
+            days = 0
         if days < 31:
             return RecoveryDecision(decision=InterventionType.REMINDER, reason_code="INVOICE_REMINDER", policy_id="recv_policy_v1", template_id="invoice_reminder")
         if days < 61:
@@ -118,7 +135,7 @@ class MandateRouter:
 
     @staticmethod
     def _route_promise_to_pay(ctx: RecoveryCase, triage: TriageResult) -> RecoveryDecision:
-        status = ctx.context.get("promise_status", "ACTIVE")
+        status = MandateRouter._extract_nested_value(ctx, "promise_status", "ACTIVE")
         if status == "BROKEN" or ctx.error_code == "broken":
             return RecoveryDecision(decision=InterventionType.ESCALATE, reason_code="PROMISE_BROKEN_NO_RETRY", policy_id="ptp_policy_v1", requires_human=True)
         return RecoveryDecision(decision=InterventionType.REMINDER, reason_code="PROMISE_REMINDER", policy_id="ptp_policy_v1")

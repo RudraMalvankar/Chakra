@@ -61,7 +61,9 @@ def run_eval(cases_path: str = "backend/eval/labeled_cases.json") -> Dict[str, A
         # Handle case 18: simulate customer already at monthly budget cap
         if case["id"] == 18:
             cust_id = case["payment"].get("customer_id", "cust_eval_018")
-            CUSTOMER_INTERVENTION_COUNTS[cust_id] = 3
+            from datetime import datetime, timezone
+            current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+            CUSTOMER_INTERVENTION_COUNTS[f"{cust_id}_{current_month}"] = 3
 
         try:
             # 1. Context Builder
@@ -94,7 +96,9 @@ def run_eval(cases_path: str = "backend/eval/labeled_cases.json") -> Dict[str, A
                 predicted_action = "retry"
             elif dec in [InterventionType.PAYMENT_LINK, InterventionType.AFA_PAYMENT_LINK]:
                 predicted_action = "send_payment_link"
-            elif dec in [InterventionType.BLOCK, InterventionType.ESCALATE]:
+            elif dec == InterventionType.BLOCK:
+                predicted_action = "block"
+            elif dec == InterventionType.ESCALATE:
                 predicted_action = "escalate"
             else:
                 predicted_action = "unknown"
@@ -116,9 +120,9 @@ def run_eval(cases_path: str = "backend/eval/labeled_cases.json") -> Dict[str, A
             expected_action = case["expected_action"]
             expected_reason_substr = case["expected_reason_contains"].lower()
 
-            # Match criteria
+            # Match criteria. If the case explicitly allows either, we can check that.
             action_match = (predicted_action == expected_action) or (
-                expected_action in ["escalate", "block"] and predicted_action in ["escalate", "block"]
+                "|" in expected_action and predicted_action in expected_action.split("|")
             )
             reason_match = expected_reason_substr in predicted_reason.lower()
 

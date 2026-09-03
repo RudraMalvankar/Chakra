@@ -23,3 +23,27 @@ templates:
     body: "To activate your {merchant} subscription mandate, your first payment of ₹{amount} requires approval: {link}"
     variables: [merchant, amount, link]
     registered_with: jio_dlt
+
+  - id: sub_recovery_link
+    channel: email
+    body: "Your subscription payment is overdue. Please update your payment method here: {link}"
+    variables: [link]
+    registered_with: mock_dlt
+
+  - id: checkout_recovery
+    channel: whatsapp
+    body: "You left something in your cart! Complete your purchase here: {link}"
+    variables: [link]
+    registered_with: mock_dlt
+
+  - id: invoice_reminder
+    channel: email
+    body: "This is a reminder that your invoice is due soon."
+    variables: []
+    registered_with: mock_dlt
+
+  - id: invoice_link
+    channel: email
+    body: "Your invoice is overdue. Please pay here: {link}"
+    variables: [link]
+    registered_with: mock_dlt

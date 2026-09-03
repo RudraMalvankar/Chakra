@@ -1,46 +1,46 @@
 {
   "metrics": {
     "payments_processed": 120,
-    "payments_recovery_eligible": 88,
-    "payments_blocked": 3,
-    "payments_escalated": 29,
-    "interventions_attempted": 78,
-    "interventions_succeeded": 48,
+    "payments_recovery_eligible": 83,
+    "payments_blocked": 4,
+    "payments_escalated": 33,
+    "interventions_attempted": 53,
+    "interventions_succeeded": 32,
     "dry_run_actions_proposed": 0,
-    "payments_recovered": 48,
-    "payments_failed_recovery": 30,
+    "payments_recovered": 32,
+    "payments_failed_recovery": 21,
     "revenue_at_risk_inr": 760144.0,
-    "revenue_attempted_inr": 301459.0,
-    "revenue_recovered_inr": 178372.0,
-    "revenue_recovery_rate_pct": 23.47,
-    "payment_recovery_rate_pct": 40.0,
-    "intervention_success_rate_pct": 61.54,
-    "safety_block_rate_pct": 2.5,
-    "escalation_rate_pct": 24.17,
+    "revenue_attempted_inr": 479677.0,
+    "revenue_recovered_inr": 277086.0,
+    "revenue_recovery_rate_pct": 36.45,
+    "payment_recovery_rate_pct": 26.67,
+    "intervention_success_rate_pct": 60.38,
+    "safety_block_rate_pct": 3.33,
+    "escalation_rate_pct": 27.5,
     "by_case_type": {
       "PAYMENT_FAILURE": {
         "processed": 100,
-        "recovered": 46,
+        "recovered": 25,
         "revenue_at_risk": 431154.0,
-        "revenue_recovered": 177974.0
+        "revenue_recovered": 174491.0
       },
       "SUBSCRIPTION": {
         "processed": 5,
-        "recovered": 2,
+        "recovered": 1,
         "revenue_at_risk": 995.0,
-        "revenue_recovered": 398.0
+        "revenue_recovered": 199.0
       },
       "CHECKOUT_ABANDONMENT": {
         "processed": 5,
-        "recovered": 0,
+        "recovered": 4,
         "revenue_at_risk": 2995.0,
-        "revenue_recovered": 0.0
+        "revenue_recovered": 2396.0
       },
       "RECEIVABLE": {
         "processed": 5,
-        "recovered": 0,
+        "recovered": 2,
         "revenue_at_risk": 250000.0,
-        "revenue_recovered": 0.0
+        "revenue_recovered": 100000.0
       },
       "PROMISE_TO_PAY": {
         "processed": 5,
@@ -58,6 +58,5 @@
   },
   "simulation_disclosure": "Synthetic benchmark \u2014 not production Razorpay data.",
   "audit_event_count": 360,
-  "audit_log_path": "C:\\Users\\mypc\\Desktop\\Chakra\\audit_log.jsonl",
-  "voice_notes_generated": 0
+  "audit_log_path": "C:\\Users\\mypc\\Desktop\\Chakra\\audit_log.jsonl"
 }

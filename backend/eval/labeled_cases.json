@@ -13,7 +13,12 @@
         "currency": "INR",
         "error_code": "insufficient_funds",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "HDFC", "network": "visa", "retries_this_month": 1, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "HDFC",
+          "network": "visa",
+          "retries_this_month": 1,
+          "pre_debit_alerts_ignored": 0
+        }
       },
       "expected_action": "retry",
       "expected_reason_contains": "insufficient_funds",
@@ -28,7 +33,12 @@
         "currency": "INR",
         "error_code": "insufficient_funds",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "SBI", "network": "mastercard", "retries_this_month": 0, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "SBI",
+          "network": "mastercard",
+          "retries_this_month": 0,
+          "pre_debit_alerts_ignored": 0
+        }
       },
       "expected_action": "send_payment_link",
       "expected_reason_contains": "afa_threshold",
@@ -43,7 +53,12 @@
         "currency": "INR",
         "error_code": "card_declined",
         "is_first_transaction": true,
-        "metadata": {"bank_name": "ICICI", "network": "visa", "retries_this_month": 0, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "ICICI",
+          "network": "visa",
+          "retries_this_month": 0,
+          "pre_debit_alerts_ignored": 0
+        }
       },
       "expected_action": "send_payment_link",
       "expected_reason_contains": "first_transaction",
@@ -58,9 +73,14 @@
         "currency": "INR",
         "error_code": "fraud_flag",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "Axis", "network": "mastercard", "retries_this_month": 0, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "Axis",
+          "network": "mastercard",
+          "retries_this_month": 0,
+          "pre_debit_alerts_ignored": 0
+        }
       },
-      "expected_action": "escalate",
+      "expected_action": "block",
       "expected_reason_contains": "fraud_flag",
       "rationale": "Hard decline. Retrying a fraud-flagged payment is offense-capable and disqualified per Track 02 rules. Must escalate to human."
     },
@@ -73,9 +93,14 @@
         "currency": "INR",
         "error_code": "mandate_revoked",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "HDFC", "network": "visa", "retries_this_month": 0, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "HDFC",
+          "network": "visa",
+          "retries_this_month": 0,
+          "pre_debit_alerts_ignored": 0
+        }
       },
-      "expected_action": "escalate",
+      "expected_action": "block",
       "expected_reason_contains": "mandate_revoked",
       "rationale": "Customer explicitly revoked the mandate. Retrying violates consent. Must escalate."
     },
@@ -88,7 +113,12 @@
         "currency": "INR",
         "error_code": "payment_timed_out",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "SBI", "network": "rupay", "retries_this_month": 0, "pre_debit_alerts_ignored": 3}
+        "metadata": {
+          "bank_name": "SBI",
+          "network": "rupay",
+          "retries_this_month": 0,
+          "pre_debit_alerts_ignored": 3
+        }
       },
       "expected_action": "escalate",
       "expected_reason_contains": "alerts_ignored",
@@ -103,9 +133,14 @@
         "currency": "INR",
         "error_code": "card_declined",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "ICICI", "network": "visa", "retries_this_month": 15, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "ICICI",
+          "network": "visa",
+          "retries_this_month": 15,
+          "pre_debit_alerts_ignored": 0
+        }
       },
-      "expected_action": "escalate",
+      "expected_action": "block",
       "expected_reason_contains": "network_retry_cap",
       "rationale": "Already at Visa's 15/30d retry cap. One more retry triggers $0.10-$2.00 fine per Visa rules, and flags the merchant for monitoring. Must stop."
     },
@@ -118,9 +153,14 @@
         "currency": "INR",
         "error_code": "insufficient_funds",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "Axis", "network": "mastercard", "retries_this_month": 10, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "Axis",
+          "network": "mastercard",
+          "retries_this_month": 10,
+          "pre_debit_alerts_ignored": 0
+        }
       },
-      "expected_action": "escalate",
+      "expected_action": "block",
       "expected_reason_contains": "network_retry_cap",
       "rationale": "Mastercard cap is stricter (10/30d vs Visa's 15). Reached cap. Escalate."
     },
@@ -133,7 +173,12 @@
         "currency": "INR",
         "error_code": "card_declined",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "HDFC", "network": "visa", "retries_this_month": 0, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "HDFC",
+          "network": "visa",
+          "retries_this_month": 0,
+          "pre_debit_alerts_ignored": 0
+        }
       },
       "expected_action": "send_payment_link",
       "expected_reason_contains": "afa_threshold",
@@ -148,7 +193,12 @@
         "currency": "INR",
         "error_code": "payment_timed_out",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "HDFC", "network": "visa", "retries_this_month": 0, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "HDFC",
+          "network": "visa",
+          "retries_this_month": 0,
+          "pre_debit_alerts_ignored": 0
+        }
       },
       "expected_action": "retry",
       "expected_reason_contains": "timeout",
@@ -163,7 +213,12 @@
         "currency": "INR",
         "error_code": "expired_card",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "ICICI", "network": "visa", "retries_this_month": 0, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "ICICI",
+          "network": "visa",
+          "retries_this_month": 0,
+          "pre_debit_alerts_ignored": 0
+        }
       },
       "expected_action": "send_payment_link",
       "expected_reason_contains": "expired",
@@ -178,7 +233,12 @@
         "currency": "INR",
         "error_code": "card_declined",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "HDFC", "network": "mastercard", "retries_this_month": 1, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "HDFC",
+          "network": "mastercard",
+          "retries_this_month": 1,
+          "pre_debit_alerts_ignored": 0
+        }
       },
       "expected_action": "send_payment_link",
       "expected_reason_contains": "card_declined",
@@ -193,7 +253,12 @@
         "currency": "INR",
         "error_code": "insufficient_funds",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "SBI", "network": "rupay", "retries_this_month": 0, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "SBI",
+          "network": "rupay",
+          "retries_this_month": 0,
+          "pre_debit_alerts_ignored": 0
+        }
       },
       "expected_action": "retry",
       "expected_reason_contains": "insufficient_funds",
@@ -208,7 +273,12 @@
         "currency": "INR",
         "error_code": "card_declined",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "HDFC", "network": "visa", "retries_this_month": 0, "pre_debit_alerts_ignored": 2}
+        "metadata": {
+          "bank_name": "HDFC",
+          "network": "visa",
+          "retries_this_month": 0,
+          "pre_debit_alerts_ignored": 2
+        }
       },
       "expected_action": "escalate",
       "expected_reason_contains": "alerts_ignored",
@@ -223,7 +293,12 @@
         "currency": "INR",
         "error_code": "insufficient_funds",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "ICICI", "network": "visa", "retries_this_month": 14, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "ICICI",
+          "network": "visa",
+          "retries_this_month": 14,
+          "pre_debit_alerts_ignored": 0
+        }
       },
       "expected_action": "retry",
       "expected_reason_contains": "insufficient_funds",
@@ -238,7 +313,12 @@
         "currency": "INR",
         "error_code": "insufficient_funds",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "PhonePe", "network": "upi", "retries_this_month": 0, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "PhonePe",
+          "network": "upi",
+          "retries_this_month": 0,
+          "pre_debit_alerts_ignored": 0
+        }
       },
       "expected_action": "retry",
       "expected_reason_contains": "insufficient_funds",
@@ -253,9 +333,14 @@
         "currency": "INR",
         "error_code": "fraud_flag",
         "is_first_transaction": true,
-        "metadata": {"bank_name": "HDFC", "network": "visa", "retries_this_month": 0, "pre_debit_alerts_ignored": 0}
+        "metadata": {
+          "bank_name": "HDFC",
+          "network": "visa",
+          "retries_this_month": 0,
+          "pre_debit_alerts_ignored": 0
+        }
       },
-      "expected_action": "escalate",
+      "expected_action": "block",
       "expected_reason_contains": "fraud_flag",
       "rationale": "Fraud check comes BEFORE first-transaction AFA rule. Hard decline always wins. AI literally cannot override."
     },
@@ -269,9 +354,15 @@
         "currency": "INR",
         "error_code": "insufficient_funds",
         "is_first_transaction": false,
-        "metadata": {"bank_name": "HDFC", "network": "visa", "retries_this_month": 2, "pre_debit_alerts_ignored": 0, "previous_interventions_this_month": 3}
+        "metadata": {
+          "bank_name": "HDFC",
+          "network": "visa",
+          "retries_this_month": 2,
+          "pre_debit_alerts_ignored": 0,
+          "previous_interventions_this_month": 3
+        }
       },
-      "expected_action": "escalate",
+      "expected_action": "block",
       "expected_reason_contains": "budget",
       "rationale": "Already at 3-intervention monthly cap. Safety gate blocks further action. Escalate to prevent customer harassment."
     }

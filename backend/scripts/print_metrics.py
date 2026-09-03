@@ -17,7 +17,7 @@ from backend.app.services.metrics_aggregator import generate_metrics_report
 if __name__ == "__main__":
     report = generate_metrics_report()
     print("\n" + "="*60)
-    print("  REVENUE-FIRST METRICS REPORT (100 PAYMENTS)")
+    print("  REVENUE-FIRST METRICS REPORT (120 CASES)")
     print("="*60)
     print(json.dumps(report, indent=2))
     print("="*60 + "\n")

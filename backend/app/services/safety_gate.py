@@ -100,7 +100,7 @@ class SafetyGate:
             return final_dec
 
         # 3. AFA REGULATORY: First Mandate Transaction
-        if final_dec.decision in [InterventionType.RETRY_NOW, InterventionType.RETRY_LATER]:
+        if final_dec.decision not in [InterventionType.BLOCK, InterventionType.ESCALATE]:
             if ctx.is_first_transaction and REGULATORY_POLICY.get("first_mandate_transaction_requires_afa", True):
                 final_dec.decision = InterventionType.AFA_PAYMENT_LINK
                 final_dec.reason_code = "SAFETY_MODIFIED_FIRST_TXN_AFA"
@@ -139,7 +139,11 @@ class SafetyGate:
                 final_dec.reason_code = "IDEMPOTENCY_DUPLICATE_EVENT"
                 return final_dec
 
-            current_count = CUSTOMER_INTERVENTION_COUNTS.get(ctx.customer_id, 0)
+            # Extract current month for budget
+            current_month = datetime.now(timezone.utc).strftime("%Y-%m")
+            budget_key = f"{ctx.customer_id}_{current_month}"
+
+            current_count = CUSTOMER_INTERVENTION_COUNTS.get(budget_key, 0)
             if current_count >= max_budget:
                 final_dec.decision = InterventionType.BLOCK
                 final_dec.eligibility = "BLOCKED"
@@ -148,7 +152,7 @@ class SafetyGate:
 
             # Lock idempotency and increment budget
             IDEMPOTENCY_STORE.add(idem_key)
-            CUSTOMER_INTERVENTION_COUNTS[ctx.customer_id] = current_count + 1
+            CUSTOMER_INTERVENTION_COUNTS[budget_key] = current_count + 1
 
         final_dec.eligibility = "ALLOWED"
         return final_dec
@@ -163,12 +167,14 @@ class SafetyGate:
         final_dec = SafetyGate.evaluate(ctx, proposed, day)
         allowed = final_dec.eligibility == "ALLOWED"
         modified = (final_dec.decision != proposed.decision)
-        current_budget = CUSTOMER_INTERVENTION_COUNTS.get(
-            ctx.customer_id if isinstance(ctx, RecoveryCase) else ctx.get("customer_id", "unknown"), 0
-        )
-        pid = ctx.payment_id if isinstance(ctx, RecoveryCase) else ctx.get("payment_id", "unknown")
+        cust_id = ctx.customer_id if isinstance(ctx, RecoveryCase) else ctx.get("customer_id", "unknown")
         day_str = day or datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        idem_key = generate_idempotency_key(pid, proposed.decision.value, day_str)
+        current_month = datetime.strptime(day_str, "%Y-%m-%d").strftime("%Y-%m") if day else datetime.now(timezone.utc).strftime("%Y-%m")
+        budget_key = f"{cust_id}_{current_month}"
+
+        current_budget = CUSTOMER_INTERVENTION_COUNTS.get(budget_key, 0)
+        pid = ctx.payment_id if isinstance(ctx, RecoveryCase) else ctx.get("payment_id", "unknown")
+        idem_key = generate_idempotency_key(pid, final_dec.decision.value, day_str)
 
         return SafetyEvaluation(
             allowed=allowed,

@@ -3,7 +3,6 @@ policy:
   effective_date: "2026-01-01"
   rules:
     afa_free_threshold_standard_inr: 15000
-    afa_free_threshold_high_value_inr: 100000
     first_mandate_transaction_requires_afa: true
     network_retry_caps:
       visa: 15

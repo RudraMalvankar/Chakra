@@ -10,7 +10,7 @@ app = FastAPI(title="Chakra Recovery Engine")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -26,13 +26,16 @@ def get_metrics():
     return generate_metrics_report()
 
 @app.get("/api/audit")
-def get_audit_trail():
+def get_audit_trail(limit: int = 100):
     if not os.path.exists(AUDIT_FILE):
         return {"events": []}
     events = []
     with open(AUDIT_FILE, "r") as f:
         for line in f:
             if line.strip():
-                events.append(json.loads(line))
-    # Return newest first
-    return {"events": events[::-1]}
+                try:
+                    events.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+    # Return newest first, limited
+    return {"events": events[::-1][:limit]}

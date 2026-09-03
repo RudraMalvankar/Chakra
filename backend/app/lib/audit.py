@@ -1,6 +1,6 @@
 """
 JSONL Audit Trail Logger.
-Appends structured decision summaries to an immutable, append-only JSONL log.
+Appends structured decision summaries to an append-only runtime audit log with explicit benchmark reset support.
 Ensures PII is flagged as redacted and strips raw LLM chain-of-thought.
 """
 import json
@@ -22,7 +22,7 @@ def log_audit_event(
     """
     Appends a structured event to the JSONL audit trail.
     Ensures PII is redacted and raw chain-of-thought is excluded.
-    Includes Windows file-lock retry protection.
+    Includes Windows file-lock retry protection. Raises OSError if logging fails.
     """
     clean_details = dict(details) if isinstance(details, dict) else {"data": details}
 
@@ -45,23 +45,23 @@ def log_audit_event(
         try:
             with open(filepath, "a", encoding="utf-8") as f:
                 f.write(line)
-            break
-        except (PermissionError, OSError):
+            return
+        except (PermissionError, OSError) as e:
             if attempt < 4:
                 time.sleep(0.02)
             else:
-                pass
+                raise OSError(f"Failed to write to audit log after 5 attempts: {e}")
 
 
 def clear_audit_log(filepath: str = AUDIT_FILE) -> None:
-    """Clears the audit log file by truncating its contents safely on Windows."""
+    """Explicit benchmark reset support. Clears the audit log file safely on Windows."""
     for attempt in range(5):
         try:
             with open(filepath, "w", encoding="utf-8") as f:
                 pass
-            break
-        except (PermissionError, OSError):
+            return
+        except (PermissionError, OSError) as e:
             if attempt < 4:
                 time.sleep(0.02)
             else:
-                pass
+                raise OSError(f"Failed to clear audit log after 5 attempts: {e}")

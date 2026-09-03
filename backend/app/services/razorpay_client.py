@@ -26,7 +26,7 @@ class RazorpayClient:
 
     async def create_payment_link(self, customer_id: str, amount: int, template: str, payment_id: str) -> Dict[str, Any]:
         """Creates a payment link. Returns the simulated outcome."""
-        payload = {"customer": {"id": customer_id}, "amount": amount, "notes": {"payment_id": payment_id}}
+        payload = {"customer": {"id": customer_id}, "amount": amount, "notes": {"payment_id": payment_id, "template": template}}
         async with httpx.AsyncClient() as client:
             response = await client.post(f"{self.base_url}/v1/payment_links", json=payload, auth=self.auth)
             if response.status_code == 200:

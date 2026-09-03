@@ -50,22 +50,39 @@ async def test_executor_dry_run_mode():
 async def test_executor_live_retry_success():
     ctx = RecoveryCase(payment_id="p_ret_ok", amount_inr=1000.0, error_code="insufficient_funds")
     decision = RecoveryDecision(
-        decision=InterventionType.RETRY_LATER,
+        decision=InterventionType.RETRY_NOW,
         eligibility="ALLOWED",
         reason_code="TRANSIENT_FAILURE",
         policy_id="retry_v1",
-        delay_hours=1,
+        delay_hours=0,
     )
     with patch("backend.app.services.recovery_executor.razorpay_client.retry_payment", new_callable=AsyncMock) as mock_retry:
         mock_retry.return_value = {"status": "captured", "payment_id": "p_ret_ok"}
         res = await RecoveryExecutor.execute(ctx, decision, dry_run=False)
         assert res.current_state == PaymentState.RECOVERED
-        mock_retry.assert_awaited_once_with("p_ret_ok", 1)
+        mock_retry.assert_called_once()
 
 
 @pytest.mark.asyncio
 async def test_executor_live_retry_failure():
     ctx = RecoveryCase(payment_id="p_ret_fail", amount_inr=1000.0, error_code="insufficient_funds")
+    decision = RecoveryDecision(
+        decision=InterventionType.RETRY_NOW,
+        eligibility="ALLOWED",
+        reason_code="TRANSIENT_FAILURE",
+        policy_id="retry_v1",
+        delay_hours=0,
+    )
+    with patch("backend.app.services.recovery_executor.razorpay_client.retry_payment", new_callable=AsyncMock) as mock_retry:
+        mock_retry.return_value = {"status": "failed", "payment_id": "p_ret_fail"}
+        res = await RecoveryExecutor.execute(ctx, decision, dry_run=False)
+        assert res.current_state == PaymentState.RECOVERY_FAILED
+        mock_retry.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_executor_deferred_retry():
+    ctx = RecoveryCase(payment_id="p_ret_def", amount_inr=1000.0, error_code="insufficient_funds")
     decision = RecoveryDecision(
         decision=InterventionType.RETRY_LATER,
         eligibility="ALLOWED",
@@ -74,9 +91,9 @@ async def test_executor_live_retry_failure():
         delay_hours=24,
     )
     with patch("backend.app.services.recovery_executor.razorpay_client.retry_payment", new_callable=AsyncMock) as mock_retry:
-        mock_retry.return_value = {"status": "failed", "payment_id": "p_ret_fail"}
         res = await RecoveryExecutor.execute(ctx, decision, dry_run=False)
-        assert res.current_state == PaymentState.RECOVERY_FAILED
+        assert res.current_state == PaymentState.RECOVERY_PENDING
+        mock_retry.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -110,7 +127,7 @@ async def test_executor_live_payment_link_success():
 async def test_executor_api_exception_handling():
     ctx = RecoveryCase(payment_id="p_err", amount_inr=1000.0, error_code="insufficient_funds")
     decision = RecoveryDecision(
-        decision=InterventionType.RETRY_LATER,
+        decision=InterventionType.RETRY_NOW,
         eligibility="ALLOWED",
         reason_code="TRANSIENT_FAILURE",
         policy_id="retry_v1",

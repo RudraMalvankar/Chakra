@@ -103,21 +103,4 @@ def generate_hinglish_voice_note(
         return None
 
 
-def should_use_voice(payment: dict) -> bool:
-    """
-    Decide if voice is the right channel for this payment.
-    Rules:
-      - High-value payments (> 1000 INR): voice
-      - Customer has 2+ prior failures: voice
-      - Otherwise: WhatsApp (default)
-    """
-    amount_inr = payment.get("amount", 0) / 100
-    if amount_inr > 1000:
-        return True
 
-    # Check prior failures from metadata (if available)
-    metadata = payment.get("metadata", {})
-    if metadata.get("previous_failures_count", 0) >= 2:
-        return True
-
-    return False

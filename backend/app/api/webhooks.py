@@ -54,9 +54,13 @@ async def razorpay_webhook(
     # Idempotency check: use event ID or payload hash if not present
     event_id = x_razorpay_event_id or hashlib.sha256(body).hexdigest()
     
-    if event_id in _processed_events:
+    status = _processed_events.get(event_id)
+    if status == "COMPLETED":
         return {"status": "ignored", "reason": "duplicate_webhook"}
-    _processed_events[event_id] = True
+    if status == "PROCESSING":
+        return {"status": "ignored", "reason": "concurrent_processing"}
+        
+    _processed_events[event_id] = "PROCESSING"
     if len(_processed_events) > _MAX_PROCESSED:
         _processed_events.popitem(last=False)
 
@@ -71,19 +75,26 @@ async def razorpay_webhook(
         "promise.updated", "promise.broken"
     ]
 
-    # Ingest failure events
-    if event_type in supported_events:
-        ctx = ContextBuilder.build_context(payload)
-        
-        # If case_id is missing/unknown, it's not a valid case for recovery
-        if ctx.case_id == "unknown" and not ctx.payment_id:
-            return {"status": "ignored", "reason": "insufficient_data"}
+    try:
+        # Ingest failure events
+        if event_type in supported_events:
+            ctx = ContextBuilder.build_context(payload)
             
-        final_ctx = await execute_recovery_pipeline(ctx, dry_run=settings.dry_run)
-        return {
-            "status": "ok",
-            "case_id": final_ctx.case_id,
-            "state": final_ctx.current_state.value if hasattr(final_ctx.current_state, "value") else final_ctx.current_state,
-        }
+            # If case_id is missing/unknown, it's not a valid case for recovery
+            if ctx.case_id == "unknown" and not ctx.payment_id:
+                _processed_events[event_id] = "COMPLETED"
+                return {"status": "ignored", "reason": "insufficient_data"}
+                
+            final_ctx = await execute_recovery_pipeline(ctx, dry_run=settings.dry_run)
+            _processed_events[event_id] = "COMPLETED"
+            return {
+                "status": "ok",
+                "case_id": final_ctx.case_id,
+                "state": final_ctx.current_state.value if hasattr(final_ctx.current_state, "value") else final_ctx.current_state,
+            }
 
-    return {"status": "ignored", "event": event_type}
+        _processed_events[event_id] = "COMPLETED"
+        return {"status": "ignored", "event": event_type}
+    except Exception:
+        _processed_events[event_id] = "FAILED"
+        raise
