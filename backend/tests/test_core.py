@@ -1,6 +1,7 @@
+from backend.app.models.case import RecoveryCase
 from backend.app.api.webhooks import verify_signature
 from backend.app.services.safety_engine import enforce_safety
-from backend.app.schemas.state import PaymentContext, RecoveryDecision, InterventionType
+from backend.app.schemas.state import RecoveryDecision, InterventionType
 import pytest
 
 def test_webhook_signature():
@@ -16,7 +17,7 @@ def test_webhook_signature():
     assert verify_signature(body, "invalid_sig", secret) == False
 
 def test_safety_engine_fraud_block():
-    context = PaymentContext(
+    context = RecoveryCase(
         payment_id="p1", customer_id="c1", amount_inr=1000, error_code="fraud_flag", fraud_flag=True
     )
     decision = RecoveryDecision(
@@ -29,7 +30,7 @@ def test_safety_engine_fraud_block():
 
 def test_safety_engine_afa_threshold():
     # Above 15k threshold
-    context = PaymentContext(
+    context = RecoveryCase(
         payment_id="p2", customer_id="c2", amount_inr=16000, error_code="insufficient_funds"
     )
     decision = RecoveryDecision(

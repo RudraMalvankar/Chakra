@@ -1,3 +1,4 @@
+from backend.app.models.case import RecoveryCase
 """
 Enforcer Safety Gate: Non-Overridable Deterministic Policy Enforcer.
 Evaluates proposed RecoveryDecisions against RBI regulations, card network rules,
@@ -11,7 +12,7 @@ import yaml
 
 from backend.app.config import settings
 from backend.app.models.payment import (
-    PaymentContext,
+    
     RecoveryDecision,
     SafetyEvaluation,
     InterventionType,
@@ -59,7 +60,7 @@ def reset_safety_state() -> None:
 class SafetyGate:
     @staticmethod
     def evaluate(
-        ctx: Union[PaymentContext, Dict[str, Any]],
+        ctx: Union[RecoveryCase, Dict[str, Any]],
         proposed: RecoveryDecision,
         day: Optional[str] = None,
     ) -> RecoveryDecision:
@@ -67,7 +68,7 @@ class SafetyGate:
         Evaluates proposed decision against hard compliance and safety rules.
         Returns the finalized, safe RecoveryDecision.
         """
-        if not isinstance(ctx, PaymentContext):
+        if not isinstance(ctx, RecoveryCase):
             ctx = ContextBuilder.build_context(ctx)
 
         if day is None:
@@ -154,7 +155,7 @@ class SafetyGate:
 
     @staticmethod
     def evaluate_detailed(
-        ctx: Union[PaymentContext, Dict[str, Any]],
+        ctx: Union[RecoveryCase, Dict[str, Any]],
         proposed: RecoveryDecision,
         day: Optional[str] = None,
     ) -> SafetyEvaluation:
@@ -163,9 +164,9 @@ class SafetyGate:
         allowed = final_dec.eligibility == "ALLOWED"
         modified = (final_dec.decision != proposed.decision)
         current_budget = CUSTOMER_INTERVENTION_COUNTS.get(
-            ctx.customer_id if isinstance(ctx, PaymentContext) else ctx.get("customer_id", "unknown"), 0
+            ctx.customer_id if isinstance(ctx, RecoveryCase) else ctx.get("customer_id", "unknown"), 0
         )
-        pid = ctx.payment_id if isinstance(ctx, PaymentContext) else ctx.get("payment_id", "unknown")
+        pid = ctx.payment_id if isinstance(ctx, RecoveryCase) else ctx.get("payment_id", "unknown")
         day_str = day or datetime.now(timezone.utc).strftime("%Y-%m-%d")
         idem_key = generate_idempotency_key(pid, proposed.decision.value, day_str)
 

@@ -1,13 +1,13 @@
 import pytest
 from unittest.mock import patch, MagicMock
-from backend.app.models.payment import PaymentContext, TriageResult, InterventionType
+from backend.app.models.case import RecoveryCase, TriageResult, InterventionType
 from backend.app.models.mandate import MandateState
 from backend.app.services.triage import TriageEngine, triage, triage_payment
 from backend.app.services.llm import gemini_classify, classify_ambiguous_error, TriageDecision
 
 
 def test_deterministic_insufficient_funds():
-    ctx = PaymentContext(payment_id="p1", amount_inr=1000.0, error_code="insufficient_funds")
+    ctx = RecoveryCase(payment_id="p1", amount_inr=1000.0, error_code="insufficient_funds")
     res = TriageEngine.triage(ctx)
     assert res.is_ambiguous is False
     assert res.recommended_action == InterventionType.RETRY_LATER
@@ -19,7 +19,7 @@ def test_deterministic_insufficient_funds():
 
 
 def test_deterministic_timeout():
-    ctx = PaymentContext(payment_id="p2", amount_inr=500.0, error_code="payment_timed_out")
+    ctx = RecoveryCase(payment_id="p2", amount_inr=500.0, error_code="payment_timed_out")
     res = TriageEngine.triage(ctx)
     assert res.is_ambiguous is False
     assert res.recommended_action == InterventionType.RETRY_LATER
@@ -31,14 +31,14 @@ def test_deterministic_timeout():
 
     # Variations
     for code in ["timed_out", "timeout"]:
-        ctx2 = PaymentContext(payment_id="p2_var", amount_inr=500.0, error_code=code)
+        ctx2 = RecoveryCase(payment_id="p2_var", amount_inr=500.0, error_code=code)
         res2 = TriageEngine.triage(ctx2)
         assert res2.recommended_action == InterventionType.RETRY_LATER
         assert res2.delay_hours == 1
 
 
 def test_deterministic_expired_card():
-    ctx = PaymentContext(payment_id="p3", amount_inr=999.0, error_code="expired_card")
+    ctx = RecoveryCase(payment_id="p3", amount_inr=999.0, error_code="expired_card")
     res = TriageEngine.triage(ctx)
     assert res.is_ambiguous is False
     assert res.recommended_action == InterventionType.PAYMENT_LINK
@@ -50,7 +50,7 @@ def test_deterministic_expired_card():
 
 
 def test_deterministic_card_declined():
-    ctx = PaymentContext(payment_id="p4", amount_inr=1200.0, error_code="card_declined")
+    ctx = RecoveryCase(payment_id="p4", amount_inr=1200.0, error_code="card_declined")
     res = TriageEngine.triage(ctx)
     assert res.is_ambiguous is False
     assert res.recommended_action == InterventionType.PAYMENT_LINK
@@ -62,14 +62,14 @@ def test_deterministic_card_declined():
 
 
 def test_deterministic_fraud_and_revoked():
-    ctx_fraud = PaymentContext(payment_id="p5", amount_inr=2000.0, error_code="fraud_flag", fraud_flag=True)
+    ctx_fraud = RecoveryCase(payment_id="p5", amount_inr=2000.0, error_code="fraud_flag", fraud_flag=True)
     res_fraud = TriageEngine.triage(ctx_fraud)
     assert res_fraud.recommended_action == InterventionType.BLOCK
     assert res_fraud.reason == "fraud_flag"
     assert res_fraud.confidence == 1.0
     assert res_fraud.action == "block"
 
-    ctx_revoked = PaymentContext(
+    ctx_revoked = RecoveryCase(
         payment_id="p6",
         amount_inr=2000.0,
         error_code="mandate_revoked",
@@ -89,7 +89,7 @@ def test_ambiguous_llm_fallback_retry(mock_classify):
         delay_hours=2,
         confidence=0.92,
     )
-    ctx = PaymentContext(payment_id="p7", amount_inr=1500.0, error_code="bank_technical_error_503")
+    ctx = RecoveryCase(payment_id="p7", amount_inr=1500.0, error_code="bank_technical_error_503")
     res = TriageEngine.triage(ctx)
     assert res.is_ambiguous is True
     assert res.recommended_action == InterventionType.RETRY_LATER
@@ -107,7 +107,7 @@ def test_ambiguous_llm_fallback_payment_link(mock_classify):
         template="dlt_upi_alternate_v1",
         confidence=0.95,
     )
-    ctx = PaymentContext(payment_id="p8", amount_inr=1500.0, error_code="instrument_error")
+    ctx = RecoveryCase(payment_id="p8", amount_inr=1500.0, error_code="instrument_error")
     res = TriageEngine.triage(ctx)
     assert res.is_ambiguous is True
     assert res.recommended_action == InterventionType.PAYMENT_LINK
@@ -122,7 +122,7 @@ def test_ambiguous_llm_fallback_block(mock_classify):
         reason="stolen_instrument_signal",
         confidence=0.99,
     )
-    ctx = PaymentContext(payment_id="p8_block", amount_inr=1500.0, error_code="stolen_signal")
+    ctx = RecoveryCase(payment_id="p8_block", amount_inr=1500.0, error_code="stolen_signal")
     res = TriageEngine.triage(ctx)
     assert res.is_ambiguous is True
     assert res.recommended_action == InterventionType.BLOCK
@@ -137,7 +137,7 @@ def test_ambiguous_llm_fallback_escalate(mock_classify):
         reason="high_risk_flag",
         confidence=0.95,
     )
-    ctx = PaymentContext(payment_id="p8_esc", amount_inr=1500.0, error_code="unknown_risk")
+    ctx = RecoveryCase(payment_id="p8_esc", amount_inr=1500.0, error_code="unknown_risk")
     res = TriageEngine.triage(ctx)
     assert res.is_ambiguous is True
     assert res.recommended_action == InterventionType.ESCALATE
@@ -151,7 +151,7 @@ def test_ambiguous_llm_low_confidence_forces_escalate(mock_classify):
         reason="uncertain_error",
         confidence=0.75,
     )
-    ctx = PaymentContext(payment_id="p9", amount_inr=1500.0, error_code="unrecognized_error_xyz")
+    ctx = RecoveryCase(payment_id="p9", amount_inr=1500.0, error_code="unrecognized_error_xyz")
     res = TriageEngine.triage(ctx)
     assert res.is_ambiguous is True
     assert res.recommended_action == InterventionType.ESCALATE

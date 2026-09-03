@@ -1,12 +1,12 @@
 """
 Outcome Evaluator: Normalizes gateway responses and determines payment recovery outcomes.
 Only a genuine 'captured' status (or 'outcome == "success"') triggers PAYMENT_SUCCEEDED / RECOVERED.
-Updates PaymentContext state and produces a typed OutcomeResult.
+Updates RecoveryCase state and produces a typed OutcomeResult.
 """
 from typing import Dict, Any, Optional, Union
 from datetime import datetime, timezone
 
-from backend.app.models.payment import PaymentContext, PaymentState, OutcomeResult
+from backend.app.models.case import RecoveryCase, PaymentState, OutcomeResult
 from backend.app.services.context_builder import ContextBuilder
 
 
@@ -14,13 +14,13 @@ class OutcomeEvaluator:
     @staticmethod
     def evaluate(
         raw_response: Optional[Dict[str, Any]],
-        ctx: Union[PaymentContext, Dict[str, Any]],
+        ctx: Union[RecoveryCase, Dict[str, Any]],
     ) -> OutcomeResult:
         """
         Evaluates raw response from payment gateway / mock Razorpay.
         Normalizes status and updates ctx.current_state.
         """
-        if not isinstance(ctx, PaymentContext):
+        if not isinstance(ctx, RecoveryCase):
             ctx = ContextBuilder.build_context(ctx)
 
         if raw_response is None or not isinstance(raw_response, dict):

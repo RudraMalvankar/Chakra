@@ -1,3 +1,4 @@
+from backend.app.models.case import RecoveryCase
 """
 Compatibility layer re-exporting all models and enums from backend.app.models.
 Maintains 100% backward compatibility for existing imports across the codebase and tests.
@@ -9,7 +10,7 @@ from backend.app.models.mandate import (
 from backend.app.models.payment import (
     PaymentState,
     InterventionType,
-    PaymentContext,
+    
     TriageResult,
     RecoveryDecision,
     SafetyEvaluation,
@@ -21,7 +22,7 @@ __all__ = [
     "Mandate",
     "PaymentState",
     "InterventionType",
-    "PaymentContext",
+    "RecoveryCase",
     "TriageResult",
     "RecoveryDecision",
     "SafetyEvaluation",

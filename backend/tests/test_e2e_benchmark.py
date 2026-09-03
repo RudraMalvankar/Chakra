@@ -22,7 +22,15 @@ seed_mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(seed_mod)
 SEED_DATA = seed_mod.SEED_DATA
 
-PAYMENTS_DB = {p["payment_id"]: dict(p) for p in SEED_DATA}
+def _get_id(p):
+    if "payment_id" in p: return p["payment_id"]
+    if "event" in p:
+        payload = p.get("payload", {})
+        for k, v in payload.items():
+            if isinstance(v, dict) and "id" in v:
+                return v["id"]
+    return "unknown"
+PAYMENTS_DB = {_get_id(p): dict(p) for p in SEED_DATA}
 
 
 def simulate_outcome(payment: dict, is_link: bool = False) -> str:
@@ -54,12 +62,12 @@ async def mock_create_payment_link(customer_id: str, amount: int, template: str,
 
 
 @pytest.mark.asyncio
-async def test_100_payment_benchmark_dry_run():
-    """Runs all 100 seed payments through dry-run recovery pipeline and validates invariants."""
+async def test_120_payment_benchmark_dry_run():
+    """Runs all 120 seed payments through dry-run recovery pipeline and validates invariants."""
     clear_audit_log()
     reset_safety_state()
 
-    assert len(SEED_DATA) == 100
+    assert len(SEED_DATA) == 120
 
     for payment in SEED_DATA:
         ctx = await execute_recovery_pipeline(payment, dry_run=True)
@@ -76,15 +84,15 @@ async def test_100_payment_benchmark_dry_run():
     metrics = report["metrics"]
     invariants = report["invariants"]
 
-    assert metrics["payments_processed"] == 100
+    assert metrics["payments_processed"] == 120
     assert metrics["revenue_at_risk_inr"] > 0
-    assert metrics["payments_blocked"] + metrics["payments_escalated"] + metrics["payments_recovery_eligible"] == 100
+    assert metrics["payments_blocked"] + metrics["payments_escalated"] + metrics["payments_recovery_eligible"] == 120
     assert invariants["all_passed"] is True
 
 
 @pytest.mark.asyncio
-async def test_100_payment_benchmark_live_run():
-    """Runs all 100 seed payments through live mock recovery pipeline and validates revenue recovery."""
+async def test_120_payment_benchmark_live_run():
+    """Runs all 120 seed payments through live mock recovery pipeline and validates revenue recovery."""
     clear_audit_log()
     reset_safety_state()
 
@@ -98,7 +106,7 @@ async def test_100_payment_benchmark_live_run():
     metrics = report["metrics"]
     invariants = report["invariants"]
 
-    assert metrics["payments_processed"] == 100
+    assert metrics["payments_processed"] == 120
     assert metrics["revenue_at_risk_inr"] > 0
     assert metrics["interventions_attempted"] > 0
 

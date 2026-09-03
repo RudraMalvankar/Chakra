@@ -1,3 +1,4 @@
+from backend.app.models.case import RecoveryCase
 import hashlib
 import json
 import pytest
@@ -7,7 +8,7 @@ from backend.app.models.mandate import MandateState, Mandate
 from backend.app.models.payment import (
     PaymentState,
     InterventionType,
-    PaymentContext,
+    
     TriageResult,
     RecoveryDecision,
     SafetyEvaluation,
@@ -142,7 +143,7 @@ def test_schemas_compatibility_reexport():
     assert compat_schemas.Mandate is Mandate
     assert compat_schemas.PaymentState is PaymentState
     assert compat_schemas.InterventionType is InterventionType
-    assert compat_schemas.PaymentContext is PaymentContext
+    assert compat_schemas.RecoveryCase is RecoveryCase
     assert compat_schemas.TriageResult is TriageResult
     assert compat_schemas.RecoveryDecision is RecoveryDecision
     assert compat_schemas.SafetyEvaluation is SafetyEvaluation
@@ -179,7 +180,7 @@ def test_context_builder_nested_razorpay_webhook():
     }
 
     ctx = ContextBuilder.build_context(webhook_payload)
-    assert isinstance(ctx, PaymentContext)
+    assert isinstance(ctx, RecoveryCase)
     assert ctx.payment_id == "pay_nested_001"
     assert ctx.customer_id == "cust_nested_001"
     assert ctx.amount_inr == 16000.0  # 1600000 / 100
@@ -257,7 +258,7 @@ def test_context_builder_fraud_flag_and_revocation_inference():
 
 
 def test_context_builder_idempotence():
-    ctx_orig = PaymentContext(
+    ctx_orig = RecoveryCase(
         payment_id="pay_direct",
         customer_id="cust_direct",
         amount_inr=150.0,
@@ -274,7 +275,7 @@ def test_context_builder_all_eval_cases():
             data = json.load(f)
         for case in data.get("cases", []):
             ctx = ContextBuilder.build_context(case["payment"])
-            assert isinstance(ctx, PaymentContext)
+            assert isinstance(ctx, RecoveryCase)
             assert ctx.payment_id != ""
             assert ctx.amount_inr >= 0.0
             assert ctx.customer_id != ""
@@ -283,14 +284,14 @@ def test_context_builder_all_eval_cases():
 def test_context_builder_corrupted_entity_payloads():
     # Defensively handle None entity or non-dict entity
     res_none = ContextBuilder.build_context({"payload": {"payment": {"entity": None}}})
-    assert isinstance(res_none, PaymentContext)
+    assert isinstance(res_none, RecoveryCase)
     assert res_none.payment_id == "unknown"
 
     res_str = ContextBuilder.build_context({"payload": {"payment": {"entity": "corrupted"}}})
-    assert isinstance(res_str, PaymentContext)
+    assert isinstance(res_str, RecoveryCase)
 
     res_int = ContextBuilder.build_context({"payment": {"entity": 99999}})
-    assert isinstance(res_int, PaymentContext)
+    assert isinstance(res_int, RecoveryCase)
 
 
 def test_context_builder_safe_numeric_and_zero_preservation():
@@ -320,7 +321,7 @@ def test_context_builder_safe_numeric_and_zero_preservation():
 # ---------------------------------------------------------------------------
 
 def test_pii_redact_with_payment_context():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="pay_secret_123",
         customer_id="cust_secret_456",
         amount_inr=16000.0,

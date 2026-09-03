@@ -1,11 +1,11 @@
 import pytest
-from backend.app.models.payment import PaymentContext, TriageResult, RecoveryDecision, InterventionType
+from backend.app.models.case import RecoveryCase, TriageResult, RecoveryDecision, InterventionType
 from backend.app.models.mandate import MandateState
 from backend.app.services.mandate_router import MandateRouter, route
 
 
 def test_mandate_revoked_routes_to_block():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p1",
         amount_inr=500.0,
         error_code="insufficient_funds",
@@ -21,7 +21,7 @@ def test_mandate_revoked_routes_to_block():
 
 
 def test_error_code_mandate_revoked_routes_to_block():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p2",
         amount_inr=500.0,
         error_code="mandate_revoked",
@@ -33,7 +33,7 @@ def test_error_code_mandate_revoked_routes_to_block():
 
 
 def test_new_mandate_routes_to_afa_link():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p3",
         amount_inr=2000.0,
         error_code="insufficient_funds",
@@ -48,7 +48,7 @@ def test_new_mandate_routes_to_afa_link():
 
 
 def test_first_transaction_routes_to_afa_link():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p4",
         amount_inr=2000.0,
         error_code="insufficient_funds",
@@ -62,7 +62,7 @@ def test_first_transaction_routes_to_afa_link():
 
 
 def test_active_mandate_insufficient_funds_under_15k():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p5",
         amount_inr=5000.0,
         error_code="insufficient_funds",
@@ -76,7 +76,7 @@ def test_active_mandate_insufficient_funds_under_15k():
 
 
 def test_active_mandate_insufficient_funds_over_15k():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p6",
         amount_inr=16000.0,
         error_code="insufficient_funds",
@@ -90,7 +90,7 @@ def test_active_mandate_insufficient_funds_over_15k():
 
 
 def test_active_mandate_timeout_delay_1hr():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p7",
         amount_inr=3000.0,
         error_code="payment_timed_out",
@@ -103,7 +103,7 @@ def test_active_mandate_timeout_delay_1hr():
 
 
 def test_active_mandate_expired_card_template():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p8",
         amount_inr=1000.0,
         error_code="expired_card",
@@ -116,7 +116,7 @@ def test_active_mandate_expired_card_template():
 
 
 def test_active_mandate_card_declined_template():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p9",
         amount_inr=1000.0,
         error_code="card_declined",
@@ -129,7 +129,7 @@ def test_active_mandate_card_declined_template():
 
 
 def test_router_with_explicit_triage():
-    ctx = PaymentContext(payment_id="p10", amount_inr=1000.0, error_code="custom")
+    ctx = RecoveryCase(payment_id="p10", amount_inr=1000.0, error_code="custom")
     custom_triage = TriageResult(
         error_code="custom",
         is_ambiguous=True,

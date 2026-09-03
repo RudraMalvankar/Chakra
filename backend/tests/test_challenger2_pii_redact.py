@@ -2,7 +2,7 @@ import hashlib
 import pytest
 from typing import Dict, Any
 
-from backend.app.models.payment import PaymentContext, MandateState, PaymentState
+from backend.app.models.case import RecoveryCase, MandateState, PaymentState
 from backend.app.services.pii_redact import redact_for_llm
 from backend.app.services.llm import gemini_classify
 
@@ -81,7 +81,7 @@ def test_amount_bucketing_dict_paise(amt_paise, expected_bucket):
     ]
 )
 def test_amount_bucketing_payment_context(amt_inr, expected_bucket):
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="pay_test_bucketing",
         customer_id="cust_test_bucketing",
         amount_inr=amt_inr,
@@ -160,7 +160,7 @@ def test_privacy_leak_resistance_on_dict():
 
 
 def test_privacy_leak_resistance_on_payment_context():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="pay_secret_context_111",
         customer_id="cust_secret_context_222",
         amount_inr=75000.50,
@@ -203,7 +203,7 @@ def test_privacy_leak_resistance_on_payment_context():
     ]
     for val in sensitive_values:
         for k, v in redacted.items():
-            assert str(val) not in str(v), f"PII Leak detected in PaymentContext! Key '{k}' contains '{val}'"
+            assert str(val) not in str(v), f"PII Leak detected in RecoveryCase! Key '{k}' contains '{val}'"
 
 
 # ===========================================================================
@@ -234,7 +234,7 @@ def test_bank_hash_determinism():
             res_dict = redact_for_llm({"bank_name": bank})
             assert res_dict["bank_hash"] == expected_hash
 
-            ctx = PaymentContext(
+            ctx = RecoveryCase(
                 payment_id="pay_h",
                 customer_id="cust_h",
                 amount_inr=100.0,
@@ -278,8 +278,8 @@ def test_bank_hash_fallback_for_none_and_empty():
     r2 = redact_for_llm({})
     assert r2["bank_hash"] == unknown_hash
 
-    # None bank_name in PaymentContext
-    ctx_none = PaymentContext(
+    # None bank_name in RecoveryCase
+    ctx_none = RecoveryCase(
         payment_id="pay_n",
         customer_id="cust_n",
         amount_inr=10.0,
@@ -318,7 +318,7 @@ def test_type_error_on_invalid_input_types():
         True,
     ]
     for inp in invalid_inputs:
-        with pytest.raises(TypeError, match="Expected dict or PaymentContext"):
+        with pytest.raises(TypeError, match="Expected dict or RecoveryCase"):
             redact_for_llm(inp)
 
 
@@ -336,7 +336,7 @@ def test_schema_conformance_between_dict_and_model():
         "alerts_ignored": 2,
     }
 
-    ctx_input = PaymentContext(
+    ctx_input = RecoveryCase(
         payment_id="pay_conformance",
         customer_id="cust_conformance",
         amount_inr=25000.0,

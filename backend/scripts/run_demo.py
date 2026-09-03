@@ -48,7 +48,15 @@ seed_mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(seed_mod)
 SEED_DATA = seed_mod.SEED_DATA
 
-PAYMENTS_DB = {p["payment_id"]: dict(p) for p in SEED_DATA}
+def _get_id(p):
+    if "payment_id" in p: return p["payment_id"]
+    if "event" in p:
+        payload = p.get("payload", {})
+        for k, v in payload.items():
+            if isinstance(v, dict) and "id" in v:
+                return v["id"]
+    return "unknown"
+PAYMENTS_DB = {_get_id(p): dict(p) for p in SEED_DATA}
 
 
 rng = random.Random(42)
@@ -135,14 +143,14 @@ async def main():
             final_ctx = await execute_recovery_pipeline(p, dry_run=is_dry)
 
             # Generate voice note for eligible high-value payments
-            if not is_dry and not args.skip_voice and should_use_voice(p):
-                amount_inr = int(p.get("amount", 0) / 100)
-                cust_id = p.get("customer_id", "unknown")
+            if not is_dry and not args.skip_voice and should_use_voice(final_ctx):
+                amount_inr = int(final_ctx.amount_inr)
+                cust_id = final_ctx.customer_id
                 customer_name = f"customer_{cust_id[-4:]}"
                 audio_path = generate_hinglish_voice_note(
                     customer_name=customer_name,
                     amount_inr=amount_inr,
-                    payment_link=f"https://rzp.io/l/{p.get('payment_id', 'recover')[:8]}",
+                    payment_link=f"https://rzp.io/l/{final_ctx.case_id[:8]}",
                 )
                 if audio_path:
                     voice_count += 1

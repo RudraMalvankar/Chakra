@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml
 
 from backend.app.config import settings
-from backend.app.models.payment import PaymentContext, TriageResult, InterventionType
+from backend.app.models.case import RecoveryCase, TriageResult, InterventionType
 from backend.app.models.mandate import MandateState
 from backend.app.services.context_builder import ContextBuilder
 from backend.app.services.pii_redact import redact_for_llm
@@ -33,12 +33,12 @@ RECOVERY_POLICY = _load_recovery_policy()
 
 class TriageEngine:
     @staticmethod
-    def triage(payment: Union[PaymentContext, Dict[str, Any]]) -> TriageResult:
+    def triage(payment: Union[RecoveryCase, Dict[str, Any]]) -> TriageResult:
         """
         Pure diagnostic triage: Evaluates error_code deterministically, falling back
         to PII-redacted Gemini classification for ambiguous cases.
         """
-        ctx: PaymentContext = ContextBuilder.build_context(payment)
+        ctx: RecoveryCase = ContextBuilder.build_context(payment)
         error_code = (ctx.error_code or "unknown").strip().lower()
 
         # 1. Deterministic Fast Paths
@@ -102,6 +102,18 @@ class TriageEngine:
                 is_ambiguous=False,
                 recommended_action=InterventionType.BLOCK,
                 reason="mandate_revoked",
+                confidence=1.0,
+                requires_human=False,
+            )
+
+        # Fast path for non-payment cases to avoid LLM latency
+        from backend.app.models.case import CaseType
+        if ctx.case_type != CaseType.PAYMENT_FAILURE:
+            return TriageResult(
+                error_code=ctx.error_code or "unknown",
+                is_ambiguous=False,
+                recommended_action=InterventionType.ESCALATE, # MandateRouter handles actual logic
+                reason=f"{ctx.case_type.value}_triage",
                 confidence=1.0,
                 requires_human=False,
             )

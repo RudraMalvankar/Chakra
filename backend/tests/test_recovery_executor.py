@@ -1,12 +1,13 @@
+from backend.app.models.case import RecoveryCase
 import pytest
 from unittest.mock import patch, AsyncMock
-from backend.app.models.payment import PaymentContext, RecoveryDecision, InterventionType, PaymentState
+from backend.app.models.case import RecoveryDecision, InterventionType, PaymentState
 from backend.app.services.recovery_executor import RecoveryExecutor, execute_recovery_pipeline
 
 
 @pytest.mark.asyncio
 async def test_executor_blocked_decision():
-    ctx = PaymentContext(payment_id="p_blk", amount_inr=1000.0, error_code="fraud_flag")
+    ctx = RecoveryCase(payment_id="p_blk", amount_inr=1000.0, error_code="fraud_flag")
     decision = RecoveryDecision(
         decision=InterventionType.BLOCK,
         eligibility="BLOCKED",
@@ -19,7 +20,7 @@ async def test_executor_blocked_decision():
 
 @pytest.mark.asyncio
 async def test_executor_escalated_decision():
-    ctx = PaymentContext(payment_id="p_esc", amount_inr=1000.0, error_code="insufficient_funds")
+    ctx = RecoveryCase(payment_id="p_esc", amount_inr=1000.0, error_code="insufficient_funds")
     decision = RecoveryDecision(
         decision=InterventionType.ESCALATE,
         eligibility="ESCALATED",
@@ -33,7 +34,7 @@ async def test_executor_escalated_decision():
 
 @pytest.mark.asyncio
 async def test_executor_dry_run_mode():
-    ctx = PaymentContext(payment_id="p_dry", amount_inr=1000.0, error_code="insufficient_funds")
+    ctx = RecoveryCase(payment_id="p_dry", amount_inr=1000.0, error_code="insufficient_funds")
     decision = RecoveryDecision(
         decision=InterventionType.RETRY_LATER,
         eligibility="ALLOWED",
@@ -47,7 +48,7 @@ async def test_executor_dry_run_mode():
 
 @pytest.mark.asyncio
 async def test_executor_live_retry_success():
-    ctx = PaymentContext(payment_id="p_ret_ok", amount_inr=1000.0, error_code="insufficient_funds")
+    ctx = RecoveryCase(payment_id="p_ret_ok", amount_inr=1000.0, error_code="insufficient_funds")
     decision = RecoveryDecision(
         decision=InterventionType.RETRY_LATER,
         eligibility="ALLOWED",
@@ -64,7 +65,7 @@ async def test_executor_live_retry_success():
 
 @pytest.mark.asyncio
 async def test_executor_live_retry_failure():
-    ctx = PaymentContext(payment_id="p_ret_fail", amount_inr=1000.0, error_code="insufficient_funds")
+    ctx = RecoveryCase(payment_id="p_ret_fail", amount_inr=1000.0, error_code="insufficient_funds")
     decision = RecoveryDecision(
         decision=InterventionType.RETRY_LATER,
         eligibility="ALLOWED",
@@ -80,7 +81,7 @@ async def test_executor_live_retry_failure():
 
 @pytest.mark.asyncio
 async def test_executor_live_payment_link_success():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p_link_ok",
         customer_id="cust_123",
         amount_inr=999.0,
@@ -107,7 +108,7 @@ async def test_executor_live_payment_link_success():
 
 @pytest.mark.asyncio
 async def test_executor_api_exception_handling():
-    ctx = PaymentContext(payment_id="p_err", amount_inr=1000.0, error_code="insufficient_funds")
+    ctx = RecoveryCase(payment_id="p_err", amount_inr=1000.0, error_code="insufficient_funds")
     decision = RecoveryDecision(
         decision=InterventionType.RETRY_LATER,
         eligibility="ALLOWED",

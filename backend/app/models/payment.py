@@ -24,27 +24,13 @@ class InterventionType(str, Enum):
     RETRY_LATER = "RETRY_LATER"
     PAYMENT_LINK = "PAYMENT_LINK"
     AFA_PAYMENT_LINK = "AFA_PAYMENT_LINK"
+    VOICE_RECOVERY = "VOICE_RECOVERY"
+    REMINDER = "REMINDER"
     ESCALATE = "ESCALATE"
     BLOCK = "BLOCK"
 
 
-class PaymentContext(BaseModel):
-    payment_id: str
-    customer_id: str = "unknown"
-    amount_inr: float
-    error_code: str
-    mandate_id: Optional[str] = None
-    mandate_state: MandateState = MandateState.UNKNOWN
-    network: str = "unknown"
-    is_first_transaction: bool = False
-    retry_count: int = 0
-    alerts_ignored: int = 0
-    fraud_flag: bool = False
-    currency: str = "INR"
-    bank_name: Optional[str] = "unknown"
-    current_state: PaymentState = PaymentState.RECEIVED
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    raw_metadata: Dict[str, Any] = Field(default_factory=dict)
+
 
 
 class TriageResult(BaseModel):

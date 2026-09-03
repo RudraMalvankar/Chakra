@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Union
 
 from backend.app.config import settings
-from backend.app.models.payment import PaymentContext, RecoveryDecision, InterventionType, PaymentState
+from backend.app.models.case import RecoveryCase, RecoveryDecision, InterventionType, PaymentState
 from backend.app.services.context_builder import ContextBuilder
 from backend.app.services.triage import TriageEngine
 from backend.app.services.mandate_router import MandateRouter
@@ -20,15 +20,15 @@ from backend.app.lib.audit import log_audit_event
 class RecoveryExecutor:
     @staticmethod
     async def execute(
-        ctx: Union[PaymentContext, Dict[str, Any]],
+        ctx: Union[RecoveryCase, Dict[str, Any]],
         decision: RecoveryDecision,
         dry_run: bool = False,
-    ) -> PaymentContext:
+    ) -> RecoveryCase:
         """
         Strictly executes an approved RecoveryDecision.
         Does not perform safety evaluations.
         """
-        if not isinstance(ctx, PaymentContext):
+        if not isinstance(ctx, RecoveryCase):
             ctx = ContextBuilder.build_context(ctx)
 
         # 1. Handle Blocked Decisions
@@ -83,6 +83,15 @@ class RecoveryExecutor:
                 outcome = OutcomeEvaluator.evaluate(res, ctx)
                 log_audit_event(ctx.payment_id, "execution_outcome", outcome.model_dump())
 
+            elif decision.decision == InterventionType.VOICE_RECOVERY:
+                log_audit_event(ctx.payment_id, "voice_artifact_generated", {"template_id": decision.template_id, "note": "Voice recovery artifact generated."})
+                # Simulated pending outcome for voice delivery
+                ctx.current_state = PaymentState.RECOVERY_PENDING
+
+            elif decision.decision == InterventionType.REMINDER:
+                log_audit_event(ctx.payment_id, "reminder_artifact_generated", {"template_id": decision.template_id, "note": "Reminder artifact generated."})
+                ctx.current_state = PaymentState.RECOVERY_PENDING
+
         except Exception as e:
             log_audit_event(ctx.payment_id, "execution_error", {"error": str(e)})
             ctx.current_state = PaymentState.RECOVERY_FAILED
@@ -91,15 +100,15 @@ class RecoveryExecutor:
 
 
 async def execute_recovery_pipeline(
-    payload: Union[PaymentContext, Dict[str, Any]],
+    payload: Union[RecoveryCase, Dict[str, Any]],
     dry_run: bool = False,
-) -> PaymentContext:
+) -> RecoveryCase:
     """
     6-Stage Pipeline Orchestrator:
     Context Builder -> Triage Engine -> Mandate Router -> Safety Gate -> Clean Executor
     """
     # 1. Context Builder
-    ctx: PaymentContext = ContextBuilder.build_context(payload)
+    ctx: RecoveryCase = ContextBuilder.build_context(payload)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
     # 2. Triage Engine
@@ -110,6 +119,7 @@ async def execute_recovery_pipeline(
     proposed_decision = MandateRouter.route(ctx, triage_result)
     log_audit_event(ctx.payment_id, "triage_decision_proposed", {
         "amount_inr": ctx.amount_inr,
+        "case_type": getattr(ctx, "case_type", "PAYMENT_FAILURE").value if hasattr(getattr(ctx, "case_type", None), "value") else str(getattr(ctx, "case_type", "PAYMENT_FAILURE")),
         "triage": triage_result.model_dump(),
         "decision": proposed_decision.model_dump(),
     })

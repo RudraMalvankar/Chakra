@@ -1,5 +1,6 @@
+from backend.app.models.case import RecoveryCase
 import pytest
-from backend.app.models.payment import PaymentContext, RecoveryDecision, InterventionType, SafetyEvaluation
+from backend.app.models.case import RecoveryDecision, InterventionType, SafetyEvaluation
 from backend.app.models.mandate import MandateState
 from backend.app.services.safety_gate import (
     SafetyGate,
@@ -20,7 +21,7 @@ def clean_state():
 
 
 def test_safety_gate_fraud_hard_block():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p1",
         customer_id="c1",
         amount_inr=1000.0,
@@ -41,7 +42,7 @@ def test_safety_gate_fraud_hard_block():
 
 
 def test_safety_gate_revoked_hard_block():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p2",
         customer_id="c2",
         amount_inr=1000.0,
@@ -61,7 +62,7 @@ def test_safety_gate_revoked_hard_block():
 
 
 def test_safety_gate_first_txn_afa_override():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p3",
         customer_id="c3",
         amount_inr=1000.0,
@@ -82,7 +83,7 @@ def test_safety_gate_first_txn_afa_override():
 
 
 def test_safety_gate_afa_limit_15k_override():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p4",
         customer_id="c4",
         amount_inr=16000.0,
@@ -102,7 +103,7 @@ def test_safety_gate_afa_limit_15k_override():
 
 
 def test_safety_gate_boundary_exact_15k():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p5",
         customer_id="c5",
         amount_inr=15000.0,
@@ -120,7 +121,7 @@ def test_safety_gate_boundary_exact_15k():
 
 
 def test_safety_gate_churn_alert_risk():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p6",
         customer_id="c6",
         amount_inr=1000.0,
@@ -142,7 +143,7 @@ def test_safety_gate_churn_alert_risk():
 
 def test_safety_gate_network_caps():
     # Visa cap = 15
-    ctx_visa_cap = PaymentContext(
+    ctx_visa_cap = RecoveryCase(
         payment_id="p_v15", customer_id="c_v", amount_inr=1000.0, error_code="insufficient_funds", network="visa", retry_count=15
     )
     proposed = RecoveryDecision(decision=InterventionType.RETRY_LATER, eligibility="PENDING_SAFETY", reason_code="test", policy_id="test")
@@ -151,7 +152,7 @@ def test_safety_gate_network_caps():
     assert res_visa.reason_code == "NETWORK_RETRY_CAP_REACHED"
 
     # Visa under cap = 14
-    ctx_visa_ok = PaymentContext(
+    ctx_visa_ok = RecoveryCase(
         payment_id="p_v14", customer_id="c_v", amount_inr=1000.0, error_code="insufficient_funds", network="visa", retry_count=14
     )
     res_visa_ok = SafetyGate.evaluate(ctx_visa_ok, proposed)
@@ -159,7 +160,7 @@ def test_safety_gate_network_caps():
     assert res_visa_ok.eligibility == "ALLOWED"
 
     # Mastercard cap = 10
-    ctx_mc_cap = PaymentContext(
+    ctx_mc_cap = RecoveryCase(
         payment_id="p_mc10", customer_id="c_mc", amount_inr=1000.0, error_code="insufficient_funds", network="mastercard", retry_count=10
     )
     res_mc = SafetyGate.evaluate(ctx_mc_cap, proposed)
@@ -167,7 +168,7 @@ def test_safety_gate_network_caps():
     assert res_mc.reason_code == "NETWORK_RETRY_CAP_REACHED"
 
     # Rupay cap = 15
-    ctx_rupay_cap = PaymentContext(
+    ctx_rupay_cap = RecoveryCase(
         payment_id="p_rup15", customer_id="c_rup", amount_inr=1000.0, error_code="insufficient_funds", network="rupay", retry_count=15
     )
     res_rupay = SafetyGate.evaluate(ctx_rupay_cap, proposed)
@@ -176,7 +177,7 @@ def test_safety_gate_network_caps():
 
 
 def test_safety_gate_idempotency_lock():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p_idem_1",
         customer_id="c_idem",
         amount_inr=1000.0,
@@ -214,12 +215,12 @@ def test_safety_gate_customer_budget():
     )
 
     for i in range(1, 4):
-        ctx = PaymentContext(payment_id=f"p_b_{i}", customer_id=customer, amount_inr=100.0, error_code="insufficient_funds")
+        ctx = RecoveryCase(payment_id=f"p_b_{i}", customer_id=customer, amount_inr=100.0, error_code="insufficient_funds")
         res = SafetyGate.evaluate(ctx, proposed, day=f"2026-09-0{i}")
         assert res.eligibility == "ALLOWED"
 
     # 4th intervention in the month -> BLOCK
-    ctx_4 = PaymentContext(payment_id="p_b_4", customer_id=customer, amount_inr=100.0, error_code="insufficient_funds")
+    ctx_4 = RecoveryCase(payment_id="p_b_4", customer_id=customer, amount_inr=100.0, error_code="insufficient_funds")
     res_4 = SafetyGate.evaluate(ctx_4, proposed, day="2026-09-04")
     assert res_4.decision == InterventionType.BLOCK
     assert res_4.eligibility == "BLOCKED"
@@ -227,7 +228,7 @@ def test_safety_gate_customer_budget():
 
 
 def test_safety_gate_detailed_evaluation():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p_detail",
         customer_id="c_detail",
         amount_inr=18000.0,
@@ -249,7 +250,7 @@ def test_safety_gate_detailed_evaluation():
 
 
 def test_safety_engine_re_export_compatibility():
-    ctx = PaymentContext(
+    ctx = RecoveryCase(
         payment_id="p_compat",
         customer_id="c_compat",
         amount_inr=1000.0,

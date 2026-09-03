@@ -15,7 +15,7 @@ if hasattr(sys.stdout, "reconfigure"):
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 
-from backend.app.models.payment import PaymentContext, InterventionType, PaymentState
+from backend.app.models.case import RecoveryCase, InterventionType, PaymentState
 from backend.app.services.context_builder import ContextBuilder
 from backend.app.services.triage import TriageEngine
 from backend.app.services.mandate_router import MandateRouter

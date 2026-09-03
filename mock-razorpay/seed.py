@@ -145,6 +145,69 @@ def generate_mock_data():
                 "retries_this_month": random.randint(0, 5)
             }
         })
-    return base
+        
+    # Add 25 new cases covering new CaseTypes
+    new_cases = []
+    # 5 Subscriptions (0, 3, 7, 14, 30 days)
+    for i, days in enumerate([0, 3, 7, 14, 30]):
+        new_cases.append({
+            "event": "subscription.failed",
+            "payload": {
+                "subscription": {
+                    "id": f"sub_Mck_new_{i}",
+                    "customer_id": f"cust_new_sub_{i}",
+                    "amount": 19900,
+                    "currency": "INR",
+                    "status": "halted",
+                    "notes": {"days_overdue": days, "failure_reason": "insufficient_funds"}
+                }
+            }
+        })
+    # 5 Checkout Abandonments
+    for i in range(5):
+        new_cases.append({
+            "event": "checkout.abandoned",
+            "payload": {
+                "checkout": {
+                    "id": f"chk_new_{i}",
+                    "customer_id": f"cust_new_chk_{i}",
+                    "amount": 59900,
+                    "currency": "INR",
+                    "status": "abandoned"
+                }
+            }
+        })
+    # 5 Receivables (10, 45, 90 days)
+    for i, days in enumerate([10, 45, 90, 20, 50]):
+        new_cases.append({
+            "event": "invoice.overdue",
+            "payload": {
+                "invoice": {
+                    "id": f"inv_new_{i}",
+                    "customer_id": f"cust_new_inv_{i}",
+                    "amount": 5000000,
+                    "currency": "INR",
+                    "status": "overdue",
+                    "notes": {"days_overdue": days}
+                }
+            }
+        })
+    # 5 Promise to Pay
+    for i, status in enumerate(["ACTIVE", "BROKEN", "ACTIVE", "BROKEN", "ACTIVE"]):
+        new_cases.append({
+            "event": "promise.updated",
+            "payload": {
+                "promise": {
+                    "id": f"ptp_new_{i}",
+                    "customer_id": f"cust_new_ptp_{i}",
+                    "amount": 1500000,
+                    "currency": "INR",
+                    "status": status,
+                    "notes": {"promise_status": status, "failure_reason": "broken" if status == "BROKEN" else ""}
+                }
+            }
+        })
+        
+    return base + new_cases
 
 SEED_DATA = generate_mock_data()

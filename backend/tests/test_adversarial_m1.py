@@ -1,10 +1,11 @@
+from backend.app.models.case import RecoveryCase
 import hashlib
 import pytest
 from backend.app.models.mandate import MandateState, Mandate
 from backend.app.models.payment import (
     PaymentState,
     InterventionType,
-    PaymentContext,
+    
     TriageResult,
     RecoveryDecision,
     SafetyEvaluation,
@@ -21,7 +22,7 @@ class TestAdversarialBugsAndVulnerabilities:
     def test_entity_none_attribute_error(self):
         payload = {"payload": {"payment": {"entity": None}}}
         ctx = ContextBuilder.build_context(payload)
-        assert isinstance(ctx, PaymentContext)
+        assert isinstance(ctx, RecoveryCase)
         assert ctx.payment_id == "unknown"
         assert ctx.amount_inr == 0.0
         assert ctx.retry_count == 0
@@ -30,13 +31,13 @@ class TestAdversarialBugsAndVulnerabilities:
     def test_entity_string_attribute_error(self):
         payload = {"payload": {"payment": {"entity": "corrupted_payload"}}}
         ctx = ContextBuilder.build_context(payload)
-        assert isinstance(ctx, PaymentContext)
+        assert isinstance(ctx, RecoveryCase)
         assert ctx.payment_id == "unknown"
 
     def test_payment_entity_int_attribute_error(self):
         payload = {"payment": {"entity": 12345}}
         ctx = ContextBuilder.build_context(payload)
-        assert isinstance(ctx, PaymentContext)
+        assert isinstance(ctx, RecoveryCase)
         assert ctx.payment_id == "unknown"
 
     # --- FIX 2: pii_redact safe handling on metadata pre_debit_alerts_ignored = None / non-int ---
@@ -97,7 +98,7 @@ class TestAdversarialStressAndNormalizations:
 
     def test_empty_payload_safe_fallback(self):
         ctx = ContextBuilder.build_context({})
-        assert isinstance(ctx, PaymentContext)
+        assert isinstance(ctx, RecoveryCase)
         assert ctx.payment_id == "unknown"
         assert ctx.customer_id == "unknown"
         assert ctx.amount_inr == 0.0

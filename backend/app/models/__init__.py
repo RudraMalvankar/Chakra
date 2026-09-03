@@ -5,19 +5,19 @@ from backend.app.models.mandate import (
 from backend.app.models.payment import (
     PaymentState,
     InterventionType,
-    PaymentContext,
     TriageResult,
     RecoveryDecision,
     SafetyEvaluation,
     OutcomeResult,
 )
+from backend.app.models.case import RecoveryCase
 
 __all__ = [
     "MandateState",
     "Mandate",
     "PaymentState",
     "InterventionType",
-    "PaymentContext",
+    "RecoveryCase",
     "TriageResult",
     "RecoveryDecision",
     "SafetyEvaluation",

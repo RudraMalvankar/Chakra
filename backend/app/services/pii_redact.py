@@ -1,7 +1,7 @@
 import hashlib
 from typing import Dict, Any, Union
 from pydantic import BaseModel
-from backend.app.models.payment import PaymentContext
+from backend.app.models.case import RecoveryCase
 
 
 def _safe_int(val: Any, fallback: int = 0) -> int:
@@ -18,10 +18,10 @@ def _safe_int(val: Any, fallback: int = 0) -> int:
             return fallback
 
 
-def redact_for_llm(payment: Union[Dict[str, Any], PaymentContext]) -> Dict[str, Any]:
+def redact_for_llm(payment: Union[Dict[str, Any], RecoveryCase]) -> Dict[str, Any]:
     """
     Strips PII (exact amounts, names, phone numbers, customer IDs) before sending to Gemini.
-    Accepts both PaymentContext Pydantic instances and raw/seed dictionaries seamlessly.
+    Accepts both RecoveryCase Pydantic instances and raw/seed dictionaries seamlessly.
     Guarantees DPDP Act compliance by returning `pii_redacted: True`.
     """
     if isinstance(payment, BaseModel):
@@ -74,7 +74,7 @@ def redact_for_llm(payment: Union[Dict[str, Any], PaymentContext]) -> Dict[str, 
 
         alerts_ignored = _safe_int(raw_alerts, 0)
     else:
-        raise TypeError(f"Expected dict or PaymentContext, got {type(payment)}")
+        raise TypeError(f"Expected dict or RecoveryCase, got {type(payment)}")
 
     # 1. Bucket Amount (exact RBI/Chakra thresholds)
     if amt_inr < 5000:
