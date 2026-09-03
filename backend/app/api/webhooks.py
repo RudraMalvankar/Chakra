@@ -62,14 +62,28 @@ async def razorpay_webhook(
 
     event_type = payload.get("event")
 
+    # Supported event types for revenue recovery
+    supported_events = [
+        "payment.failed", "payment_failed", "order.failed",
+        "subscription.failed", "subscription.halted",
+        "checkout.abandoned",
+        "invoice.overdue", "receivable.overdue",
+        "promise.updated", "promise.broken"
+    ]
+
     # Ingest failure events
-    if event_type in ["payment.failed", "payment_failed", "order.failed"]:
+    if event_type in supported_events:
         ctx = ContextBuilder.build_context(payload)
+        
+        # If case_id is missing/unknown, it's not a valid case for recovery
+        if ctx.case_id == "unknown" and not ctx.payment_id:
+            return {"status": "ignored", "reason": "insufficient_data"}
+            
         final_ctx = await execute_recovery_pipeline(ctx, dry_run=settings.dry_run)
         return {
             "status": "ok",
-            "payment_id": final_ctx.payment_id,
-            "state": final_ctx.current_state.value,
+            "case_id": final_ctx.case_id,
+            "state": final_ctx.current_state.value if hasattr(final_ctx.current_state, "value") else final_ctx.current_state,
         }
 
     return {"status": "ignored", "event": event_type}

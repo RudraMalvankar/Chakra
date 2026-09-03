@@ -176,7 +176,7 @@ def test_webhook_api_end_to_end():
     assert resp.status_code == 200
     data = resp.json()
     assert data["status"] == "ok"
-    assert data["payment_id"] == "pay_webhook_e2e_1"
+    assert data.get("case_id") == "pay_webhook_e2e_1" or data.get("payment_id") == "pay_webhook_e2e_1"
 
     # Invalid signature
     resp_invalid = client.post(
