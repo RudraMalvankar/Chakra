@@ -103,3 +103,20 @@ def test_safety_revoked():
     d = RecoveryAgent.decide(case)
     
     assert d.selected_action == "BLOCK"
+
+def test_explicit_expected_recovery_math():
+    case = create_case(CaseType.PAYMENT_FAILURE, 1000.0, error_code="insufficient_funds")
+    decision = RecoveryAgent.decide(case)
+    
+    # 1. Base probability from Risk Engine baseline is preserved in candidate
+    retry_later = next(c for c in decision.candidate_actions if c.action == "RETRY_LATER")
+    assert retry_later.base_probability == 0.6
+    
+    # 2. Probability modifier is applied
+    assert retry_later.probability_modifier == 1.1
+    
+    # 3. Effective probability is clamped correctly (0.6 * 1.1 = 0.66)
+    assert retry_later.effective_probability == pytest.approx(0.66)
+    
+    # 4. Expected recovery = amount * effective probability
+    assert retry_later.expected_recovery_inr == pytest.approx(660.0)

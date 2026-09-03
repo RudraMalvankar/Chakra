@@ -258,8 +258,12 @@ async def main():
             print("\nCANDIDATE INTERVENTIONS:")
             for cand in d.get("candidate_actions", []):
                 print(f"  - ACTION: {cand.get('action')}")
-                print(f"    SCORE: {cand.get('score')}")
+                if "base_probability" in cand:
+                    print(f"    BASE PROBABILITY: {cand.get('base_probability')}")
+                    print(f"    INTERVENTION MODIFIER: {cand.get('probability_modifier')}")
+                    print(f"    EFFECTIVE PROBABILITY: {cand.get('effective_probability')}")
                 print(f"    EXPECTED RECOVERY: ₹{cand.get('expected_recovery_inr')}")
+                print(f"    SCORE: {cand.get('score')}")
                 print(f"    ELIGIBLE: {cand.get('eligible')}")
                 print(f"    REASON: {cand.get('reason')}")
             
@@ -278,8 +282,10 @@ async def main():
         if outcome_ev:
             d = outcome_ev["details"]
             print("\nEXECUTION RESULT:", d.get("status"))
-            print("PROVIDER OUTCOME:", d.get("outcome"))
-            print(f"RECOVERED AMOUNT: ₹{d.get('amount_inr', 0) if d.get('recovered') else 0}")
+            raw = d.get("raw_response", {})
+            provider_out = raw.get("outcome") or raw.get("status") or d.get("status")
+            print("PROVIDER OUTCOME:", provider_out)
+            print(f"RECOVERED AMOUNT: ₹{d.get('amount_recovered_inr', 0)}")
         elif blocked_ev:
             print("\nEXECUTION RESULT: BLOCKED")
             print("PROVIDER OUTCOME: NONE")

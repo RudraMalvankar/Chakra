@@ -22,6 +22,9 @@ class RevenueRiskAssessment(BaseModel):
 
 class CandidateAction(BaseModel):
     action: str
+    base_probability: float = 0.0
+    probability_modifier: float = 1.0
+    effective_probability: float = 0.0
     score: float
     expected_recovery_inr: float
     eligible: bool

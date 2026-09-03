@@ -28,6 +28,9 @@ class RecoveryAgent:
                 
             candidates.append(CandidateAction(
                 action=action.value if hasattr(action, 'value') else str(action),
+                base_probability=round(base_probability, 2),
+                probability_modifier=round(p_mod, 2),
+                effective_probability=round(eff_p, 2),
                 score=round(score, 2),
                 expected_recovery_inr=round(exp_rec, 2),
                 eligible=eligible,
