@@ -91,6 +91,19 @@ def generate_metrics_report(audit_file: Optional[str] = None) -> Dict[str, Any]:
                 amt = float(details.get("amount_inr", 0.0))
                 payment_amounts[pid] = amt
                 payment_case_type[pid] = details.get("case_type", "PAYMENT_FAILURE")
+            
+            elif etype == "revenue_risk_assessed":
+                amt = float(details.get("revenue_at_risk_inr", 0.0))
+                payment_amounts[pid] = amt
+                # Case type is embedded in reason or we can infer it, but let's just default or let something else set it
+                if "case_type" in details:
+                    payment_case_type[pid] = details.get("case_type", "PAYMENT_FAILURE")
+                    
+            elif etype == "agent_decision_proposed":
+                if "amount_inr" in details:
+                    payment_amounts[pid] = float(details.get("amount_inr", 0.0))
+                if "case_type" in details:
+                    payment_case_type[pid] = details.get("case_type", "PAYMENT_FAILURE")
 
             elif etype == "safety_check_completed":
                 dec = str(details.get("decision", "")).strip().upper()

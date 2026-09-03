@@ -124,11 +124,11 @@ async def main():
     print("\n[*] Loading mixed revenue recovery benchmark (120 cases)...")
     payments = SEED_DATA
     print(f"    Loaded {len(payments)} cases from seed dataset")
-    print("    PAYMENT_FAILURE: 100")
-    print("    SUBSCRIPTION: 5")
-    print("    CHECKOUT_ABANDONMENT: 5")
-    print("    RECEIVABLE: 5")
-    print("    PROMISE_TO_PAY: 5")
+    print("    PAYMENT_FAILURE: 24")
+    print("    SUBSCRIPTION: 24")
+    print("    CHECKOUT_ABANDONMENT: 24")
+    print("    RECEIVABLE: 24")
+    print("    PROMISE_TO_PAY: 24")
 
     # Check if mock HTTP server is active
     server_active = await check_mock_server_running(settings.mock_razorpay_url)

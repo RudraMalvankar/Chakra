@@ -32,7 +32,7 @@ const Overview = ({ metrics }) => {
             <div className="flex justify-between items-center border-b border-gray-800 pb-4">
                 <div>
                     <h1 className="text-3xl font-bold tracking-tight text-white">CHAKRA</h1>
-                    <p className="text-gray-400 font-mono text-sm mt-1">Autonomous Revenue Recovery Engine</p>
+                    <p className="text-gray-400 font-mono text-sm mt-1">Autonomous Revenue Recovery Agent</p>
                 </div>
                 <div className="bg-blue-900/20 border border-blue-800 text-blue-400 px-3 py-1 rounded text-xs font-mono">
                     {metrics.simulation_disclosure || "Synthetic 120-case benchmark"}
@@ -283,41 +283,48 @@ const CaseDetail = ({ caseId, onBack }) => {
 
     const stages = [];
     
-    const triageEvt = trace.find(e => e.event_type === 'triage_decision_proposed');
+        const riskEvt = trace.find(e => e.event_type === 'revenue_risk_assessed');
+    const agentEvt = trace.find(e => e.event_type === 'agent_decision_proposed');
     const safetyEvt = trace.find(e => e.event_type === 'safety_check_completed');
-    const outcomeEvt = trace.find(e => e.event_type === 'execution_outcome' || e.event_type === 'retry_scheduled' || e.event_type === 'execution_blocked' || e.event_type === 'execution_escalated' || e.event_type === 'voice_artifact_generated' || e.event_type === 'reminder_artifact_generated');
+    const outcomeEvt = trace.find(e => ['execution_outcome', 'retry_scheduled', 'execution_blocked', 'execution_escalated', 'voice_artifact_generated', 'reminder_artifact_generated'].includes(e.event_type));
 
-    let caseType = triageEvt?.details?.case_type || "UNKNOWN";
-    let amount = triageEvt?.details?.amount_inr || 0;
+    let caseType = agentEvt?.details?.case_type || "UNKNOWN";
+    let amount = agentEvt?.details?.amount_inr || riskEvt?.details?.revenue_at_risk_inr || 0;
 
     stages.push({
         name: "EVENT",
         data: {
             type: caseType,
             amount: formatCurrency(amount),
-            timestamp: triageEvt?.timestamp,
+            timestamp: agentEvt?.timestamp,
             case_id: caseId
         }
     });
 
-    stages.push({
-        name: "CONTEXT",
-        data: {
-            amount: formatCurrency(amount),
-            previous_interventions: '0'
-        }
-    });
-
-    if (triageEvt) {
+    if (riskEvt) {
         stages.push({
-            name: "TRIAGE",
+            name: "REVENUE RISK ASSESSMENT",
             data: {
-                classification: triageEvt.details.triage?.reason || "-",
-                confidence: `${((triageEvt.details.triage?.confidence || 0) * 100).toFixed(0)}%`,
-                recommended_action: triageEvt.details.triage?.recommended_action,
-                is_ambiguous: triageEvt.details.triage?.is_ambiguous
+                "Revenue At Risk": formatCurrency(riskEvt.details.revenue_at_risk_inr),
+                "Expected Recovery": formatCurrency(riskEvt.details.expected_recovery_inr),
+                "Probability": `${(riskEvt.details.recovery_probability * 100).toFixed(0)}%`,
+                "Priority": riskEvt.details.priority,
+                "Urgency": riskEvt.details.urgency,
+                "Risk Factors": (riskEvt.details.risk_factors || []).join(", ")
             }
         });
+    }
+
+    if (agentEvt) {
+        stages.push({
+            name: "AGENT DECISION",
+            data: {
+                "Selected Action": agentEvt.details.selected_action,
+                "Confidence": `${(agentEvt.details.confidence * 100).toFixed(0)}%`,
+                "Decision Factors": (agentEvt.details.decision_factors || []).join(", ")
+            }
+        });
+    });
         
         stages.push({
             name: "AI FALLBACK",
@@ -642,16 +649,10 @@ const Architecture = () => {
                     </div>
                     <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
                     
-                    <div className="bg-blue-900/20 border border-blue-800 text-blue-400 py-3 rounded font-bold">RecoveryCase</div>
+                    <div className="bg-dark border border-gray-700 text-gray-300 py-3 rounded font-bold">Revenue Risk Engine</div>
                     <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
                     
-                    <div className="bg-dark border border-gray-700 text-gray-300 py-3 rounded font-bold">Triage Engine</div>
-                    <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
-                    
-                    <div className="bg-purple-900/20 border border-purple-800 text-purple-400 py-3 rounded border-dashed">AI Fallback <span className="text-xs font-normal opacity-70 block">(Gemini only for ambiguous cases)</span></div>
-                    <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
-                    
-                    <div className="bg-dark border border-gray-700 text-gray-300 py-3 rounded font-bold">Mandate / Policy Router</div>
+                    <div className="bg-dark border border-gray-700 text-gray-300 py-3 rounded font-bold">Recovery Agent</div>
                     <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
                     
                     <div className="bg-dark border border-red-800 text-red-400 py-3 rounded font-bold uppercase tracking-widest">Non-Overridable Safety Gate</div>

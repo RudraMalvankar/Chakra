@@ -10,6 +10,27 @@ class CaseType(str, Enum):
     RECEIVABLE = "RECEIVABLE"
     PROMISE_TO_PAY = "PROMISE_TO_PAY"
 
+class RevenueRiskAssessment(BaseModel):
+    revenue_at_risk_inr: float
+    recovery_probability: float
+    expected_recovery_inr: float
+    priority: str
+    urgency: str
+    risk_factors: List[str]
+    recovery_window: str
+    reason: str
+
+class AlternativeAction(BaseModel):
+    action: str
+    reason_rejected: str
+
+class AgentDecision(BaseModel):
+    selected_action: str
+    confidence: float
+    decision_factors: List[str]
+    expected_recovery_inr: float
+    alternative_actions: List[AlternativeAction] = Field(default_factory=list)
+
 class RecoveryCase(BaseModel):
     case_id: str = "unknown"
     case_type: CaseType = CaseType.PAYMENT_FAILURE
@@ -20,6 +41,7 @@ class RecoveryCase(BaseModel):
     failure_reason: str = "unknown"
     context: Dict[str, Any] = Field(default_factory=dict)
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    risk_assessment: Optional[RevenueRiskAssessment] = None
     
     retry_count: int = 0
     alerts_ignored: int = 0
@@ -41,7 +63,7 @@ class RecoveryCase(BaseModel):
             # Put extra kwargs into context
             context = data.get("context", {})
             for key in list(data.keys()):
-                if key not in ["case_id", "case_type", "customer_id", "amount_at_risk", "currency", "status", "failure_reason", "context", "metadata", "retry_count", "alerts_ignored", "fraud_flag"]:
+                if key not in ["case_id", "case_type", "customer_id", "amount_at_risk", "currency", "status", "failure_reason", "context", "metadata", "retry_count", "alerts_ignored", "fraud_flag", "risk_assessment"]:
                     context[key] = data.pop(key)
             data["context"] = context
         return data

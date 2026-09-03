@@ -20,8 +20,8 @@ def test_benchmark_case_distribution():
         ctx = ContextBuilder.build_context(payload)
         distribution[ctx.case_type] += 1
         
-    assert distribution[CaseType.PAYMENT_FAILURE] == 100
-    assert distribution[CaseType.SUBSCRIPTION] == 5
-    assert distribution[CaseType.CHECKOUT_ABANDONMENT] == 5
-    assert distribution[CaseType.RECEIVABLE] == 5
-    assert distribution[CaseType.PROMISE_TO_PAY] == 5
+    assert distribution[CaseType.PAYMENT_FAILURE] == 24
+    assert distribution[CaseType.SUBSCRIPTION] == 24
+    assert distribution[CaseType.CHECKOUT_ABANDONMENT] == 24
+    assert distribution[CaseType.RECEIVABLE] == 24
+    assert distribution[CaseType.PROMISE_TO_PAY] == 24

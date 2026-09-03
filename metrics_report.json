@@ -1,24 +1,32 @@
 {
   "metrics": {
     "payments_processed": 120,
-    "payments_recovery_eligible": 83,
-    "payments_blocked": 4,
-    "payments_escalated": 33,
-    "interventions_attempted": 53,
-    "interventions_succeeded": 32,
+    "payments_recovery_eligible": 71,
+    "payments_blocked": 13,
+    "payments_escalated": 36,
+    "interventions_attempted": 67,
+    "interventions_succeeded": 52,
     "dry_run_actions_proposed": 0,
-    "payments_recovered": 32,
-    "payments_failed_recovery": 21,
-    "revenue_at_risk_inr": 760144.0,
-    "revenue_attempted_inr": 479677.0,
-    "revenue_recovered_inr": 277086.0,
-    "revenue_recovery_rate_pct": 36.45,
-    "payment_recovery_rate_pct": 26.67,
-    "intervention_success_rate_pct": 60.38,
-    "safety_block_rate_pct": 3.33,
-    "escalation_rate_pct": 27.5,
+    "payments_recovered": 52,
+    "payments_failed_recovery": 15,
+    "revenue_at_risk_inr": 3560390.86,
+    "revenue_attempted_inr": 2299207.07,
+    "revenue_recovered_inr": 1950019.64,
+    "revenue_recovery_rate_pct": 54.77,
+    "payment_recovery_rate_pct": 43.33,
+    "intervention_success_rate_pct": 77.61,
+    "safety_block_rate_pct": 10.83,
+    "escalation_rate_pct": 30.0,
     "by_intervention": {
       "RETRY_NOW": {
+        "attempted": 5,
+        "succeeded": 1,
+        "failed": 4,
+        "pending": 0,
+        "revenue_attempted_inr": 3446.61,
+        "revenue_recovered_inr": 835.99
+      },
+      "RETRY_LATER": {
         "attempted": 0,
         "succeeded": 0,
         "failed": 0,
@@ -26,29 +34,21 @@
         "revenue_attempted_inr": 0.0,
         "revenue_recovered_inr": 0.0
       },
-      "RETRY_LATER": {
-        "attempted": 26,
-        "succeeded": 0,
-        "failed": 0,
-        "pending": 26,
-        "revenue_attempted_inr": 21185.0,
-        "revenue_recovered_inr": 0.0
-      },
       "PAYMENT_LINK": {
-        "attempted": 34,
-        "succeeded": 20,
-        "failed": 14,
+        "attempted": 30,
+        "succeeded": 24,
+        "failed": 6,
         "pending": 0,
-        "revenue_attempted_inr": 29177.0,
-        "revenue_recovered_inr": 16586.0
+        "revenue_attempted_inr": 42715.20999999998,
+        "revenue_recovered_inr": 37204.72999999998
       },
       "AFA_PAYMENT_LINK": {
-        "attempted": 19,
-        "succeeded": 12,
-        "failed": 7,
+        "attempted": 32,
+        "succeeded": 27,
+        "failed": 5,
         "pending": 0,
-        "revenue_attempted_inr": 450500.0,
-        "revenue_recovered_inr": 260500.0
+        "revenue_attempted_inr": 2253045.2500000005,
+        "revenue_recovered_inr": 1911978.9200000004
       },
       "VOICE_RECOVERY": {
         "attempted": 0,
@@ -59,60 +59,60 @@
         "revenue_recovered_inr": 0.0
       },
       "REMINDER": {
-        "attempted": 3,
+        "attempted": 0,
         "succeeded": 0,
         "failed": 0,
-        "pending": 3,
-        "revenue_attempted_inr": 45000.0,
+        "pending": 0,
+        "revenue_attempted_inr": 0.0,
         "revenue_recovered_inr": 0.0
       },
       "ESCALATE": {
-        "attempted": 33,
+        "attempted": 36,
         "succeeded": 0,
-        "failed": 33,
+        "failed": 36,
         "pending": 0,
-        "revenue_attempted_inr": 209885.0,
+        "revenue_attempted_inr": 1091201.01,
         "revenue_recovered_inr": 0.0
       },
       "BLOCK": {
-        "attempted": 4,
+        "attempted": 13,
         "succeeded": 0,
-        "failed": 4,
+        "failed": 13,
         "pending": 0,
-        "revenue_attempted_inr": 4198.0,
+        "revenue_attempted_inr": 167110.34999999998,
         "revenue_recovered_inr": 0.0
       }
     },
     "by_case_type": {
       "PAYMENT_FAILURE": {
-        "processed": 100,
-        "recovered": 25,
-        "revenue_at_risk": 431154.0,
-        "revenue_recovered": 174491.0
+        "processed": 24,
+        "recovered": 3,
+        "revenue_at_risk": 276035.53,
+        "revenue_recovered": 17535.120000000003
       },
       "SUBSCRIPTION": {
-        "processed": 5,
-        "recovered": 1,
-        "revenue_at_risk": 995.0,
-        "revenue_recovered": 199.0
+        "processed": 24,
+        "recovered": 5,
+        "revenue_at_risk": 14620.039999999999,
+        "revenue_recovered": 3344.74
       },
       "CHECKOUT_ABANDONMENT": {
-        "processed": 5,
-        "recovered": 4,
-        "revenue_at_risk": 2995.0,
-        "revenue_recovered": 2396.0
+        "processed": 24,
+        "recovered": 18,
+        "revenue_at_risk": 23837.87,
+        "revenue_recovered": 18327.39
       },
       "RECEIVABLE": {
-        "processed": 5,
-        "recovered": 2,
-        "revenue_at_risk": 250000.0,
-        "revenue_recovered": 100000.0
+        "processed": 24,
+        "recovered": 14,
+        "revenue_at_risk": 2479860.1700000004,
+        "revenue_recovered": 1486914.8700000003
       },
       "PROMISE_TO_PAY": {
-        "processed": 5,
-        "recovered": 0,
-        "revenue_at_risk": 75000.0,
-        "revenue_recovered": 0.0
+        "processed": 24,
+        "recovered": 12,
+        "revenue_at_risk": 766037.2499999999,
+        "revenue_recovered": 423897.52
       }
     }
   },
@@ -123,6 +123,6 @@
     "all_passed": true
   },
   "simulation_disclosure": "Synthetic benchmark \u2014 not production Razorpay data.",
-  "audit_event_count": 360,
+  "audit_event_count": 480,
   "audit_log_path": "C:\\Users\\mypc\\Desktop\\Chakra\\audit_log.jsonl"
 }

@@ -122,92 +122,112 @@ MOCK_PAYMENTS = [
 ]
 
 def generate_mock_data():
-    base = list(MOCK_PAYMENTS)
     import random
-    random.seed(42) # Deterministic for demo
+    random.seed(42)
+    base = []
     
-    for i in range(8, 101):
-        amt = random.choice([50000, 99900, 149900, 1800000]) # 18k hits AFA
-        err = random.choice(["insufficient_funds", "card_declined", "expired_card", "payment_timed_out"])
+    # 24 PAYMENT_FAILURE
+    for i in range(24):
+        amt = random.randint(50000, 2000000)
+        err = random.choice(["insufficient_funds", "card_declined", "expired_card", "payment_timed_out", "fraud_flag", "mandate_revoked"])
         base.append({
-            "payment_id": f"pay_Mck_{i:03d}",
-            "subscription_id": f"sub_Mck_{i:03d}",
-            "amount": amt,
-            "currency": "INR",
-            "customer_id": f"cust_{i:03d}",
-            "error_code": err,
-            "status": "failed",
-            "is_first_transaction": False, # mostly false
-            "metadata": {
-                "pre_debit_alerts_ignored": random.choice([0, 0, 0, 1, 2]),
-                "bank_name": random.choice(["HDFC", "SBI", "ICICI", "Axis"]),
-                "network": random.choice(["visa", "mastercard", "rupay"]),
-                "retries_this_month": random.randint(0, 5)
+            "event": "payment.failed",
+            "payload": {
+                "payment": {
+                    "entity": {
+                        "id": f"pay_Mck_{i:03d}",
+                        "amount": amt,
+                        "currency": "INR",
+                        "customer_id": f"cust_{i:03d}",
+                        "error_code": err,
+                        "status": "failed",
+                        "is_first_transaction": random.choice([True, False, False]),
+                        "metadata": {
+                            "pre_debit_alerts_ignored": random.choice([0, 0, 0, 1, 2, 3]),
+                            "bank_name": random.choice(["HDFC", "SBI", "ICICI", "Axis"]),
+                            "network": random.choice(["visa", "mastercard", "rupay"]),
+                            "retries_this_month": random.choice([0, 1, 15, 20])
+                        }
+                    }
+                }
             }
         })
         
-    # Add 25 new cases covering new CaseTypes
     new_cases = []
-    # 5 Subscriptions (0, 3, 7, 14, 30 days)
-    for i, days in enumerate([0, 3, 7, 14, 30]):
+    
+    # 24 Subscriptions
+    for i in range(24):
+        days = random.choice([0, 3, 7, 14, 30])
         new_cases.append({
             "event": "subscription.failed",
             "payload": {
                 "subscription": {
-                    "id": f"sub_Mck_new_{i}",
-                    "customer_id": f"cust_new_sub_{i}",
-                    "amount": 19900,
-                    "currency": "INR",
-                    "status": "halted",
-                    "notes": {"days_overdue": days, "failure_reason": "insufficient_funds"}
+                    "entity": {
+                        "id": f"sub_Mck_new_{i}",
+                        "customer_id": f"cust_new_sub_{i}",
+                        "amount": random.randint(19900, 99900),
+                        "currency": "INR",
+                        "status": "failed",
+                        "notes": {"days_overdue": days}
+                    }
                 }
             }
         })
-    # 5 Checkout Abandonments
-    for i in range(5):
+        
+    # 24 Checkout Abandonment
+    for i in range(24):
         new_cases.append({
             "event": "checkout.abandoned",
             "payload": {
                 "checkout": {
-                    "id": f"chk_new_{i}",
-                    "customer_id": f"cust_new_chk_{i}",
-                    "amount": 59900,
-                    "currency": "INR",
-                    "status": "abandoned"
+                    "entity": {
+                        "id": f"order_new_{i}",
+                        "customer_id": f"cust_new_ord_{i}",
+                        "amount": random.randint(59900, 159900),
+                        "currency": "INR",
+                        "status": "abandoned"
+                    }
                 }
             }
         })
-    # 5 Receivables (10, 45, 90 days)
-    for i, days in enumerate([10, 45, 90, 20, 50]):
+        
+    # 24 Receivables
+    for i in range(24):
+        days = random.choice([10, 35, 45, 90, 20, 50, 120])
         new_cases.append({
             "event": "invoice.overdue",
             "payload": {
                 "invoice": {
-                    "id": f"inv_new_{i}",
-                    "customer_id": f"cust_new_inv_{i}",
-                    "amount": 5000000,
-                    "currency": "INR",
-                    "status": "overdue",
-                    "notes": {"days_overdue": days}
+                    "entity": {
+                        "id": f"inv_new_{i}",
+                        "customer_id": f"cust_new_inv_{i}",
+                        "amount": random.randint(5000000, 15000000),
+                        "currency": "INR",
+                        "status": "overdue",
+                        "metadata": {"days_overdue": days}
+                    }
                 }
             }
         })
-    # 5 Promise to Pay
-    for i, status in enumerate(["ACTIVE", "BROKEN", "ACTIVE", "BROKEN", "ACTIVE"]):
+        
+    # 24 Promise to Pay
+    for i in range(24):
+        status = random.choice(["ACTIVE", "BROKEN"])
         new_cases.append({
             "event": "promise.updated",
             "payload": {
                 "promise": {
-                    "id": f"ptp_new_{i}",
-                    "customer_id": f"cust_new_ptp_{i}",
-                    "amount": 1500000,
-                    "currency": "INR",
-                    "status": status,
-                    "notes": {"promise_status": status, "failure_reason": "broken" if status == "BROKEN" else ""}
+                    "entity": {
+                        "id": f"ptp_new_{i}",
+                        "customer_id": f"cust_new_ptp_{i}",
+                        "amount": random.randint(1500000, 5000000),
+                        "currency": "INR",
+                        "status": status,
+                        "notes": {"promise_status": status, "failure_reason": "broken" if status == "BROKEN" else ""}
+                    }
                 }
             }
         })
         
     return base + new_cases
-
 SEED_DATA = generate_mock_data()

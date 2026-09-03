@@ -140,25 +140,39 @@ async def execute_recovery_pipeline(
 ) -> RecoveryCase:
     """
     6-Stage Pipeline Orchestrator:
-    Context Builder -> Triage Engine -> Mandate Router -> Safety Gate -> Clean Executor
+    Context Builder -> Revenue Risk Engine -> Recovery Agent -> Safety Gate -> Clean Executor -> Outcome Evaluator
     """
+    from backend.app.services.revenue_risk_engine import RevenueRiskEngine
+    from backend.app.services.recovery_agent import RecoveryAgent
+    
     ctx: RecoveryCase = ContextBuilder.build_context(payload)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-    ctx.current_state = PaymentState.TRIAGED
-    triage_result = TriageEngine.triage(ctx)
+    # 1. Detect & Assess Revenue Risk
+    risk_assessment = RevenueRiskEngine.assess(ctx)
+    log_audit_event(ctx.payment_id, "revenue_risk_assessed", risk_assessment.model_dump())
 
-    proposed_decision = MandateRouter.route(ctx, triage_result)
-    log_audit_event(ctx.payment_id, "triage_decision_proposed", {
-        "amount_inr": ctx.amount_inr,
-        "case_type": getattr(ctx, "case_type", "PAYMENT_FAILURE").value if hasattr(getattr(ctx, "case_type", None), "value") else str(getattr(ctx, "case_type", "PAYMENT_FAILURE")),
-        "triage": triage_result.model_dump(),
-        "decision": proposed_decision.model_dump(),
-    })
+    # 2. Agent Decision
+    agent_decision = RecoveryAgent.decide(ctx)
+    log_data = agent_decision.model_dump()
+    log_data["amount_inr"] = ctx.amount_inr
+    log_data["case_type"] = ctx.case_type.value if hasattr(ctx.case_type, "value") else str(ctx.case_type)
+    log_audit_event(ctx.payment_id, "agent_decision_proposed", log_data)
 
+    # Map AgentDecision to RecoveryDecision for SafetyGate compatibility
+    from backend.app.models.case import RecoveryDecision
+    proposed_decision = RecoveryDecision(
+        decision=InterventionType(agent_decision.selected_action),
+        reason_code="agent_decision",
+        policy_id="agent_policy",
+        delay_hours=24 if agent_decision.selected_action == "RETRY_LATER" else 0
+    )
+
+    # 3. Safety Check
     ctx.current_state = PaymentState.SAFETY_CHECK
     approved_decision = SafetyGate.evaluate(ctx, proposed_decision, today)
     log_audit_event(ctx.payment_id, "safety_check_completed", approved_decision.model_dump())
 
+    # 4. Execution
     final_ctx = await RecoveryExecutor.execute(ctx, approved_decision, dry_run=dry_run)
     return final_ctx

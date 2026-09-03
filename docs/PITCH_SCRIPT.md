@@ -11,9 +11,9 @@
 
 **[TERMINAL: title card, then a single number]**
 
-> "Recurring payment failures can create significant revenue leakage.
+> "Recurring payment failures, abandoned checkouts, and overdue receivables create significant revenue leakage.
 >
-> Fixed retry strategies may not adapt to the reason a payment failed. This can lead to involuntary churn — money you already earned, walking out the door."
+> Fixed retry strategies or generic notification bots may not adapt to why a payment failed. This can lead to involuntary churn — money you already earned, walking out the door."
 
 ---
 
@@ -21,11 +21,11 @@
 
 **[TERMINAL: clean, show project structure]**
 
-> "Chakra is a mandate-aware, regulation-aware recovery layer that sits between Razorpay's infrastructure and a merchant's failed payments.
+> "Chakra is an Autonomous Revenue Recovery Agent. Our tagline: DETECT. DECIDE. RECOVER. PROVE.
 >
-> It asks the questions Razorpay's retry doesn't: Was this amount over the AFA threshold? Was this the first transaction on a new mandate? Have we already hit the network retry cap?
+> Instead of just blindly retrying a failed payment, Chakra assesses the actual revenue at risk. It acts as an agentic decision layer, proposing the highest-conversion intervention—whether that's a silent retry, a checkout payment link, or a Hinglish voice call.
 >
-> Deterministic triage rules answer these in microseconds. For the ambiguous cases, Gemini — with PII redacted, with structured JSON output, with a graceful fallback if the API fails — picks the recovery path."
+> Most importantly: AI proposes, but deterministic policy constrains. Chakra will never bypass AFA limits, ignore retry caps, or retry a revoked mandate."
 
 ---
 
@@ -34,63 +34,29 @@
 **[TERMINAL: run the command]**
 
 ```bash
-python backend/scripts/trigger_webhooks.py
+python backend/scripts/run_demo.py
 ```
 
-> "Let me show you. We seed a 120-case mixed benchmark. The agent processes all 120.
->
-> Watch what happens:
-> - The fraud-flagged payments? Escalated. Hard-coded, no AI can override.
-> - The mandate-revoked cases? Escalated. Customer consent is sacred.
-> - The payments over the AFA threshold? Routed to a payment link with an OTP.
-> - The insufficient_funds cases? Scheduled for retry.
->
-> In our synthetic benchmark, we recover a significant chunk of revenue while the rest safely go to human review. Not because we failed — because they should."
+> "Let me show you. We seed a perfectly balanced 120-case synthetic benchmark encompassing all five Track 03 scenarios: Payments, Subscriptions, Abandoned Checkouts, Receivables, and Promises to Pay. 
+> 
+> The pipeline executes instantly. The Revenue Risk Engine calculates the opportunity. The Recovery Agent selects the action. The Safety Gate enforces rules. And the clean Executor interacts with the provider."
 
 ---
 
-## 2:00 - 2:30 | The Safety Gate
+## 2:00 - 3:30 | The Results & Proof
 
-**[TERMINAL: show safety_gate.py file]**
+**[TERMINAL: show the final metrics printout]**
 
-> "Look at this file. safety_gate.py. Hard-coded rules. No AI can override these. The fraud flag will always block. The mandate revocation will always block.
+> "The result? Chakra processed 120 cases. It blocked 13 cases that violated safety rules. It successfully recovered ₹1,950,019 out of ₹3,560,390 at risk.
 >
-> Even if Gemini hallucinates a reason to retry a fraud-flagged payment, this gate catches it first. The AI can only choose between compliant options. It cannot invent a new one."
+> We don't measure success by how many emails we sent. We measure success by provider-confirmed revenue actually captured. We hit an intervention success rate of over 77% while safely halting unrecoverable cases."
 
 ---
 
-## 2:30 - 3:00 | The Graceful Fallback
+## 3:30 - 5:00 | Audit & Conclusion
 
-**[TERMINAL: show llm.py file]**
+**[TERMINAL: tail the audit log]**
 
-> "Now here's what happens when Gemini fails or is unavailable.
+> "Every single decision, safety check, and provider outcome is logged in a structured, PII-redacted audit trail. There's no hidden chain of thought. You see exactly why the agent chose a payment link, and exactly why the safety gate allowed it.
 >
-> Caught the API error. Logged it. Routed those payments to escalation. Kept processing the rest of the queue. 
->
-> When the AI is unsure or unavailable, Chakra defaults to safety. It does not invent an answer."
-
----
-
-## 3:00 - 4:00 | Why Razorpay
-
-**[TERMINAL: show file structure, dependencies]**
-
-> "Why this fits Razorpay:
->
-> Chakra is not a replacement. It sits on top of existing APIs. It doesn't change how merchants charge — it changes how they recover.
->
-> The PII redaction strips sensitive data. The network retry limits mirror operating guides. The safety rules represent real e-mandate constraints.
->
-> This is what a technically credible prototype looks like."
-
----
-
-## 4:00 - 4:30 | The Close
-
-**[TERMINAL: final metrics card]**
-
-> "Autonomous recovery on the simulation. Zero crashes when the AI fails. 120 cases in, 120 decisions out, every one auditable.
->
-> This is Chakra. Mandate-aware, regulation-aware, audit-first revenue recovery.
->
-> Thank you."
+> Chakra doesn't just identify the problem. It proves measured money recovered across a batch, with compliant escalation, strict stopping rules, and full auditability."
