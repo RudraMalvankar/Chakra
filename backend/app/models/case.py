@@ -20,16 +20,20 @@ class RevenueRiskAssessment(BaseModel):
     recovery_window: str
     reason: str
 
-class AlternativeAction(BaseModel):
+class CandidateAction(BaseModel):
     action: str
-    reason_rejected: str
+    score: float
+    expected_recovery_inr: float
+    eligible: bool
+    reason: str
 
 class AgentDecision(BaseModel):
     selected_action: str
     confidence: float
-    decision_factors: List[str]
     expected_recovery_inr: float
-    alternative_actions: List[AlternativeAction] = Field(default_factory=list)
+    priority: str = "MEDIUM"
+    decision_factors: List[str]
+    candidate_actions: List[CandidateAction] = Field(default_factory=list)
 
 class RecoveryCase(BaseModel):
     case_id: str = "unknown"

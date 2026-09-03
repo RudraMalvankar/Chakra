@@ -1,86 +1,152 @@
-from backend.app.models.case import RecoveryCase, AgentDecision, AlternativeAction, InterventionType, CaseType
+from typing import List
+from backend.app.models.case import RecoveryCase, AgentDecision, CandidateAction, InterventionType, CaseType
 
 class RecoveryAgent:
     @staticmethod
     def decide(case: RecoveryCase) -> AgentDecision:
-        # Determine candidate action
-        selected_action = InterventionType.RETRY_LATER
-        decision_factors = []
-        confidence = 0.85
-        alternatives = []
+        candidates: List[CandidateAction] = []
         
-        # Base logic by Case Type
-        if case.case_type == CaseType.PAYMENT_FAILURE:
-            if case.error_code in ["insufficient_funds", "payment_timed_out"]:
-                selected_action = InterventionType.RETRY_LATER
-                decision_factors.append("soft payment failure detected")
-                decision_factors.append("customer likely to have funds later")
-                alternatives.append(AlternativeAction(action="RETRY_NOW", reason_rejected="lower expected recovery due to timing"))
-            elif case.error_code in ["card_declined", "expired_card"]:
-                selected_action = InterventionType.PAYMENT_LINK
-                decision_factors.append("hard failure requires customer action")
-                decision_factors.append("updating payment method needed")
-                alternatives.append(AlternativeAction(action="RETRY_LATER", reason_rejected="card issues cannot be resolved by silent retry"))
-            elif case.error_code in ["fraud_flag", "mandate_revoked"]:
-                selected_action = InterventionType.BLOCK
-                confidence = 1.0
-                decision_factors.append(f"strict compliance rule: {case.error_code}")
+        # Base values from Risk Engine if available
+        base_probability = case.risk_assessment.recovery_probability if case.risk_assessment else 0.5
+        urgency = case.risk_assessment.urgency if case.risk_assessment else "MEDIUM"
+        amount = case.amount_at_risk
+        
+        # Scoring logic
+        def add_candidate(action: InterventionType, p_mod: float, cost: float, reason: str, eligible: bool = True):
+            eff_p = max(0.0, min(1.0, base_probability * p_mod))
+            exp_rec = amount * eff_p
+            
+            # Urgency multiplier
+            u_mult = 1.2 if urgency == "HIGH" else (1.0 if urgency == "MEDIUM" else 0.8)
+            
+            # Penalize repeated retries
+            retry_penalty = (case.retry_count * 5.0) if action in [InterventionType.RETRY_NOW, InterventionType.RETRY_LATER] else 0.0
+            
+            score = (exp_rec * u_mult) - cost - retry_penalty
+            if not eligible:
+                score = -999999.0
                 
+            candidates.append(CandidateAction(
+                action=action.value if hasattr(action, 'value') else str(action),
+                score=round(score, 2),
+                expected_recovery_inr=round(exp_rec, 2),
+                eligible=eligible,
+                reason=reason
+            ))
+
+        # 1. Start with fallbacks
+        add_candidate(InterventionType.ESCALATE, 0.0, 0.0, "default escalation path / stop recovery")
+        
+        # 2. Hard Blockers (Fraud / Revoked)
+        if case.error_code in ["fraud_flag", "mandate_revoked"] or case.fraud_flag:
+            add_candidate(InterventionType.BLOCK, 0.0, 0.0, f"strict policy constraint: {case.error_code}")
+            # Ensure block wins
+            for c in candidates:
+                if c.action == "BLOCK":
+                    c.score = 999999.0
+                    c.eligible = True
+                else:
+                    c.eligible = False
+                    c.score = -999999.0
+
+        # 3. Candidate Generation by Case Type
+        elif case.case_type == CaseType.PAYMENT_FAILURE:
+            if case.retry_count >= 3:
+                add_candidate(InterventionType.RETRY_NOW, 0.0, 0.0, "retry cap exceeded", eligible=False)
+                # Escalate becomes the only eligible path
+                for c in candidates:
+                    if c.action == "ESCALATE":
+                        c.score += 100000.0
+                        c.reason = "retry cap exceeded, forcing escalation"
+            elif case.error_code in ["insufficient_funds", "payment_timed_out"]:
+                add_candidate(InterventionType.RETRY_LATER, 1.1, 0.0, "soft failure favors delayed retry")
+                add_candidate(InterventionType.RETRY_NOW, 0.8, 0.0, "immediate retry less effective for NSF")
+                add_candidate(InterventionType.PAYMENT_LINK, 0.9, 10.0, "payment link is viable but adds friction")
+            elif case.error_code in ["card_declined", "expired_card"]:
+                add_candidate(InterventionType.RETRY_LATER, 0.0, 0.0, "hard failure cannot be fixed by silent retry", eligible=False)
+                add_candidate(InterventionType.PAYMENT_LINK, 1.2, 10.0, "hard failure requires customer action")
+            
         elif case.case_type == CaseType.SUBSCRIPTION:
             days_overdue = int(case.metadata.get("days_overdue", case.context.get("days_overdue", case.context.get("notes", {}).get("days_overdue", 0))))
             if days_overdue == 0:
-                selected_action = InterventionType.RETRY_NOW
-                decision_factors.append("day 0 subscription failure")
+                add_candidate(InterventionType.RETRY_NOW, 1.2, 0.0, "day 0 subscription failure ideal for immediate retry")
+                add_candidate(InterventionType.PAYMENT_LINK, 0.9, 10.0, "link is fallback if retry fails")
             elif days_overdue < 7:
-                selected_action = InterventionType.PAYMENT_LINK
-                decision_factors.append("day 3-7 subscription failure")
+                add_candidate(InterventionType.PAYMENT_LINK, 1.1, 10.0, "day 3-7 subscription failure needs link")
             elif days_overdue < 14:
-                selected_action = InterventionType.VOICE_RECOVERY
-                decision_factors.append("high overdue days (7-14)")
-                decision_factors.append("voice intervention proven effective for engagement")
+                add_candidate(InterventionType.VOICE_RECOVERY, 1.5, 50.0, "high overdue days benefits from voice engagement")
+                add_candidate(InterventionType.PAYMENT_LINK, 0.8, 10.0, "payment link alone has lower conversion at this stage")
             else:
-                selected_action = InterventionType.ESCALATE
-                decision_factors.append("severe subscription delinquency (>14 days)")
-                
+                for c in candidates:
+                    if c.action == "ESCALATE":
+                        c.score += 100000.0
+                        c.reason = "severe subscription delinquency (>14 days)"
+
         elif case.case_type == CaseType.CHECKOUT_ABANDONMENT:
-            selected_action = InterventionType.PAYMENT_LINK
-            decision_factors.append("high-intent checkout dropoff")
-            decision_factors.append("cart recovery link typically yields highest conversion")
+            add_candidate(InterventionType.PAYMENT_LINK, 1.5, 10.0, "high-intent cart recovery link typically yields highest conversion")
+            add_candidate(InterventionType.VOICE_RECOVERY, 1.2, 50.0, "voice can recover high value carts but has higher cost")
             
         elif case.case_type == CaseType.RECEIVABLE:
             days_overdue = int(case.metadata.get("days_overdue", case.context.get("days_overdue", case.context.get("notes", {}).get("days_overdue", 0))))
             if days_overdue > 60:
-                selected_action = InterventionType.ESCALATE
-                decision_factors.append("severely overdue invoice (>60 days)")
+                for c in candidates:
+                    if c.action == "ESCALATE":
+                        c.score += 100000.0
+                        c.reason = "severely overdue invoice (>60 days)"
             else:
-                selected_action = InterventionType.REMINDER
-                decision_factors.append("standard invoice reminder window")
-                alternatives.append(AlternativeAction(action="ESCALATE", reason_rejected="escalation premature at this stage"))
+                add_candidate(InterventionType.REMINDER, 1.2, 5.0, "standard invoice reminder window")
+                add_candidate(InterventionType.PAYMENT_LINK, 1.0, 10.0, "direct payment link for faster collection")
                 
         elif case.case_type == CaseType.PROMISE_TO_PAY:
             status = case.metadata.get("promise_status", case.context.get("promise_status", case.context.get("notes", {}).get("promise_status", "UNKNOWN")))
             if status == "BROKEN":
-                selected_action = InterventionType.ESCALATE
-                decision_factors.append("customer broke explicit promise to pay")
+                for c in candidates:
+                    if c.action == "ESCALATE":
+                        c.score += 100000.0
+                        c.reason = "customer broke explicit promise to pay"
             else:
-                selected_action = InterventionType.REMINDER
-                decision_factors.append("active promise pending fulfillment")
+                add_candidate(InterventionType.REMINDER, 1.3, 5.0, "active promise pending fulfillment")
         
-        # Heuristics that the agent considers
-        if case.amount_at_risk > 15000 and selected_action in [InterventionType.RETRY_NOW, InterventionType.RETRY_LATER]:
-            selected_action = InterventionType.AFA_PAYMENT_LINK
-            decision_factors.append("high value transaction limits silent retries")
+        # 4. Global Modifiers (AFA Limits)
+        if case.amount_at_risk > 15000:
+            for c in candidates:
+                if c.action in ["RETRY_NOW", "RETRY_LATER"] and c.eligible:
+                    c.eligible = False
+                    c.score = -999999.0
+                    c.reason = "high value transaction limits silent retries (AFA required)"
+                elif c.action == "PAYMENT_LINK" and c.eligible:
+                    # Upgrade generic payment link to AFA payment link
+                    c.action = InterventionType.AFA_PAYMENT_LINK.value
+                    c.reason = "high value transaction requires AFA authenticated flow"
+
+        # 5. Select Best Candidate
+        candidates.sort(key=lambda x: x.score, reverse=True)
+        best_candidate = candidates[0]
+        
+        # Assemble decision factors for explanation
+        decision_factors = [best_candidate.reason]
+        if case.amount_at_risk > 15000:
+            decision_factors.append("AFA threshold required authenticated intervention")
+        if case.retry_count > 0:
+            decision_factors.append(f"previous retries penalized score ({case.retry_count})")
+        if case.fraud_flag:
+            decision_factors.append("fraud flag triggered immediate block")
+
+        priority = "HIGH" if best_candidate.expected_recovery_inr > 10000 else "MEDIUM"
+        if best_candidate.action in ["BLOCK", "ESCALATE"]:
+            priority = "CRITICAL"
             
-        if hasattr(case.mandate_state, "value"):
-            if case.mandate_state.value == "ACTIVE" and selected_action == InterventionType.PAYMENT_LINK:
-                decision_factors.append("active mandate provides frictionless recovery path if link succeeds")
-        
-        expected_recovery = case.risk_assessment.expected_recovery_inr if case.risk_assessment else (case.amount_at_risk * 0.5)
+        # Calculate pseudo-confidence based on score margin (bounded between 0.5 and 0.99 for valid actions)
+        confidence = 0.99 if best_candidate.action in ["BLOCK", "ESCALATE"] else 0.85
+        if len(candidates) > 1 and best_candidate.score > 0 and candidates[1].score > 0:
+            margin = best_candidate.score / max(1.0, candidates[1].score)
+            confidence = min(0.99, max(0.5, 0.5 + (margin * 0.1)))
 
         return AgentDecision(
-            selected_action=selected_action.value if hasattr(selected_action, "value") else selected_action,
-            confidence=confidence,
+            selected_action=best_candidate.action,
+            confidence=round(confidence, 2),
+            expected_recovery_inr=best_candidate.expected_recovery_inr,
+            priority=priority,
             decision_factors=decision_factors,
-            expected_recovery_inr=float(expected_recovery),
-            alternative_actions=alternatives
+            candidate_actions=candidates
         )
