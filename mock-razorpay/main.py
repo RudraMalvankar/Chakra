@@ -1,16 +1,19 @@
-from fastapi import FastAPI, HTTPException
+﻿from fastapi import FastAPI, HTTPException
 from typing import List, Dict, Any
-from .seed import SEED_DATA
+from fastapi.middleware.cors import CORSMiddleware
+from .seed import MOCK_PAYMENTS
 import random
-import time
-
-# Explicit seed for benchmark reproducibility
-random.seed(42)
 
 app = FastAPI(title="Mock Razorpay API")
 
-# In-memory DB for demo
-PAYMENTS_DB = {p["payment_id"]: p for p in SEED_DATA}
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+PAYMENTS_DB = {p["payment_id"]: {**p, "amount_inr": p["amount"] / 100} for p in MOCK_PAYMENTS if "payment_id" in p}
 
 @app.get("/v1/payments")
 async def list_payments():
@@ -23,28 +26,17 @@ async def get_payment(payment_id: str):
     return PAYMENTS_DB[payment_id]
 
 rng = random.Random(42)
-
 def simulate_outcome(payment: Dict[str, Any], is_link: bool = False) -> str:
-    """Probabilistic outcome simulation"""
     err = payment.get("error_code")
-    
-    if err == "insufficient_funds":
-        # Usually recoverable via link, maybe 40% via retry
-        prob = 0.8 if is_link else 0.4
-    elif err == "payment_timed_out":
-        prob = 0.9
-    elif err == "card_declined":
-        prob = 0.7 if is_link else 0.1
-    else:
-        prob = 0.3
-        
+    prob = 0.8 if is_link else 0.4
+    if err == "payment_timed_out": prob = 0.9
+    elif err == "card_declined": prob = 0.7 if is_link else 0.1
     return "captured" if rng.random() < prob else "failed"
 
 @app.post("/v1/payments/{payment_id}/retry")
 async def retry_payment(payment_id: str):
     if payment_id not in PAYMENTS_DB:
         raise HTTPException(status_code=404, detail="Payment not found")
-        
     payment = PAYMENTS_DB[payment_id]
     outcome = simulate_outcome(payment)
     payment["status"] = outcome
@@ -52,10 +44,10 @@ async def retry_payment(payment_id: str):
 
 @app.post("/v1/payment_links")
 async def create_payment_link(payload: dict):
-    # Simulate link payment
     payment_id = payload.get("notes", {}).get("payment_id")
     if payment_id and payment_id in PAYMENTS_DB:
         outcome = simulate_outcome(PAYMENTS_DB[payment_id], is_link=True)
         PAYMENTS_DB[payment_id]["status"] = outcome
         return {"status": "created", "outcome": outcome}
     return {"status": "created", "outcome": "pending"}
+
