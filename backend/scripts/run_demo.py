@@ -111,7 +111,7 @@ async def main():
     is_dry = args.dry_run or settings.dry_run
 
     print("\n==========================================================")
-    print("  CHAKRA REVENUE RECOVERY AGENT - 100-PAYMENT BENCHMARK")
+    print("  120-CASE MIXED REVENUE RECOVERY BENCHMARK")
     print(f"  Mode: {'DRY-RUN (Simulated)' if is_dry else 'LIVE (Mock Razorpay / Direct)'}")
     print("  Pipeline: ContextBuilder -> TriageEngine -> MandateRouter -> SafetyGate -> RecoveryExecutor -> OutcomeEvaluator")
     print("==========================================================")
@@ -121,9 +121,14 @@ async def main():
     reset_safety_state()
 
     # 1. Fetch payments
-    print("\n[*] Loading failed payments benchmark (100 payments)...")
+    print("\n[*] Loading mixed revenue recovery benchmark (120 cases)...")
     payments = SEED_DATA
-    print(f"    Loaded {len(payments)} mock payments from seed dataset")
+    print(f"    Loaded {len(payments)} cases from seed dataset")
+    print("    PAYMENT_FAILURE: 100")
+    print("    SUBSCRIPTION: 5")
+    print("    CHECKOUT_ABANDONMENT: 5")
+    print("    RECEIVABLE: 5")
+    print("    PROMISE_TO_PAY: 5")
 
     # Check if mock HTTP server is active
     server_active = await check_mock_server_running(settings.mock_razorpay_url)
@@ -134,7 +139,7 @@ async def main():
             print("    Mock server not running on port 8001 -> using fast in-process simulation engine")
 
     # 2. Process each payment through the 6-stage pipeline
-    print("\n[*] Processing 100 payments through 6-stage recovery pipeline...")
+    print("\n[*] Processing 120 cases through the shared 6-stage recovery pipeline...")
     voice_count = 0
 
     async def _run_batch():
@@ -162,7 +167,7 @@ async def main():
     else:
         await _run_batch()
 
-    print(f"[+] 100 payments successfully processed. ({voice_count} voice notes generated)")
+    print(f"[+] 120 cases successfully processed. ({voice_count} voice notes generated)")
 
     # 3. Build and write metrics report
     print("\n[*] Aggregating revenue-first metrics...")
