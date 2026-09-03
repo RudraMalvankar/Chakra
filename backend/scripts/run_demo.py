@@ -51,6 +51,8 @@ SEED_DATA = seed_mod.SEED_DATA
 PAYMENTS_DB = {p["payment_id"]: dict(p) for p in SEED_DATA}
 
 
+rng = random.Random(42)
+
 def simulate_outcome(payment: dict, is_link: bool = False) -> str:
     """Probabilistic outcome simulation matching mock-razorpay logic."""
     err = payment.get("error_code")
@@ -62,7 +64,7 @@ def simulate_outcome(payment: dict, is_link: bool = False) -> str:
         prob = 0.7 if is_link else 0.1
     else:
         prob = 0.3
-    return "captured" if random.random() < prob else "failed"
+    return "captured" if rng.random() < prob else "failed"
 
 
 async def in_process_retry_payment(payment_id: str, delay_hours: int = 0):

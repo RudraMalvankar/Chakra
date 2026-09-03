@@ -168,6 +168,15 @@ def test_unredacted_pii_raises_fatal_error():
 
 
 def test_llm_graceful_degradation_on_api_error():
+    from backend.app.services.llm import GEMINI_AVAILABLE
+    if not GEMINI_AVAILABLE:
+        # Just test the fallback when it's missing
+        res = gemini_classify({"error_code": "unknown_err", "pii_redacted": True})
+        assert res.action == "escalate"
+        assert res.reason == "llm_dependency_missing"
+        assert res.confidence == 1.0
+        return
+
     with patch("backend.app.services.llm.genai.Client") as mock_client:
         mock_instance = MagicMock()
         mock_instance.models.generate_content.side_effect = Exception("429 RESOURCE_EXHAUSTED: Rate limit exceeded")

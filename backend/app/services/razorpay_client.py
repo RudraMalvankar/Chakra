@@ -6,7 +6,7 @@ class RazorpayClient:
     """Client for executing actual or mocked Razorpay recovery actions."""
     def __init__(self):
         self.is_mock = settings.use_mock_razorpay
-        self.base_url = settings.mock_razorpay_url if self.is_mock else "https://api.razorpay.com/v1"
+        self.base_url = settings.mock_razorpay_url if self.is_mock else "https://api.razorpay.com"
         self.auth = (settings.razorpay_key_id, settings.razorpay_key_secret) if not self.is_mock else None
 
     async def get_payments(self) -> List[Dict[str, Any]]:

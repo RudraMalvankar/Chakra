@@ -33,6 +33,7 @@ _MAX_PROCESSED = 10000
 async def razorpay_webhook(
     request: Request,
     x_razorpay_signature: Optional[str] = Header(None),
+    x_razorpay_event_id: Optional[str] = Header(None),
 ) -> Dict[str, Any]:
     """
     Ingests Razorpay webhook events, validates HMAC signature,
@@ -50,10 +51,12 @@ async def razorpay_webhook(
     except Exception:
         raise HTTPException(status_code=400, detail="Malformed JSON payload")
 
-    # Idempotency check: use the valid HMAC signature as the idempotency key
-    if x_razorpay_signature in _processed_events:
+    # Idempotency check: use event ID or payload hash if not present
+    event_id = x_razorpay_event_id or hashlib.sha256(body).hexdigest()
+    
+    if event_id in _processed_events:
         return {"status": "ignored", "reason": "duplicate_webhook"}
-    _processed_events[x_razorpay_signature] = True
+    _processed_events[event_id] = True
     if len(_processed_events) > _MAX_PROCESSED:
         _processed_events.popitem(last=False)
 

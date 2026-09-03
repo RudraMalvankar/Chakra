@@ -86,6 +86,7 @@ def generate_metrics_report(audit_file: Optional[str] = None) -> Dict[str, Any]:
     payment_safety: Dict[str, str] = {}  # "BLOCKED", "ESCALATED", "ELIGIBLE"
     payment_attempted: Dict[str, bool] = {}
     payment_recovered: Dict[str, bool] = {}
+    payment_dry_run: Dict[str, bool] = {}
 
     with open(log_path, "r", encoding="utf-8") as f:
         for line in f:
@@ -124,7 +125,8 @@ def generate_metrics_report(audit_file: Optional[str] = None) -> Dict[str, Any]:
                 payment_safety[pid] = "ESCALATED"
 
             elif etype == "dry_run_execution":
-                payment_attempted[pid] = True
+                payment_dry_run[pid] = True
+                # explicitly NOT marked as payment_attempted
 
             elif etype == "execution_outcome":
                 payment_attempted[pid] = True
@@ -146,6 +148,7 @@ def generate_metrics_report(audit_file: Optional[str] = None) -> Dict[str, Any]:
     payments_recovery_eligible = payments_processed - payments_blocked - payments_escalated
 
     interventions_attempted = sum(1 for pid in payment_amounts if payment_attempted.get(pid, False))
+    dry_run_actions_proposed = sum(1 for pid in payment_amounts if payment_dry_run.get(pid, False))
     revenue_attempted_inr = round(sum(payment_amounts[pid] for pid in payment_amounts if payment_attempted.get(pid, False)), 2)
 
     payments_recovered = sum(1 for pid in payment_amounts if payment_recovered.get(pid, False))
@@ -168,6 +171,7 @@ def generate_metrics_report(audit_file: Optional[str] = None) -> Dict[str, Any]:
         "payments_escalated": payments_escalated,
         "interventions_attempted": interventions_attempted,
         "interventions_succeeded": interventions_succeeded,
+        "dry_run_actions_proposed": dry_run_actions_proposed,
         "payments_recovered": payments_recovered,
         "payments_failed_recovery": payments_failed_recovery,
         "revenue_at_risk_inr": revenue_at_risk_inr,

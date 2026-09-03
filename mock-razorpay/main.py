@@ -22,6 +22,8 @@ async def get_payment(payment_id: str):
         raise HTTPException(status_code=404, detail="Payment not found")
     return PAYMENTS_DB[payment_id]
 
+rng = random.Random(42)
+
 def simulate_outcome(payment: Dict[str, Any], is_link: bool = False) -> str:
     """Probabilistic outcome simulation"""
     err = payment.get("error_code")
@@ -36,7 +38,7 @@ def simulate_outcome(payment: Dict[str, Any], is_link: bool = False) -> str:
     else:
         prob = 0.3
         
-    return "captured" if random.random() < prob else "failed"
+    return "captured" if rng.random() < prob else "failed"
 
 @app.post("/v1/payments/{payment_id}/retry")
 async def retry_payment(payment_id: str):
