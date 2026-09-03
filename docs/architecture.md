@@ -1,8 +1,23 @@
 # Chakra Architecture
 
-## What Chakra Is
+## What Chakra Is (Expanded Orchestrator)
 
-Chakra is a **mandate-aware revenue recovery agent** that sits between Razorpay's payment infrastructure and a merchant's failed recurring payments. It detects failures, classifies them by constraints, and routes to the appropriate recovery path.
+Chakra is a **Unified Revenue Recovery Orchestrator**. It now supports extending beyond payment failures to handle:
+- **Payment Failures**
+- **Subscription Failures**
+- **Checkout Abandonments**
+- **Receivables & Promise-to-Pay**
+
+These all share a single execution pipeline mapping heterogeneous events to a single RecoveryCase object.
+
+## Architecture (6-Stage Runtime Loop)
+
+1. **ContextBuilder**: Normalizes incoming webhooks/payloads into a unified RecoveryCase.
+2. **TriageEngine**: Diagnoses ambiguity using deterministic checks or an LLM fallback.
+3. **MandateRouter**: Routes the case based on its case_type, applying business rules.
+4. **SafetyGate**: A non-overridable firewall enforcing idempotency, retry caps, and fraud blocks.
+5. **RecoveryExecutor**: Deterministically maps decisions to API calls (or voice artifact generation).
+6. **OutcomeEvaluator**: Measures actual outcome and metrics strictly based on payment realization.
 
 ## The Problem It Solves
 

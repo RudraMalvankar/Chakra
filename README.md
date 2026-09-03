@@ -96,3 +96,14 @@ make test
 <div align="center">
 Built for the Razorpay AI Buildathon 2026.
 </div>
+
+### Extended Revenue Recovery Orchestrator
+Chakra has been expanded from a pure payment-recovery agent into a unified **Revenue Recovery Orchestrator**.
+All of the following revenue leaks converge into the exact same deterministic routing, safety, and metrics pipeline:
+- **Payment Failures**
+- **Failed Subscriptions**
+- **Checkout Abandonment**
+- **B2B Receivables**
+- **Promise-to-Pay tracking**
+
+These are executed via ContextBuilder -> Triage -> Router -> SafetyGate -> Executor -> Audit.

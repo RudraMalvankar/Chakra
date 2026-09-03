@@ -204,6 +204,14 @@ async def main():
         print("    - eval_report.json      (18-case accuracy eval)")
     if not args.skip_voice and voice_count > 0:
         print(f"    - voice_notes/          ({voice_count} Hinglish voice notes)")
+    print("\n" + "=" * 60)
+    print("  CHAKRA COMMAND CENTER - BY CASE TYPE:")
+    print("=" * 60)
+    for ctype, stats in metrics_report["metrics"].get("by_case_type", {}).items():
+        print(f"\n    > {ctype.replace('_', ' ')}")
+        print(f"      ₹{stats['revenue_at_risk']:,.2f} at risk")
+        print(f"      ₹{stats['revenue_recovered']:,.2f} recovered")
+        print(f"      Cases processed: {stats['processed']} | Recovered: {stats['recovered']}")
     print("=" * 60 + "\n")
 
 
