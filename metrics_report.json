@@ -10,8 +10,12 @@
     "payments_recovered": 52,
     "payments_failed_recovery": 15,
     "revenue_at_risk_inr": 3560390.86,
+    "revenue_recovery_attempted_inr": 2299207.07,
     "revenue_attempted_inr": 2299207.07,
     "revenue_recovered_inr": 1950019.64,
+    "revenue_pending_inr": 0,
+    "revenue_blocked_inr": 167110.35,
+    "revenue_escalated_inr": 1091201.01,
     "revenue_recovery_rate_pct": 54.77,
     "payment_recovery_rate_pct": 43.33,
     "intervention_success_rate_pct": 77.61,
@@ -24,7 +28,9 @@
         "failed": 4,
         "pending": 0,
         "revenue_attempted_inr": 3446.61,
-        "revenue_recovered_inr": 835.99
+        "revenue_recovered_inr": 835.99,
+        "blocked": 0,
+        "escalated": 0
       },
       "RETRY_LATER": {
         "attempted": 0,
@@ -32,7 +38,9 @@
         "failed": 0,
         "pending": 0,
         "revenue_attempted_inr": 0.0,
-        "revenue_recovered_inr": 0.0
+        "revenue_recovered_inr": 0.0,
+        "blocked": 0,
+        "escalated": 0
       },
       "PAYMENT_LINK": {
         "attempted": 30,
@@ -40,7 +48,9 @@
         "failed": 6,
         "pending": 0,
         "revenue_attempted_inr": 42715.20999999998,
-        "revenue_recovered_inr": 37204.72999999998
+        "revenue_recovered_inr": 37204.72999999998,
+        "blocked": 0,
+        "escalated": 0
       },
       "AFA_PAYMENT_LINK": {
         "attempted": 32,
@@ -48,7 +58,9 @@
         "failed": 5,
         "pending": 0,
         "revenue_attempted_inr": 2253045.2500000005,
-        "revenue_recovered_inr": 1911978.9200000004
+        "revenue_recovered_inr": 1911978.9200000004,
+        "blocked": 0,
+        "escalated": 0
       },
       "VOICE_RECOVERY": {
         "attempted": 0,
@@ -56,7 +68,9 @@
         "failed": 0,
         "pending": 0,
         "revenue_attempted_inr": 0.0,
-        "revenue_recovered_inr": 0.0
+        "revenue_recovered_inr": 0.0,
+        "blocked": 0,
+        "escalated": 0
       },
       "REMINDER": {
         "attempted": 0,
@@ -64,23 +78,29 @@
         "failed": 0,
         "pending": 0,
         "revenue_attempted_inr": 0.0,
-        "revenue_recovered_inr": 0.0
+        "revenue_recovered_inr": 0.0,
+        "blocked": 0,
+        "escalated": 0
       },
       "ESCALATE": {
-        "attempted": 36,
+        "attempted": 0,
         "succeeded": 0,
-        "failed": 36,
+        "failed": 0,
         "pending": 0,
-        "revenue_attempted_inr": 1091201.01,
-        "revenue_recovered_inr": 0.0
+        "revenue_attempted_inr": 0.0,
+        "revenue_recovered_inr": 0.0,
+        "blocked": 0,
+        "escalated": 36
       },
       "BLOCK": {
-        "attempted": 13,
+        "attempted": 0,
         "succeeded": 0,
-        "failed": 13,
+        "failed": 0,
         "pending": 0,
-        "revenue_attempted_inr": 167110.34999999998,
-        "revenue_recovered_inr": 0.0
+        "revenue_attempted_inr": 0.0,
+        "revenue_recovered_inr": 0.0,
+        "blocked": 13,
+        "escalated": 0
       }
     },
     "by_case_type": {

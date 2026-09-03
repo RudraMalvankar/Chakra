@@ -84,7 +84,8 @@ def test_metrics_invariants_on_synthetic_log():
 
         # 2. Revenues
         assert metrics["revenue_at_risk_inr"] == 11000.0  # 1000 + 2000 + 5000 + 3000
-        assert metrics["revenue_attempted_inr"] == 3000.0  # 1000 + 2000
+        assert metrics["revenue_recovery_attempted_inr"] == 3000.0  # 1000 + 2000
+        assert metrics["revenue_attempted_inr"] == 3000.0  # alias backwards compatibility
         assert metrics["revenue_recovered_inr"] == 1000.0  # 1000
 
         # 3. Rates
@@ -119,7 +120,7 @@ def test_verify_invariants_detects_violations():
         "interventions_succeeded": 5,
         "payments_recovered": 5,
         "revenue_at_risk_inr": 1000.0,
-        "revenue_attempted_inr": 500.0,
+        "revenue_recovery_attempted_inr": 500.0,
         "revenue_recovered_inr": 600.0,  # VIOLATION: > attempted
     }
     res1 = verify_invariants(invalid_metrics_1)
@@ -136,7 +137,7 @@ def test_verify_invariants_detects_violations():
         "interventions_succeeded": 4,  # VIOLATION: > attempted
         "payments_recovered": 4,
         "revenue_at_risk_inr": 1000.0,
-        "revenue_attempted_inr": 500.0,
+        "revenue_recovery_attempted_inr": 500.0,
         "revenue_recovered_inr": 400.0,
     }
     res2 = verify_invariants(invalid_metrics_2)
@@ -153,7 +154,7 @@ def test_verify_invariants_detects_violations():
         "interventions_succeeded": 3,
         "payments_recovered": 3,
         "revenue_at_risk_inr": 1000.0,
-        "revenue_attempted_inr": 500.0,
+        "revenue_recovery_attempted_inr": 500.0,
         "revenue_recovered_inr": 300.0,
     }
     res3 = verify_invariants(invalid_metrics_3)

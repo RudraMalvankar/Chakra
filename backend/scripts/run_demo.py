@@ -113,7 +113,7 @@ async def main():
     print("\n==========================================================")
     print("  120-CASE MIXED REVENUE RECOVERY BENCHMARK")
     print(f"  Mode: {'DRY-RUN (Simulated)' if is_dry else 'LIVE (Mock Razorpay / Direct)'}")
-    print("  Pipeline: ContextBuilder -> TriageEngine -> MandateRouter -> SafetyGate -> RecoveryExecutor -> OutcomeEvaluator")
+    print("  Pipeline: ContextBuilder -> RevenueRiskEngine -> RecoveryAgent -> SafetyGate -> RecoveryExecutor -> OutcomeEvaluator")
     print("==========================================================")
 
     # Clear previous audit log and reset safety gate counters
@@ -200,6 +200,96 @@ async def main():
         print(f"      ₹{stats['revenue_recovered']:,.2f} recovered")
         print(f"      Cases processed: {stats['processed']} | Recovered: {stats['recovered']}")
     print("=" * 60 + "\n")
+
+    # 5. Print 3 representative agent decision traces
+    traces = {"successful": None, "blocked": None, "escalated": None}
+    case_events = {}
+    
+    with open("audit_log.jsonl", "r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip(): continue
+            ev = json.loads(line)
+            pid = ev.get("payment_id")
+            if pid not in case_events:
+                case_events[pid] = []
+            case_events[pid].append(ev)
+            
+    for pid, evs in case_events.items():
+        is_rec = any(e.get("event_type") == "execution_outcome" and e.get("details", {}).get("recovered") for e in evs)
+        is_blocked = any(e.get("event_type") == "execution_blocked" for e in evs)
+        is_esc = any(e.get("event_type") == "execution_escalated" for e in evs)
+        
+        if is_rec and not traces["successful"]:
+            traces["successful"] = evs
+        elif is_blocked and not traces["blocked"]:
+            traces["blocked"] = evs
+        elif is_esc and not traces["escalated"]:
+            traces["escalated"] = evs
+            
+        if all(traces.values()):
+            break
+
+    print("\n" + "=" * 60)
+    print("  FINAL AGENT DECISION TRACES (Truthful Output)")
+    print("=" * 60)
+    
+    for label, trace_evs in traces.items():
+        if not trace_evs: continue
+        print(f"\n--- CASE {label.upper()} ---")
+        
+        # Parse events
+        risk_ev = next((e for e in trace_evs if e["event_type"] == "revenue_risk_assessed"), None)
+        agent_ev = next((e for e in trace_evs if e["event_type"] == "agent_decision_proposed"), None)
+        safety_ev = next((e for e in trace_evs if e["event_type"] == "safety_check_completed"), None)
+        blocked_ev = next((e for e in trace_evs if e["event_type"] == "execution_blocked"), None)
+        esc_ev = next((e for e in trace_evs if e["event_type"] == "execution_escalated"), None)
+        outcome_ev = next((e for e in trace_evs if e["event_type"] == "execution_outcome"), None)
+        
+        if risk_ev:
+            d = risk_ev["details"]
+            print(f"REVENUE AT RISK: ₹{d.get('revenue_at_risk_inr')}")
+            print(f"RECOVERY PROBABILITY: {d.get('recovery_probability')}")
+            print(f"EXPECTED RECOVERY: ₹{d.get('expected_recovery_inr')}")
+            print(f"PRIORITY: {d.get('priority')}")
+            print(f"URGENCY: {d.get('urgency')}")
+            
+        if agent_ev:
+            d = agent_ev["details"]
+            print("\nCANDIDATE INTERVENTIONS:")
+            for cand in d.get("candidate_actions", []):
+                print(f"  - ACTION: {cand.get('action')}")
+                print(f"    SCORE: {cand.get('score')}")
+                print(f"    EXPECTED RECOVERY: ₹{cand.get('expected_recovery_inr')}")
+                print(f"    ELIGIBLE: {cand.get('eligible')}")
+                print(f"    REASON: {cand.get('reason')}")
+            
+            print("\nSELECTED ACTION:", d.get("selected_action"))
+            print("CONFIDENCE:", d.get("confidence"))
+            print("DECISION FACTORS:")
+            for df in d.get("decision_factors", []):
+                print(f"  - {df}")
+                
+        if safety_ev:
+            d = safety_ev["details"]
+            print("\nSAFETY GATE:", d.get("eligibility"))
+            if d.get("eligibility") != "ALLOWED":
+                print("SAFETY REASON:", d.get("reason_code"))
+                
+        if outcome_ev:
+            d = outcome_ev["details"]
+            print("\nEXECUTION RESULT:", d.get("status"))
+            print("PROVIDER OUTCOME:", d.get("outcome"))
+            print(f"RECOVERED AMOUNT: ₹{d.get('amount_inr', 0) if d.get('recovered') else 0}")
+        elif blocked_ev:
+            print("\nEXECUTION RESULT: BLOCKED")
+            print("PROVIDER OUTCOME: NONE")
+            print("RECOVERED AMOUNT: ₹0")
+        elif esc_ev:
+            print("\nEXECUTION RESULT: ESCALATED")
+            print("PROVIDER OUTCOME: NONE")
+            print("RECOVERED AMOUNT: ₹0")
+            
+        print("\nAUDIT EVENT COUNT:", len(trace_evs))
 
 
 if __name__ == "__main__":
