@@ -1,440 +1,237 @@
-const { useState, useEffect } = React;
-const API_BASE = 'http://localhost:8000';
+const { useState, useEffect, useMemo } = React;
 
-const formatCurrency = (amount) => {
-    return new Intl.NumberFormat('en-IN', {
-        style: 'currency',
-        currency: 'INR',
-        maximumFractionDigits: 0
-    }).format(amount);
+const API_BASE = 'http://localhost:8001';
+
+// --- Helpers ---
+const formatCurrency = (val) => {
+    if (val === undefined || val === null) return "₹0";
+    if (val >= 1000000) return `₹${(val / 1000000).toFixed(2)}M`;
+    if (val >= 1000) return `₹${(val / 1000).toFixed(1)}K`;
+    return `₹${val.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 };
-
+const formatExact = (val) => `₹${(val||0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const formatPercent = (val) => {
-    return typeof val === 'number' ? val.toFixed(2) + '%' : '0%';
+    if (val === undefined || val === null) return "0%";
+    return `${val.toFixed(2)}%`;
+};
+const Icon = ({ name, size = 20, className = "" }) => {
+    const iconHtml = lucide.icons[name]?.toSvg({ width: size, height: size, class: className }) || '';
+    return <span dangerouslySetInnerHTML={{ __html: iconHtml }} className={`inline-flex items-center justify-center ${className}`} />;
 };
 
-const Icon = ({ name, size=20, className='' }) => {
-    useEffect(() => {
-        if (window.lucide) {
-            window.lucide.createIcons();
-        }
-    });
-    return <i data-lucide={name} width={size} height={size} className={className}></i>;
-};
-
-// --- Page 1: Overview ---
-const Overview = ({ metrics }) => {
-    if (!metrics) return <div className="p-8 text-gray-500">Loading metrics...</div>;
-    const m = metrics.metrics;
-
+const Badge = ({ children, status }) => {
+    let colors = "bg-gray-100 text-gray-700 border-gray-200";
+    if (status === 'SUCCESS' || status === 'RECOVERED' || status === 'APPROVED') colors = "bg-rzp-greenLight text-green-700 border-green-200";
+    if (status === 'WARNING' || status === 'PENDING' || status === 'MEDIUM') colors = "bg-yellow-50 text-yellow-700 border-yellow-200";
+    if (status === 'DANGER' || status === 'BLOCKED' || status === 'FAILED') colors = "bg-rzp-redLight text-red-700 border-red-200";
+    if (status === 'INFO' || status === 'ESCALATED') colors = "bg-blue-50 text-rzp-blue border-blue-200";
+    
     return (
-        <div className="p-6 space-y-8 animate-fade-in">
-            <div className="flex justify-between items-center border-b border-gray-800 pb-4">
-                <div>
-                    <h1 className="text-3xl font-bold tracking-tight text-white">CHAKRA</h1>
-                    <p className="text-gray-400 font-mono text-sm mt-1">Autonomous Revenue Recovery Agent</p>
-                </div>
-                <div className="bg-blue-900/20 border border-blue-800 text-blue-400 px-3 py-1 rounded text-xs font-mono">
-                    {metrics.simulation_disclosure || "Synthetic 120-case benchmark"}
-                </div>
-            </div>
-
-            <div className="grid grid-cols-5 gap-4">
-                <div className="bg-panel p-5 rounded-lg border border-gray-800">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Revenue At Risk</div>
-                    <div className="text-2xl font-mono text-white">{formatCurrency(m.revenue_at_risk_inr)}</div>
-                </div>
-                <div className="bg-panel p-5 rounded-lg border border-gray-800">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Revenue Attempted</div>
-                    <div className="text-2xl font-mono text-yellow-500">{formatCurrency(m.revenue_attempted_inr)}</div>
-                </div>
-                <div className="bg-panel p-5 rounded-lg border border-gray-800">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Revenue Recovered</div>
-                    <div className="text-2xl font-mono text-green-500">{formatCurrency(m.revenue_recovered_inr)}</div>
-                </div>
-                <div className="bg-panel p-5 rounded-lg border border-gray-800">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Recovery Rate</div>
-                    <div className="text-2xl font-mono text-blue-400">{formatPercent(m.revenue_recovery_rate_pct)}</div>
-                </div>
-                <div className="bg-panel p-5 rounded-lg border border-gray-800">
-                    <div className="text-gray-400 text-xs font-bold uppercase tracking-wider mb-2">Payments Recovered</div>
-                    <div className="text-2xl font-mono text-white">{m.payments_recovered}</div>
-                </div>
-            </div>
-            
-            <div className="grid grid-cols-4 gap-4">
-                <div className="bg-panel p-4 rounded border border-gray-800 flex justify-between">
-                    <span className="text-gray-400 font-mono text-sm">Blocked</span>
-                    <span className="text-red-400 font-mono font-bold">{m.payments_blocked}</span>
-                </div>
-                <div className="bg-panel p-4 rounded border border-gray-800 flex justify-between">
-                    <span className="text-gray-400 font-mono text-sm">Escalated</span>
-                    <span className="text-orange-400 font-mono font-bold">{m.payments_escalated}</span>
-                </div>
-                <div className="bg-panel p-4 rounded border border-gray-800 flex justify-between">
-                    <span className="text-gray-400 font-mono text-sm">Pending</span>
-                    <span className="text-yellow-400 font-mono font-bold">
-                        {Object.values(m.by_intervention || {}).reduce((acc, curr) => acc + (curr.pending || 0), 0)}
-                    </span>
-                </div>
-                <div className="bg-panel p-4 rounded border border-gray-800 flex justify-between">
-                    <span className="text-gray-400 font-mono text-sm">Evaluation</span>
-                    <span className="text-green-400 font-mono font-bold">18 / 18</span>
-                </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-8">
-                <div className="bg-panel rounded-lg border border-gray-800 overflow-hidden">
-                    <div className="px-5 py-4 border-b border-gray-800 bg-darker">
-                        <h3 className="font-bold text-sm tracking-widest text-gray-300 uppercase">Recovery by Intervention</h3>
-                    </div>
-                    <table className="w-full text-left text-sm font-mono">
-                        <thead className="text-gray-500 bg-black/20">
-                            <tr>
-                                <th className="px-5 py-2 font-normal">Intervention</th>
-                                <th className="px-5 py-2 font-normal text-right">Attempted</th>
-                                <th className="px-5 py-2 font-normal text-right">Recovered</th>
-                                <th className="px-5 py-2 font-normal text-right">Pending</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-800/50">
-                            {['RETRY_NOW', 'RETRY_LATER', 'PAYMENT_LINK', 'AFA_PAYMENT_LINK', 'VOICE_RECOVERY', 'REMINDER', 'ESCALATE', 'BLOCK'].map(k => {
-                                const stat = (m.by_intervention || {})[k] || { attempted: 0, succeeded: 0, pending: 0 };
-                                return (
-                                    <tr key={k} className="hover:bg-gray-800/20">
-                                        <td className="px-5 py-3 text-gray-300">{k}</td>
-                                        <td className="px-5 py-3 text-right text-yellow-500">{stat.attempted}</td>
-                                        <td className="px-5 py-3 text-right text-green-500">{stat.succeeded}</td>
-                                        <td className="px-5 py-3 text-right text-gray-500">{stat.pending}</td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-
-                <div className="bg-panel rounded-lg border border-gray-800 overflow-hidden">
-                    <div className="px-5 py-4 border-b border-gray-800 bg-darker">
-                        <h3 className="font-bold text-sm tracking-widest text-gray-300 uppercase">Case Type Breakdown</h3>
-                    </div>
-                    <table className="w-full text-left text-sm font-mono">
-                        <thead className="text-gray-500 bg-black/20">
-                            <tr>
-                                <th className="px-5 py-2 font-normal">Case Type</th>
-                                <th className="px-5 py-2 font-normal text-right">Processed</th>
-                                <th className="px-5 py-2 font-normal text-right">Recovered</th>
-                                <th className="px-5 py-2 font-normal text-right">At Risk</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-800/50">
-                            {Object.keys(m.by_case_type || {}).map(k => {
-                                const stat = m.by_case_type[k];
-                                return (
-                                    <tr key={k} className="hover:bg-gray-800/20">
-                                        <td className="px-5 py-3 text-gray-300">{k.replace(/_/g, ' ')}</td>
-                                        <td className="px-5 py-3 text-right text-gray-400">{stat.processed}</td>
-                                        <td className="px-5 py-3 text-right text-green-500">{stat.recovered}</td>
-                                        <td className="px-5 py-3 text-right text-red-400">{formatCurrency(stat.revenue_at_risk)}</td>
-                                    </tr>
-                                );
-                            })}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-            
-            <div className="bg-panel rounded-lg border border-gray-800 p-8 text-center">
-                <h3 className="font-bold text-sm tracking-widest text-gray-500 uppercase mb-6">Recovery Funnel</h3>
-                <div className="flex justify-center items-center space-x-12 font-mono">
-                    <div className="text-center">
-                        <div className="text-red-400 text-3xl font-bold">{formatCurrency(m.revenue_at_risk_inr)}</div>
-                        <div className="text-gray-500 text-xs mt-2 uppercase">Revenue At Risk</div>
-                    </div>
-                    <div className="text-gray-600"><Icon name="arrow-right" size={24} /></div>
-                    <div className="text-center">
-                        <div className="text-yellow-500 text-3xl font-bold">{formatCurrency(m.revenue_attempted_inr)}</div>
-                        <div className="text-gray-500 text-xs mt-2 uppercase">Revenue Attempted</div>
-                    </div>
-                    <div className="text-gray-600"><Icon name="arrow-right" size={24} /></div>
-                    <div className="text-center">
-                        <div className="text-green-500 text-3xl font-bold">{formatCurrency(m.revenue_recovered_inr)}</div>
-                        <div className="text-gray-500 text-xs mt-2 uppercase">Revenue Recovered</div>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <span className={`px-2 py-0.5 rounded text-xs font-semibold border ${colors} flex items-center w-fit`}>
+            {children}
+        </span>
     );
 };
 
-// --- Page 2: Live Recovery Feed ---
-const LiveFeed = ({ auditTrail, onViewCase }) => {
-    const caseMap = {};
-    const casesList = [];
-
-    (auditTrail || []).forEach(evt => {
-        const pid = evt.payment_id;
-        if (!caseMap[pid]) {
-            caseMap[pid] = {
-                id: pid,
-                timestamp: evt.timestamp,
-                case_type: 'UNKNOWN',
-                amount: 0,
-                failure_reason: '',
-                status: 'PROCESSING',
-                intervention: '-',
-                safety_result: '-',
-            };
-            casesList.push(caseMap[pid]);
-        }
-        const c = caseMap[pid];
-        c.timestamp = evt.timestamp; 
-        if (evt.event_type === 'triage_decision_proposed') {
-            c.case_type = evt.details.case_type || c.case_type;
-            c.amount = evt.details.amount_inr || c.amount;
-        }
-        if (evt.event_type === 'safety_check_completed') {
-            c.safety_result = evt.details.eligibility === 'ALLOWED' ? 'ALLOWED' : (evt.details.decision === 'BLOCK' ? 'BLOCKED' : evt.details.eligibility);
-            if (c.safety_result === 'BLOCKED') c.status = 'BLOCKED';
-            if (evt.details.decision) c.intervention = evt.details.decision;
-        }
-        if (evt.event_type === 'execution_outcome') {
-            c.intervention = evt.details.effective_action || c.intervention;
-            const status = evt.details.status || '';
-            const outcome = evt.details.outcome || '';
-            if (evt.details.recovered || status === 'captured' || outcome === 'success' || outcome === 'captured') {
-                c.status = 'RECOVERED';
-            } else {
-                c.status = 'FAILED';
-            }
-        }
-        if (['retry_scheduled', 'voice_artifact_generated', 'reminder_artifact_generated'].includes(evt.event_type)) {
-            c.status = 'RECOVERY_PENDING';
-        }
-        if (evt.event_type === 'execution_blocked') c.status = 'BLOCKED';
-        if (evt.event_type === 'execution_escalated') c.status = 'ESCALATED';
-    });
-
-    const sorted = casesList.sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-    const getStatusIcon = (status) => {
-        if (status === 'RECOVERED') return <span className="text-green-500">✓</span>;
-        if (status === 'RECOVERY_PENDING') return <span className="text-yellow-500">◷</span>;
-        if (status === 'BLOCKED') return <span className="text-red-500">🛡</span>;
-        if (status === 'ESCALATED') return <span className="text-orange-500">↗</span>;
-        return <span className="text-gray-500">⨯</span>;
-    };
-
-    return (
-        <div className="p-6 animate-fade-in">
-            <h2 className="text-2xl font-bold mb-6 text-white">Live Recovery Feed</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-                {sorted.map(c => (
-                    <div key={c.id} onClick={() => onViewCase(c.id)} className="bg-panel p-4 rounded-lg border border-gray-800 hover:border-gray-600 cursor-pointer transition-colors shadow-sm">
-                        <div className="flex justify-between items-start mb-2">
-                            <div className="text-lg font-mono font-bold flex items-center space-x-2">
-                                {getStatusIcon(c.status)} 
-                                <span className="text-white">{formatCurrency(c.amount)}</span>
-                            </div>
-                            <div className="text-xs text-gray-500">{new Date(c.timestamp).toLocaleTimeString()}</div>
-                        </div>
-                        <div className="text-xs font-bold text-gray-400 mb-3">{c.case_type}</div>
-                        
-                        <div className="space-y-1 font-mono text-xs">
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Action:</span>
-                                <span className="text-blue-400">{c.intervention}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span className="text-gray-600">Status:</span>
-                                <span className={c.status === 'RECOVERED' ? 'text-green-500' : c.status === 'BLOCKED' ? 'text-red-500' : c.status === 'RECOVERY_PENDING' ? 'text-yellow-500' : 'text-gray-400'}>{c.status}</span>
-                            </div>
-                        </div>
-                    </div>
-                ))}
-            </div>
-        </div>
-    );
-};
-
-// --- Page 3: Case Detail ---
-const CaseDetail = ({ caseId, onBack }) => {
-    const [trace, setTrace] = useState(null);
+// --- Data Service Hooks ---
+const useChakraData = () => {
+    const [rawMetrics, setRawMetrics] = useState(null);
+    const [rawAuditLog, setRawAuditLog] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    
+    // Live Demo State
+    const [demoMode, setDemoMode] = useState(false);
+    const [demoIndex, setDemoIndex] = useState(0);
+
+    const metrics = useMemo(() => {
+        if (!rawMetrics) return null;
+        if (!demoMode) return rawMetrics;
+        // In demo mode, we just pass rawMetrics but realistically we should recompute.
+        // For simplicity and to avoid re-implementing the entire metrics engine in JS, 
+        // we'll still pass rawMetrics for the high level numbers, but the audit trail/cases will build progressively.
+        return rawMetrics;
+    }, [rawMetrics, demoMode, demoIndex]);
+
+    const auditLog = useMemo(() => {
+        if (!demoMode) return rawAuditLog;
+        return rawAuditLog.slice(0, demoIndex);
+    }, [rawAuditLog, demoMode, demoIndex]);
 
     useEffect(() => {
-        fetch(`${API_BASE}/api/cases/${caseId}/trace`)
-            .then(r => {
-                if (!r.ok) throw new Error("Case not found");
-                return r.json();
-            })
-            .then(data => {
-                setTrace(data.trace);
-                setLoading(false);
-            })
-            .catch(e => {
-                setError(e.message);
-                setLoading(false);
-            });
-    }, [caseId]);
-
-    if (loading) return <div className="p-8 text-gray-500">Loading trace...</div>;
-    if (error) return <div className="p-8 text-red-500">{error}</div>;
-
-    const stages = [];
-    
-        const riskEvt = trace.find(e => e.event_type === 'revenue_risk_assessed');
-    const agentEvt = trace.find(e => e.event_type === 'agent_decision_proposed');
-    const safetyEvt = trace.find(e => e.event_type === 'safety_check_completed');
-    const outcomeEvt = trace.find(e => ['execution_outcome', 'retry_scheduled', 'execution_blocked', 'execution_escalated', 'voice_artifact_generated', 'reminder_artifact_generated'].includes(e.event_type));
-
-    let caseType = agentEvt?.details?.case_type || "UNKNOWN";
-    let amount = agentEvt?.details?.amount_inr || riskEvt?.details?.revenue_at_risk_inr || 0;
-
-    stages.push({
-        name: "EVENT",
-        data: {
-            type: caseType,
-            amount: formatCurrency(amount),
-            timestamp: agentEvt?.timestamp,
-            case_id: caseId
+        if (demoMode && demoIndex < rawAuditLog.length) {
+            const timer = setTimeout(() => setDemoIndex(i => i + 1), 300); // Replay speed
+            return () => clearTimeout(timer);
         }
-    });
+    }, [demoMode, demoIndex, rawAuditLog.length]);
 
-    if (riskEvt) {
-        stages.push({
-            name: "REVENUE RISK ASSESSMENT",
-            data: {
-                "Revenue At Risk": formatCurrency(riskEvt.details.revenue_at_risk_inr),
-                "Expected Recovery": formatCurrency(riskEvt.details.expected_recovery_inr),
-                "Probability": `${(riskEvt.details.recovery_probability * 100).toFixed(0)}%`,
-                "Priority": riskEvt.details.priority,
-                "Urgency": riskEvt.details.urgency,
-                "Risk Factors": (riskEvt.details.risk_factors || []).join(", ")
-            }
+    const refresh = () => {
+        Promise.all([
+            fetch(`${API_BASE}/api/metrics`).then(r => r.json()),
+            fetch(`${API_BASE}/api/audit?limit=2000`).then(r => r.json())
+        ]).then(([m, a]) => {
+            setRawMetrics(m);
+            setRawAuditLog(a.events || []);
+            setLoading(false);
+            setError(null);
+        }).catch(err => {
+            console.error(err);
+            setError("Unable to load live recovery data.");
+            setLoading(false);
         });
-    }
+    };
 
-    if (agentEvt) {
-        stages.push({
-            name: "AGENT DECISION",
-            data: {
-                "Selected Action": agentEvt.details.selected_action,
-                "Confidence": `${(agentEvt.details.confidence * 100).toFixed(0)}%`,
-                "Decision Factors": (agentEvt.details.decision_factors || []).join(", ")
-            }
-        });
-    });
+    useEffect(() => {
+        refresh();
+        const int = setInterval(refresh, 5000);
+        return () => clearInterval(int);
+    }, []);
+
+    // Derived: parsed cases
+    const cases = useMemo(() => {
+        const caseMap = {};
+        const getOrAdd = (id) => {
+            if (!caseMap[id]) caseMap[id] = { id, events: [], amount: 0, status: 'PENDING', type: 'UNKNOWN', risk: null, agent: null, safety: null, outcome: null };
+            return caseMap[id];
+        };
         
-        stages.push({
-            name: "AI FALLBACK",
-            data: triageEvt.details.triage?.is_ambiguous ? {
-                "Gemini used": "YES",
-                "Confidence": `${((triageEvt.details.triage?.confidence || 0) * 100).toFixed(0)}%`
-            } : "Deterministic policy path — AI fallback not required."
-        });
-
-        stages.push({
-            name: "MANDATE ROUTER",
-            data: {
-                selected_policy: triageEvt.details.decision?.policy_id,
-                candidate_action: triageEvt.details.decision?.decision,
-                reason: triageEvt.details.decision?.reason_code
+        [...auditLog].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp)).forEach(ev => {
+            const c = getOrAdd(ev.payment_id);
+            c.events.push(ev);
+            c.last_updated = ev.timestamp;
+            
+            if (ev.event_type === 'revenue_risk_assessed') {
+                c.risk = ev.details;
+                c.amount = ev.details.revenue_at_risk_inr;
+            } else if (ev.event_type === 'agent_decision_proposed') {
+                c.agent = ev.details;
+                c.type = ev.details.case_type || c.type;
+            } else if (ev.event_type === 'safety_check_completed') {
+                c.safety = ev.details;
+                if (ev.details.decision === 'BLOCK' || ev.details.eligibility === 'BLOCKED') c.status = 'BLOCKED';
+                else if (ev.details.decision === 'ESCALATE' || ev.details.eligibility === 'ESCALATED') c.status = 'ESCALATED';
+            } else if (ev.event_type === 'execution_outcome') {
+                c.outcome = ev.details;
+                if (ev.details.recovered) c.status = 'RECOVERED';
+                else c.status = 'FAILED';
+            } else if (ev.event_type === 'execution_blocked') {
+                c.status = 'BLOCKED';
+            } else if (ev.event_type === 'execution_escalated') {
+                c.status = 'ESCALATED';
             }
         });
-    }
-
-    if (safetyEvt) {
-        const isBlocked = safetyEvt.details.eligibility === 'BLOCKED' || safetyEvt.details.decision === 'BLOCK';
-        stages.push({
-            name: "SAFETY GATE",
-            blocked: isBlocked,
-            data: {
-                FINAL_DECISION: safetyEvt.details.eligibility,
-                Final_action: safetyEvt.details.decision,
-                Reason: safetyEvt.details.reason_code,
-                Enforced_rules: (safetyEvt.details.enforced_rules || []).join(", ")
-            }
+        
+        return Object.values(caseMap).sort((a,b) => {
+            const expectedA = a.agent?.candidate_actions?.find(ca => ca.action === a.agent.selected_action)?.expected_recovery_inr || 0;
+            const expectedB = b.agent?.candidate_actions?.find(ca => ca.action === b.agent.selected_action)?.expected_recovery_inr || 0;
+            return expectedB - expectedA;
         });
-    }
+    }, [auditLog]);
 
-    if (outcomeEvt) {
-        stages.push({
-            name: "EXECUTOR",
-            data: {
-                Action: outcomeEvt.details.effective_action,
-                Status: outcomeEvt.event_type
-            }
-        });
+    return { metrics, auditLog, cases, loading, error, demoMode, setDemoMode, setDemoIndex };
+};
 
-        let isRec = false;
-        let rev = 0;
-        let finalState = "FAILED";
-
-        if (outcomeEvt.event_type === 'execution_outcome') {
-            const status = outcomeEvt.details.status || '';
-            const outcome = outcomeEvt.details.outcome || '';
-            if (outcomeEvt.details.recovered || status === 'captured' || outcome === 'success' || outcome === 'captured') {
-                isRec = true;
-                rev = amount;
-                finalState = "RECOVERED";
-            }
-        } else if (['retry_scheduled', 'voice_artifact_generated', 'reminder_artifact_generated'].includes(outcomeEvt.event_type)) {
-            finalState = "RECOVERY_PENDING";
-        } else if (outcomeEvt.event_type === 'execution_blocked') {
-            finalState = "BLOCKED";
-        } else if (outcomeEvt.event_type === 'execution_escalated') {
-            finalState = "ESCALATED";
-        }
-
-        stages.push({
-            name: "OUTCOME",
-            data: {
-                Final_state: finalState,
-                Revenue_recovered: isRec ? formatCurrency(rev) : "₹0",
-                Note: finalState === "RECOVERY_PENDING" ? "Revenue is not counted as recovered until provider-confirmed success." : undefined
-            }
-        });
-    }
+// --- Page: Command Center ---
+const CommandCenter = ({ metrics, auditLog, onViewCase }) => {
+    if (!metrics) return null;
+    const m = metrics.metrics;
+    
+    const sortedEvents = [...auditLog].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 15);
 
     return (
-        <div className="p-6 animate-fade-in max-w-4xl mx-auto">
-            <div className="mb-6 flex items-center space-x-4">
-                <button onClick={onBack} className="text-gray-400 hover:text-white">
-                    <Icon name="arrow-left" size={24} />
-                </button>
-                <h2 className="text-2xl font-bold text-white">Decision Explorer: {caseId}</h2>
+        <div className="space-y-6">
+            <div className="bg-white border border-border rounded-lg shadow-sm overflow-hidden">
+                <div className="p-6 border-b border-border bg-gray-50 flex justify-between items-center">
+                    <div>
+                        <h2 className="text-xl font-bold text-text-main">Revenue Recovery Command Center</h2>
+                        <p className="text-sm text-text-muted mt-1">Detect. Decide. Recover. Prove.</p>
+                    </div>
+                </div>
+                
+                <div className="p-8 grid grid-cols-1 md:grid-cols-4 gap-8">
+                    <div>
+                        <div className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-1">Revenue at Risk</div>
+                        <div className="text-4xl font-bold text-text-main font-mono">{formatCurrency(m.revenue_at_risk_inr)}</div>
+                        <div className="text-sm text-text-muted mt-2">from {m.payments_processed} failed transactions</div>
+                    </div>
+                    <div>
+                        <div className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-1">Recovered</div>
+                        <div className="text-4xl font-bold text-rzp-green font-mono">{formatCurrency(m.revenue_recovered_inr)}</div>
+                        <div className="text-sm text-text-muted mt-2">from {m.payments_recovered} successful interventions</div>
+                    </div>
+                    <div>
+                        <div className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-1">Recovery Rate</div>
+                        <div className="text-4xl font-bold text-rzp-blue font-mono">{formatPercent(m.revenue_recovery_rate_pct)}</div>
+                        <div className="text-sm text-text-muted mt-2">of total at-risk value</div>
+                    </div>
+                    <div className="space-y-4">
+                        <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                            <span className="text-sm text-text-muted">Expected Recovery</span>
+                            <span className="font-mono font-semibold text-text-main">{formatCurrency(m.revenue_recovery_attempted_inr)}</span>
+                        </div>
+                        <div className="flex justify-between items-center border-b border-gray-100 pb-2">
+                            <span className="text-sm text-text-muted">Blocked by Safety</span>
+                            <span className="font-mono font-semibold text-rzp-red">{formatCurrency(m.revenue_blocked_inr)}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-sm text-text-muted">Escalated</span>
+                            <span className="font-mono font-semibold text-orange-500">{formatCurrency(m.revenue_escalated_inr)}</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div className="bg-gray-50 p-6 border-t border-border">
+                    <h3 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-4">Recovery Funnel</h3>
+                    <div className="flex justify-between items-center px-8">
+                        <div className="text-center">
+                            <div className="text-2xl font-bold text-text-main font-mono">{formatCurrency(m.revenue_at_risk_inr)}</div>
+                            <div className="text-xs text-text-muted mt-1 uppercase">At Risk</div>
+                        </div>
+                        <Icon name="chevron-right" className="text-gray-300" />
+                        <div className="text-center">
+                            <div className="text-2xl font-bold text-blue-600 font-mono">{formatCurrency(m.revenue_at_risk_inr - m.revenue_blocked_inr - m.revenue_escalated_inr)}</div>
+                            <div className="text-xs text-text-muted mt-1 uppercase">Eligible</div>
+                        </div>
+                        <Icon name="chevron-right" className="text-gray-300" />
+                        <div className="text-center">
+                            <div className="text-2xl font-bold text-yellow-600 font-mono">{formatCurrency(m.revenue_recovery_attempted_inr)}</div>
+                            <div className="text-xs text-text-muted mt-1 uppercase">Attempted</div>
+                        </div>
+                        <Icon name="chevron-right" className="text-gray-300" />
+                        <div className="text-center">
+                            <div className="text-2xl font-bold text-rzp-green font-mono">{formatCurrency(m.revenue_recovered_inr)}</div>
+                            <div className="text-xs text-text-muted mt-1 uppercase">Recovered</div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            <div className="bg-panel rounded-lg border border-gray-800 p-8">
-                <div className="flex flex-col items-center space-y-4">
-                    {stages.map((stage, idx) => (
-                        <React.Fragment key={idx}>
-                            <div className={`w-full max-w-2xl bg-dark border ${stage.blocked ? 'border-red-500' : 'border-gray-700'} rounded p-4`}>
-                                <h3 className={`text-sm font-bold tracking-widest uppercase mb-3 ${stage.blocked ? 'text-red-500' : 'text-blue-400'}`}>
-                                    {stage.name}
-                                </h3>
-                                <div className="font-mono text-sm text-gray-300">
-                                    {typeof stage.data === 'string' ? (
-                                        <p className="text-gray-500 italic">{stage.data}</p>
-                                    ) : (
-                                        <div className="grid grid-cols-2 gap-2">
-                                            {Object.entries(stage.data).map(([k, v]) => v !== undefined && (
-                                                <React.Fragment key={k}>
-                                                    <span className="text-gray-600">{k.replace(/_/g, ' ')}:</span>
-                                                    <span className={k === 'Revenue_recovered' && v !== '₹0' ? 'text-green-400' : 'text-white'}>{String(v)}</span>
-                                                </React.Fragment>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
+            <div className="bg-white border border-border rounded-lg shadow-sm">
+                <div className="px-6 py-4 border-b border-border flex justify-between items-center">
+                    <h3 className="font-semibold text-text-main">Live Recovery Activity</h3>
+                    <Badge status="INFO">SYNTHETIC STREAM</Badge>
+                </div>
+                <div className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+                    {sortedEvents.map((ev, i) => (
+                        <div key={i} className="px-6 py-3 hover:bg-gray-50 cursor-pointer flex items-center justify-between" onClick={() => onViewCase(ev.payment_id)}>
+                            <div className="flex items-center space-x-4">
+                                <span className="text-xs text-text-light w-20 font-mono">{new Date(ev.timestamp).toLocaleTimeString()}</span>
+                                <span className="text-sm font-medium text-text-main w-24 font-mono">{ev.payment_id.substring(0,8)}</span>
+                                <span className="text-sm text-text-muted flex items-center space-x-2 w-48">
+                                    {ev.event_type === 'revenue_risk_assessed' && <><Icon name="alert-triangle" size={14} className="text-yellow-500"/><span>Risk Assessed</span></>}
+                                    {ev.event_type === 'agent_decision_proposed' && <><Icon name="cpu" size={14} className="text-blue-500"/><span>Agent Decision</span></>}
+                                    {ev.event_type === 'safety_check_completed' && <><Icon name="shield" size={14} className="text-indigo-500"/><span>Safety Gate</span></>}
+                                    {ev.event_type === 'execution_outcome' && <><Icon name="check-circle" size={14} className="text-green-500"/><span>Outcome</span></>}
+                                    {ev.event_type === 'execution_blocked' && <><Icon name="x-circle" size={14} className="text-red-500"/><span>Blocked</span></>}
+                                    {ev.event_type === 'execution_escalated' && <><Icon name="corner-up-right" size={14} className="text-orange-500"/><span>Escalated</span></>}
+                                </span>
                             </div>
-                            {idx < stages.length - 1 && (
-                                <div className="text-gray-600">
-                                    <Icon name="arrow-down" size={24} />
-                                </div>
-                            )}
-                        </React.Fragment>
+                            <div className="text-sm font-mono text-text-main">
+                                {ev.event_type === 'revenue_risk_assessed' ? `${formatCurrency(ev.details.revenue_at_risk_inr)} at risk` : 
+                                 ev.event_type === 'execution_outcome' ? `${ev.details.status}` : 
+                                 (ev.details.decision || ev.details.effective_action || "")}
+                            </div>
+                        </div>
                     ))}
                 </div>
             </div>
@@ -442,61 +239,385 @@ const CaseDetail = ({ caseId, onBack }) => {
     );
 };
 
-// --- Page 4: Safety Center ---
-const SafetyCenter = ({ auditTrail }) => {
-    const safetyEvents = (auditTrail || []).filter(e => e.event_type === 'safety_check_completed').slice(0, 10);
+// --- Page: Opportunities ---
+const Opportunities = ({ cases, onViewCase }) => {
+    return (
+        <div className="bg-white border border-border rounded-lg shadow-sm flex flex-col h-full">
+            <div className="px-6 py-5 border-b border-border">
+                <h2 className="text-xl font-bold text-text-main">Recovery Opportunities</h2>
+                <p className="text-sm text-text-muted mt-1">Revenue at risk ranked by expected recoverable value.</p>
+            </div>
+            
+            <div className="p-4 border-b border-border bg-gray-50 flex items-center space-x-4">
+                <select className="border border-border rounded px-3 py-1.5 text-sm bg-white text-text-main">
+                    <option>All Priorities</option>
+                    <option>High</option>
+                    <option>Medium</option>
+                    <option>Low</option>
+                </select>
+                <select className="border border-border rounded px-3 py-1.5 text-sm bg-white text-text-main">
+                    <option>All Workflows</option>
+                    <option>PAYMENT_FAILURE</option>
+                    <option>CHECKOUT_ABANDONMENT</option>
+                </select>
+            </div>
+
+            <div className="overflow-x-auto flex-1">
+                <table className="w-full text-left text-sm whitespace-nowrap">
+                    <thead className="bg-gray-50 border-b border-border text-text-muted font-semibold">
+                        <tr>
+                            <th className="px-6 py-3 font-medium">Priority</th>
+                            <th className="px-6 py-3 font-medium">Case</th>
+                            <th className="px-6 py-3 font-medium">Workflow</th>
+                            <th className="px-6 py-3 font-medium text-right">Revenue at Risk</th>
+                            <th className="px-6 py-3 font-medium text-right">Probability</th>
+                            <th className="px-6 py-3 font-medium text-right">Expected Recovery</th>
+                            <th className="px-6 py-3 font-medium">Recommended Action</th>
+                            <th className="px-6 py-3 font-medium">Status</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                        {cases.map(c => {
+                            const exp = c.agent?.candidate_actions?.find(ca => ca.action === c.agent.selected_action)?.expected_recovery_inr;
+                            const prob = c.risk?.recovery_probability || 0;
+                            return (
+                                <tr key={c.id} onClick={() => onViewCase(c.id)} className="hover:bg-blue-50 cursor-pointer transition-colors">
+                                    <td className="px-6 py-3">
+                                        <Badge status={c.risk?.priority}>{c.risk?.priority || 'UNKNOWN'}</Badge>
+                                    </td>
+                                    <td className="px-6 py-3 font-mono font-medium text-rzp-blue">{c.id.substring(0,8)}</td>
+                                    <td className="px-6 py-3 text-text-main">{c.type.replace(/_/g, ' ')}</td>
+                                    <td className="px-6 py-3 text-right font-mono text-text-main">{formatExact(c.amount)}</td>
+                                    <td className="px-6 py-3 text-right font-mono text-text-main">{formatPercent(prob * 100)}</td>
+                                    <td className="px-6 py-3 text-right font-mono font-semibold text-rzp-green">{formatExact(exp)}</td>
+                                    <td className="px-6 py-3 text-text-main">{c.agent?.selected_action || '-'}</td>
+                                    <td className="px-6 py-3"><Badge status={c.status}>{c.status}</Badge></td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    );
+};
+
+// --- Page: Case Detail ---
+const CaseDetail = ({ caseData, onBack }) => {
+    if (!caseData) return null;
+    const c = caseData;
+    const risk = c.risk || {};
+    const agent = c.agent || {};
+    const safety = c.safety || {};
+    const outcome = c.outcome || {};
+
+    const selectedCand = agent.candidate_actions?.find(ca => ca.action === agent.selected_action) || {};
+    const rankedCands = [...(agent.candidate_actions || [])].sort((a,b) => b.score - a.score);
 
     return (
-        <div className="p-6 animate-fade-in max-w-5xl mx-auto">
-            <h2 className="text-2xl font-bold text-white mb-6">Safety Center</h2>
-            
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div className="col-span-2 bg-panel rounded-lg border border-gray-800 p-6">
-                    <h3 className="text-sm font-bold tracking-widest text-gray-500 uppercase mb-4">Protection Rules</h3>
-                    <ul className="space-y-3 font-mono text-sm text-gray-300">
-                        <li className="flex items-center space-x-2"><Icon name="shield" size={16} className="text-blue-500"/> <span>Revoked mandate</span></li>
-                        <li className="flex items-center space-x-2"><Icon name="shield" size={16} className="text-blue-500"/> <span>Fraud / high risk</span></li>
-                        <li className="flex items-center space-x-2"><Icon name="shield" size={16} className="text-blue-500"/> <span>Retry caps</span></li>
-                        <li className="flex items-center space-x-2"><Icon name="shield" size={16} className="text-blue-500"/> <span>Intervention budget</span></li>
-                        <li className="flex items-center space-x-2"><Icon name="shield" size={16} className="text-blue-500"/> <span>Duplicate events</span></li>
-                        <li className="flex items-center space-x-2"><Icon name="shield" size={16} className="text-blue-500"/> <span>AFA thresholds</span></li>
-                    </ul>
-                </div>
-                
-                <div className="bg-panel rounded-lg border border-red-900 bg-red-900/10 p-6 flex flex-col items-center justify-center text-center">
-                    <h3 className="text-sm font-bold tracking-widest text-red-500 uppercase mb-4">Visual Example</h3>
-                    <div className="font-mono text-xs space-y-2">
-                        <div className="text-gray-400">AI PROPOSED: <span className="text-white">RETRY_NOW</span></div>
-                        <div className="text-gray-600">↓</div>
-                        <div className="text-blue-400 border border-blue-900 bg-blue-900/20 px-3 py-1 rounded">SAFETY GATE</div>
-                        <div className="text-gray-600">↓</div>
-                        <div className="text-red-400">MANDATE REVOKED</div>
-                        <div className="text-gray-600">↓</div>
-                        <div className="text-red-500 font-bold border border-red-900 bg-red-900/30 px-3 py-1 rounded">BLOCKED</div>
+        <div className="space-y-6 max-w-6xl mx-auto pb-12">
+            <button onClick={onBack} className="text-text-muted hover:text-text-main flex items-center space-x-1 text-sm font-medium transition-colors">
+                <Icon name="arrow-left" size={16} /> <span>Back to cases</span>
+            </button>
+
+            {/* Header */}
+            <div className="bg-white border border-border rounded-lg shadow-sm p-6 flex justify-between items-start">
+                <div>
+                    <div className="flex items-center space-x-3 mb-2">
+                        <h2 className="text-2xl font-bold text-text-main font-mono">CASE #{c.id.substring(0,8).toUpperCase()}</h2>
+                        <Badge status={c.status}>{c.status}</Badge>
                     </div>
+                    <div className="text-text-muted font-medium">{c.type.replace(/_/g, ' ')}</div>
+                </div>
+                <div className="text-right">
+                    <div className="text-sm font-semibold text-text-muted uppercase tracking-wide mb-1">Revenue at Risk</div>
+                    <div className="text-3xl font-bold font-mono text-text-main">{formatExact(c.amount)}</div>
                 </div>
             </div>
 
-            <h3 className="text-sm font-bold tracking-widest text-gray-500 uppercase mb-4">Recent Safety Decisions</h3>
-            <div className="bg-panel rounded-lg border border-gray-800 overflow-hidden">
-                <table className="w-full text-left text-sm font-mono">
-                    <thead className="text-gray-500 bg-black/20">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* Left Column */}
+                <div className="lg:col-span-2 space-y-6">
+                    
+                    {/* Revenue Risk */}
+                    <div className="bg-white border border-border rounded-lg shadow-sm overflow-hidden">
+                        <div className="px-6 py-4 border-b border-border bg-gray-50"><h3 className="font-semibold text-text-main text-sm uppercase tracking-wide">Revenue Risk</h3></div>
+                        <div className="p-6">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                                <div>
+                                    <div className="text-xs text-text-muted mb-1">Recovery Probability</div>
+                                    <div className="font-mono font-medium">{(risk.recovery_probability * 100).toFixed(0)}%</div>
+                                </div>
+                                <div>
+                                    <div className="text-xs text-text-muted mb-1">Expected Recovery</div>
+                                    <div className="font-mono font-medium text-rzp-green">{formatExact(risk.expected_recovery_inr)}</div>
+                                </div>
+                                <div>
+                                    <div className="text-xs text-text-muted mb-1">Priority</div>
+                                    <Badge status={risk.priority}>{risk.priority}</Badge>
+                                </div>
+                                <div>
+                                    <div className="text-xs text-text-muted mb-1">Urgency</div>
+                                    <Badge status={risk.urgency}>{risk.urgency}</Badge>
+                                </div>
+                            </div>
+                            
+                            <div className="pt-4 border-t border-gray-100">
+                                <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">Why is this at risk?</h4>
+                                <ul className="space-y-2">
+                                    {(risk.risk_factors || []).map((f, i) => (
+                                        <li key={i} className="flex items-start space-x-2 text-sm text-text-main">
+                                            <Icon name="info" size={16} className="text-blue-500 mt-0.5 shrink-0" />
+                                            <span>{f}</span>
+                                        </li>
+                                    ))}
+                                    {(!risk.risk_factors || risk.risk_factors.length === 0) && <li className="text-sm text-text-muted">{risk.reason}</li>}
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Agent Decision */}
+                    <div className="bg-white border border-border rounded-lg shadow-sm overflow-hidden">
+                        <div className="px-6 py-4 border-b border-border bg-gray-50 flex justify-between items-center">
+                            <h3 className="font-semibold text-text-main text-sm uppercase tracking-wide">Agent Decision</h3>
+                            <div className="text-sm font-mono text-rzp-blue">Confidence: {formatPercent((agent.confidence||0)*100)}</div>
+                        </div>
+                        <div className="p-6">
+                            <div className="mb-6">
+                                <div className="text-xs text-text-muted uppercase tracking-wider mb-2">Recommended Action</div>
+                                <div className="text-xl font-bold text-rzp-blue font-mono bg-blue-50 px-4 py-2 rounded border border-blue-100 inline-block">
+                                    {agent.selected_action}
+                                </div>
+                            </div>
+                            
+                            <div className="mb-6">
+                                <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-3">Why this action?</h4>
+                                <ul className="space-y-2">
+                                    {(agent.decision_factors || []).map((f, i) => (
+                                        <li key={i} className="flex items-start space-x-2 text-sm text-text-main">
+                                            <Icon name="check" size={16} className="text-green-500 mt-0.5 shrink-0" />
+                                            <span>{f}</span>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+
+                            <div className="pt-4 border-t border-gray-100">
+                                <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-4">Candidate Interventions</h4>
+                                <div className="space-y-3">
+                                    {rankedCands.map((cand, i) => (
+                                        <div key={i} className={`p-4 rounded border ${cand.action === agent.selected_action ? 'border-rzp-blue bg-blue-50' : 'border-border bg-white'} ${!cand.eligible ? 'opacity-60 bg-gray-50' : ''}`}>
+                                            <div className="flex justify-between items-center mb-3">
+                                                <div className="font-mono font-bold text-text-main flex items-center space-x-2">
+                                                    <span>{cand.action}</span>
+                                                    {cand.action === agent.selected_action && <Icon name="check-circle" size={16} className="text-rzp-blue" />}
+                                                </div>
+                                                {!cand.eligible && <Badge status="BLOCKED">Blocked</Badge>}
+                                            </div>
+                                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs font-mono">
+                                                <div><div className="text-text-muted mb-0.5">Base Prob</div><div>{formatPercent((cand.base_probability||0)*100)}</div></div>
+                                                <div><div className="text-text-muted mb-0.5">Modifier</div><div>{(cand.probability_modifier||1).toFixed(2)}x</div></div>
+                                                <div><div className="text-text-muted mb-0.5">Score</div><div>{(cand.score||0).toFixed(2)}</div></div>
+                                                <div><div className="text-text-muted mb-0.5">Exp. Recovery</div><div className="font-bold text-rzp-green">{formatExact(cand.expected_recovery_inr)}</div></div>
+                                            </div>
+                                            <div className="text-xs text-text-muted mt-3 italic">"{cand.reason}"</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Right Column */}
+                <div className="space-y-6">
+                    
+                    {/* Safety Gate */}
+                    <div className={`bg-white border ${c.status === 'BLOCKED' ? 'border-red-300' : 'border-border'} rounded-lg shadow-sm overflow-hidden`}>
+                        <div className={`px-6 py-4 border-b flex justify-between items-center ${c.status === 'BLOCKED' ? 'bg-red-50 border-red-200' : 'bg-gray-50 border-border'}`}>
+                            <h3 className="font-semibold text-text-main text-sm uppercase tracking-wide">Safety Gate</h3>
+                            {safety.eligibility === 'ALLOWED' && <Badge status="APPROVED">✓ APPROVED</Badge>}
+                            {(safety.eligibility === 'BLOCKED' || safety.decision === 'BLOCK') && <Badge status="BLOCKED">✕ BLOCKED</Badge>}
+                            {(safety.eligibility === 'ESCALATED' || safety.decision === 'ESCALATE') && <Badge status="ESCALATED">↗ ESCALATED</Badge>}
+                        </div>
+                        <div className="p-6">
+                            <div className="space-y-4">
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="text-text-muted">Agent proposal</span>
+                                    <span className="font-mono text-text-main font-medium">{agent.selected_action || '-'}</span>
+                                </div>
+                                <div className="flex justify-between items-center text-sm">
+                                    <span className="text-text-muted">Safety decision</span>
+                                    <span className="font-mono text-text-main font-medium">{safety.eligibility || '-'}</span>
+                                </div>
+                                {(safety.eligibility !== 'ALLOWED' && safety.reason_code) && (
+                                    <div className="mt-3 p-3 bg-red-50 border border-red-100 rounded text-sm text-red-800 font-mono">
+                                        Reason: {safety.reason_code}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Execution Outcome */}
+                    <div className="bg-white border border-border rounded-lg shadow-sm overflow-hidden">
+                        <div className="px-6 py-4 border-b border-border bg-gray-50">
+                            <h3 className="font-semibold text-text-main text-sm uppercase tracking-wide">Outcome</h3>
+                        </div>
+                        <div className="p-6">
+                            {c.status === 'BLOCKED' ? (
+                                <div className="text-center py-4">
+                                    <div className="text-red-500 mb-2"><Icon name="shield-alert" size={32} className="mx-auto" /></div>
+                                    <h4 className="font-bold text-text-main mb-1">Execution Blocked</h4>
+                                    <p className="text-sm text-text-muted">No money moved.</p>
+                                    <div className="mt-4 font-mono font-bold text-xl text-text-muted">₹0</div>
+                                </div>
+                            ) : c.status === 'ESCALATED' ? (
+                                <div className="text-center py-4">
+                                    <div className="text-orange-500 mb-2"><Icon name="corner-up-right" size={32} className="mx-auto" /></div>
+                                    <h4 className="font-bold text-text-main mb-1">Execution Escalated</h4>
+                                    <p className="text-sm text-text-muted">Routed to manual review.</p>
+                                    <div className="mt-4 font-mono font-bold text-xl text-text-muted">₹0</div>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span className="text-text-muted">Execution</span>
+                                        <span className="font-mono text-text-main">{outcome.status || '-'}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-sm">
+                                        <span className="text-text-muted">Provider</span>
+                                        <span className="font-mono text-text-main">{outcome.raw_response?.outcome || outcome.raw_response?.status || outcome.status || '-'}</span>
+                                    </div>
+                                    <div className="flex justify-between items-center text-sm pt-3 border-t border-gray-100">
+                                        <span className="text-text-muted font-medium">Recovered</span>
+                                        <span className={`font-mono text-xl font-bold ${outcome.recovered ? 'text-rzp-green' : 'text-text-muted'}`}>
+                                            {formatExact(outcome.amount_recovered_inr || 0)}
+                                        </span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Timeline */}
+                    <div className="bg-white border border-border rounded-lg shadow-sm overflow-hidden">
+                        <div className="px-6 py-4 border-b border-border bg-gray-50">
+                            <h3 className="font-semibold text-text-main text-sm uppercase tracking-wide">Case Timeline</h3>
+                        </div>
+                        <div className="p-6">
+                            <div className="space-y-4 relative before:absolute before:inset-0 before:ml-2.5 before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gray-100">
+                                {c.events.map((ev, i) => (
+                                    <div key={i} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group">
+                                        <div className="flex items-center justify-center w-6 h-6 rounded-full border-2 border-white bg-blue-100 text-blue-600 shadow shrink-0 z-10">
+                                            <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                        </div>
+                                        <div className="w-[calc(100%-2rem)] md:w-[calc(50%-1.5rem)] p-3 rounded border border-gray-100 bg-gray-50 ml-4 md:ml-0 md:mr-6 md:odd:mr-0 md:odd:ml-6">
+                                            <div className="flex justify-between space-x-2 mb-1">
+                                                <span className="font-medium text-xs text-text-main">{ev.event_type.replace(/_/g, ' ').toUpperCase()}</span>
+                                                <span className="text-xs text-text-muted font-mono">{new Date(ev.timestamp).toLocaleTimeString()}</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- Page: Recovery ---
+const Recovery = ({ metrics }) => {
+    if (!metrics) return null;
+    const byInt = metrics.metrics.by_intervention || {};
+    
+    return (
+        <div className="bg-white border border-border rounded-lg shadow-sm">
+            <div className="px-6 py-5 border-b border-border">
+                <h2 className="text-xl font-bold text-text-main">Recovery by Intervention</h2>
+                <p className="text-sm text-text-muted mt-1">Performance of individual recovery workflows.</p>
+            </div>
+            <table className="w-full text-left text-sm whitespace-nowrap">
+                <thead className="bg-gray-50 border-b border-border text-text-muted font-semibold">
+                    <tr>
+                        <th className="px-6 py-3 font-medium">Intervention</th>
+                        <th className="px-6 py-3 font-medium text-right">Attempted</th>
+                        <th className="px-6 py-3 font-medium text-right">Succeeded</th>
+                        <th className="px-6 py-3 font-medium text-right">Recovered Revenue</th>
+                        <th className="px-6 py-3 font-medium text-right">Success Rate</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                    {['PAYMENT_LINK', 'AFA_PAYMENT_LINK', 'RETRY_NOW', 'RETRY_LATER', 'VOICE_RECOVERY', 'REMINDER'].map(k => {
+                        const stat = byInt[k] || { attempted: 0, succeeded: 0, revenue_recovered_inr: 0 };
+                        const rate = stat.attempted > 0 ? (stat.succeeded / stat.attempted) * 100 : 0;
+                        return (
+                            <tr key={k} className="hover:bg-gray-50">
+                                <td className="px-6 py-3 font-mono font-medium text-text-main">{k}</td>
+                                <td className="px-6 py-3 text-right">{stat.attempted}</td>
+                                <td className="px-6 py-3 text-right text-rzp-green">{stat.succeeded}</td>
+                                <td className="px-6 py-3 text-right font-mono">{formatExact(stat.revenue_recovered_inr)}</td>
+                                <td className="px-6 py-3 text-right font-mono">{formatPercent(rate)}</td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    );
+};
+
+// --- Page: Safety ---
+const SafetyCenter = ({ cases }) => {
+    const safetyEvents = cases.filter(c => c.safety).map(c => c.safety).slice(0, 50);
+    
+    return (
+        <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="bg-white border border-border rounded-lg shadow-sm">
+                    <div className="px-6 py-5 border-b border-border">
+                        <h2 className="text-xl font-bold text-text-main">Safety Center</h2>
+                        <p className="text-sm text-text-muted mt-1">Deterministic controls governing autonomous recovery.</p>
+                    </div>
+                    <div className="p-6 grid grid-cols-2 gap-4">
+                        {['Fraud Protection', 'Mandate Validation', 'Retry Limits', 'AFA Enforcement', 'Intervention Budget', 'Idempotency', 'Escalation Rules', 'Stopping Rules'].map(rule => (
+                            <div key={rule} className="flex justify-between items-center p-3 border border-border rounded bg-gray-50">
+                                <span className="text-sm font-medium text-text-main">{rule}</span>
+                                <Badge status="SUCCESS">ACTIVE</Badge>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+            
+            <div className="bg-white border border-border rounded-lg shadow-sm">
+                <div className="px-6 py-4 border-b border-border">
+                    <h3 className="font-semibold text-text-main">Recent Safety Decisions</h3>
+                </div>
+                <table className="w-full text-left text-sm whitespace-nowrap">
+                    <thead className="bg-gray-50 border-b border-border text-text-muted font-semibold">
                         <tr>
-                            <th className="px-5 py-3 font-normal">Time</th>
-                            <th className="px-5 py-3 font-normal">Case</th>
-                            <th className="px-5 py-3 font-normal">Proposed Action</th>
-                            <th className="px-5 py-3 font-normal">Decision</th>
-                            <th className="px-5 py-3 font-normal">Reason</th>
+                            <th className="px-6 py-3 font-medium">Status</th>
+                            <th className="px-6 py-3 font-medium">Action</th>
+                            <th className="px-6 py-3 font-medium">Reason</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-800/50">
-                        {safetyEvents.map((evt, i) => (
-                            <tr key={i} className="hover:bg-gray-800/20">
-                                <td className="px-5 py-3 text-gray-500">{new Date(evt.timestamp).toLocaleTimeString()}</td>
-                                <td className="px-5 py-3 text-blue-400">{evt.payment_id}</td>
-                                <td className="px-5 py-3 text-gray-300">{evt.details.original_decision || '-'}</td>
-                                <td className={`px-5 py-3 font-bold ${evt.details.eligibility === 'BLOCKED' ? 'text-red-500' : 'text-green-500'}`}>{evt.details.eligibility}</td>
-                                <td className="px-5 py-3 text-gray-400">{evt.details.reason_code || '-'}</td>
+                    <tbody className="divide-y divide-gray-100">
+                        {safetyEvents.map((s, i) => (
+                            <tr key={i}>
+                                <td className="px-6 py-3">
+                                    <Badge status={s.eligibility === 'ALLOWED' ? 'SUCCESS' : (s.eligibility === 'BLOCKED' || s.decision === 'BLOCK' ? 'BLOCKED' : 'ESCALATED')}>
+                                        {s.eligibility === 'ALLOWED' ? '✓ APPROVED' : (s.eligibility === 'BLOCKED' || s.decision === 'BLOCK' ? '✕ BLOCKED' : '↗ ESCALATED')}
+                                    </Badge>
+                                </td>
+                                <td className="px-6 py-3 font-mono">{s.decision || '-'}</td>
+                                <td className="px-6 py-3 font-mono text-text-muted">{s.reason_code || '-'}</td>
                             </tr>
                         ))}
                     </tbody>
@@ -506,169 +627,69 @@ const SafetyCenter = ({ auditTrail }) => {
     );
 };
 
-// --- Page 5: Audit Trail ---
-const AuditTrail = ({ auditTrail }) => {
-    const [selectedEvent, setSelectedEvent] = useState(null);
-
+// --- Page: Analytics ---
+const Analytics = ({ metrics }) => {
+    if (!metrics) return null;
+    const m = metrics.metrics;
+    
     return (
-        <div className="p-6 animate-fade-in flex space-x-6 max-h-screen">
-            <div className="flex-1 overflow-auto bg-panel rounded-lg border border-gray-800">
-                <table className="w-full text-left text-sm font-mono">
-                    <thead className="text-gray-500 bg-black/20 sticky top-0">
+        <div className="space-y-6">
+            <div className="bg-white border border-border rounded-lg shadow-sm">
+                <div className="px-6 py-5 border-b border-border">
+                    <h2 className="text-xl font-bold text-text-main">Recovery by Workflow</h2>
+                    <Badge status="INFO" className="mt-2">SYNTHETIC BENCHMARK</Badge>
+                </div>
+                <div className="p-6">
+                    <div className="space-y-4 max-w-3xl">
+                        {Object.entries(m.by_case_type || {}).map(([type, stats]) => (
+                            <div key={type}>
+                                <div className="flex justify-between text-sm font-medium mb-1">
+                                    <span>{type.replace(/_/g, ' ')}</span>
+                                    <span>{formatExact(stats.revenue_recovered)} / {formatExact(stats.revenue_at_risk)}</span>
+                                </div>
+                                <div className="w-full bg-gray-100 rounded-full h-4 relative overflow-hidden">
+                                    <div className="bg-rzp-green h-4 absolute left-0 top-0" style={{ width: `${(stats.revenue_recovered / stats.revenue_at_risk) * 100}%` }}></div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+// --- Page: Audit Log ---
+const AuditLog = ({ auditLog, onViewCase }) => {
+    return (
+        <div className="bg-white border border-border rounded-lg shadow-sm h-full flex flex-col">
+            <div className="px-6 py-5 border-b border-border">
+                <h2 className="text-xl font-bold text-text-main">System Audit Trail</h2>
+                <p className="text-sm text-text-muted mt-1">Append-only cryptographic operational log.</p>
+            </div>
+            <div className="overflow-auto flex-1">
+                <table className="w-full text-left text-sm whitespace-nowrap">
+                    <thead className="bg-gray-50 border-b border-border text-text-muted font-semibold sticky top-0">
                         <tr>
-                            <th className="px-5 py-3 font-normal">Timestamp</th>
-                            <th className="px-5 py-3 font-normal">Case</th>
-                            <th className="px-5 py-3 font-normal">Stage</th>
+                            <th className="px-6 py-3 font-medium">Timestamp</th>
+                            <th className="px-6 py-3 font-medium">Case</th>
+                            <th className="px-6 py-3 font-medium">Event</th>
+                            <th className="px-6 py-3 font-medium">Action/Status</th>
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-800/50">
-                        {(auditTrail || []).map((evt, i) => (
-                            <tr key={i} onClick={() => setSelectedEvent(evt)} className={`hover:bg-gray-800/50 cursor-pointer ${selectedEvent === evt ? 'bg-gray-800/50' : ''}`}>
-                                <td className="px-5 py-3 text-gray-500 whitespace-nowrap">{new Date(evt.timestamp).toLocaleString()}</td>
-                                <td className="px-5 py-3 text-blue-400">{evt.payment_id}</td>
-                                <td className="px-5 py-3 text-yellow-500">{evt.event_type}</td>
+                    <tbody className="divide-y divide-gray-100">
+                        {[...auditLog].sort((a,b) => new Date(b.timestamp) - new Date(a.timestamp)).map((ev, i) => (
+                            <tr key={i} onClick={() => onViewCase(ev.payment_id)} className="hover:bg-gray-50 cursor-pointer">
+                                <td className="px-6 py-2 font-mono text-text-muted">{new Date(ev.timestamp).toISOString()}</td>
+                                <td className="px-6 py-2 font-mono text-rzp-blue">{ev.payment_id.substring(0,8)}</td>
+                                <td className="px-6 py-2">{ev.event_type}</td>
+                                <td className="px-6 py-2 font-mono text-text-muted text-xs">
+                                    {ev.details.decision || ev.details.effective_action || ev.details.status || '-'}
+                                </td>
                             </tr>
                         ))}
                     </tbody>
                 </table>
-            </div>
-            {selectedEvent && (
-                <div className="w-1/3 bg-panel border border-gray-800 rounded-lg p-4 overflow-auto">
-                    <h3 className="text-sm font-bold text-gray-300 uppercase mb-4 tracking-widest border-b border-gray-800 pb-2">Event JSON</h3>
-                    <pre className="font-mono text-xs text-green-400 whitespace-pre-wrap">{JSON.stringify(selectedEvent, null, 2)}</pre>
-                </div>
-            )}
-        </div>
-    );
-};
-
-// --- Page 6: Live Demo ---
-const LiveDemo = ({ onViewCase }) => {
-    const [loading, setLoading] = useState(false);
-    const [form, setForm] = useState({
-        case_type: 'PAYMENT_FAILURE',
-        amount_inr: '2499',
-        failure_reason: 'insufficient_funds',
-        mandate_state: 'ACTIVE'
-    });
-
-    const runSim = async () => {
-        setLoading(true);
-        try {
-            const res = await fetch(`${API_BASE}/api/demo/simulate`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    ...form,
-                    amount_inr: parseFloat(form.amount_inr)
-                })
-            });
-            const data = await res.json();
-            if (data.case_id) {
-                onViewCase(data.case_id);
-            }
-        } catch (e) {
-            alert("Error: " + e.message);
-        }
-        setLoading(false);
-    };
-
-    return (
-        <div className="p-6 animate-fade-in max-w-3xl mx-auto">
-            <h2 className="text-2xl font-bold text-white mb-6">Live Demo / Event Simulator</h2>
-            <div className="bg-panel rounded-lg border border-gray-800 p-8">
-                <h3 className="text-sm font-bold tracking-widest text-blue-400 uppercase mb-6">Simulate Revenue-At-Risk Event</h3>
-                
-                <div className="space-y-4 mb-8 font-mono text-sm">
-                    <div>
-                        <label className="block text-gray-500 mb-1">Case type:</label>
-                        <select className="w-full bg-dark border border-gray-700 rounded p-2 text-white" value={form.case_type} onChange={e => setForm({...form, case_type: e.target.value})}>
-                            <option value="PAYMENT_FAILURE">Payment Failure</option>
-                            <option value="SUBSCRIPTION">Subscription Failure</option>
-                            <option value="CHECKOUT_ABANDONMENT">Checkout Abandonment</option>
-                            <option value="RECEIVABLE">Receivable</option>
-                            <option value="PROMISE_TO_PAY">Promise-to-Pay</option>
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-gray-500 mb-1">Amount (₹):</label>
-                        <input type="number" className="w-full bg-dark border border-gray-700 rounded p-2 text-white" value={form.amount_inr} onChange={e => setForm({...form, amount_inr: e.target.value})} />
-                    </div>
-                    <div>
-                        <label className="block text-gray-500 mb-1">Failure reason:</label>
-                        <input type="text" className="w-full bg-dark border border-gray-700 rounded p-2 text-white" value={form.failure_reason} onChange={e => setForm({...form, failure_reason: e.target.value})} />
-                    </div>
-                    <div>
-                        <label className="block text-gray-500 mb-1">Mandate:</label>
-                        <select className="w-full bg-dark border border-gray-700 rounded p-2 text-white" value={form.mandate_state} onChange={e => setForm({...form, mandate_state: e.target.value})}>
-                            <option value="ACTIVE">ACTIVE</option>
-                            <option value="REVOKED">REVOKED</option>
-                            <option value="UNKNOWN">UNKNOWN</option>
-                        </select>
-                    </div>
-                </div>
-
-                <button 
-                    onClick={runSim} 
-                    disabled={loading}
-                    className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded font-mono disabled:opacity-50 transition-colors">
-                    {loading ? "RUNNING..." : "[ RUN CHAKRA ]"}
-                </button>
-            </div>
-            
-            <div className="mt-8 bg-dark border border-gray-800 rounded p-6 font-mono text-sm text-gray-400">
-                <h4 className="text-white font-bold mb-2">Scenarios to try:</h4>
-                <ul className="list-disc pl-5 space-y-1">
-                    <li><strong>Success:</strong> 2499, insufficient_funds, ACTIVE</li>
-                    <li><strong>Routing:</strong> 8999, SUBSCRIPTION, ACTIVE (days_overdue=7)</li>
-                    <li><strong>Safety Block:</strong> 25000, REVOKED</li>
-                    <li><strong>AFA required:</strong> 20000+, ACTIVE</li>
-                </ul>
-            </div>
-        </div>
-    );
-};
-
-// --- Page 7: Architecture ---
-const Architecture = () => {
-    return (
-        <div className="p-6 animate-fade-in max-w-4xl mx-auto">
-            <h2 className="text-2xl font-bold text-white mb-6">System Architecture</h2>
-            <div className="bg-panel rounded-lg border border-gray-800 p-8 flex flex-col items-center">
-                <div className="space-y-2 text-center font-mono text-sm w-full max-w-md">
-                    <div className="bg-red-900/30 border border-red-800 text-red-400 py-3 rounded font-bold">Revenue at Risk</div>
-                    <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
-                    
-                    <div className="bg-dark border border-gray-700 text-gray-300 py-3 rounded">Event Sources</div>
-                    <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
-                    
-                    <div className="bg-dark border border-gray-700 text-gray-300 py-3 rounded flex flex-col">
-                        <span>Event-specific context</span>
-                        <span className="text-gray-600 text-xs my-1">↓</span>
-                        <span className="font-bold text-blue-400">Context Builder</span>
-                    </div>
-                    <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
-                    
-                    <div className="bg-dark border border-gray-700 text-gray-300 py-3 rounded font-bold">Revenue Risk Engine</div>
-                    <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
-                    
-                    <div className="bg-dark border border-gray-700 text-gray-300 py-3 rounded font-bold">Recovery Agent</div>
-                    <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
-                    
-                    <div className="bg-dark border border-red-800 text-red-400 py-3 rounded font-bold uppercase tracking-widest">Non-Overridable Safety Gate</div>
-                    <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
-                    
-                    <div className="bg-blue-900/20 border border-blue-800 text-blue-400 py-3 rounded font-bold">Recovery Actions</div>
-                    <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
-                    
-                    <div className="bg-dark border border-gray-700 text-gray-300 py-3 rounded font-bold">Recovery Executor</div>
-                    <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
-                    
-                    <div className="bg-dark border border-gray-700 text-gray-300 py-3 rounded font-bold">Outcome Evaluator</div>
-                    <div className="text-gray-600"><Icon name="arrow-down" size={24} className="mx-auto"/></div>
-                    
-                    <div className="bg-green-900/20 border border-green-800 text-green-400 py-3 rounded font-bold">Audit Trail + Metrics</div>
-                </div>
             </div>
         </div>
     );
@@ -676,71 +697,102 @@ const Architecture = () => {
 
 // --- App Root ---
 const App = () => {
-    const [currentTab, setCurrentTab] = useState('overview');
-    const [metrics, setMetrics] = useState(null);
-    const [auditTrail, setAuditTrail] = useState(null);
+    const { metrics, auditLog, cases, loading, error, demoMode, setDemoMode, setDemoIndex } = useChakraData();
+    const [currentTab, setCurrentTab] = useState('Command Center');
     const [selectedCaseId, setSelectedCaseId] = useState(null);
 
-    const refreshData = () => {
-        fetch(`${API_BASE}/api/metrics`).then(r => r.json()).then(setMetrics).catch(console.error);
-        fetch(`${API_BASE}/api/audit?limit=200`).then(r => r.json()).then(d => setAuditTrail(d.events)).catch(console.error);
-    };
+    const tabs = ['Command Center', 'Opportunities', 'Cases', 'Recovery', 'Safety', 'Analytics', 'Audit Log'];
 
-    useEffect(() => {
-        refreshData();
-        const interval = setInterval(refreshData, 5000);
-        return () => clearInterval(interval);
-    }, []);
+    if (loading) return <div className="flex h-screen items-center justify-center bg-background text-text-main">Loading Chakra Command Center...</div>;
+    if (error) return (
+        <div className="flex h-screen items-center justify-center bg-background flex-col">
+            <div className="text-red-500 mb-4"><Icon name="alert-triangle" size={48} /></div>
+            <h2 className="text-xl font-bold text-text-main mb-2">Backend unavailable</h2>
+            <p className="text-text-muted mb-4">{error}</p>
+            <button onClick={() => window.location.reload()} className="px-4 py-2 bg-text-main text-white rounded font-medium">Retry</button>
+        </div>
+    );
 
     const viewCase = (id) => {
         setSelectedCaseId(id);
-        setCurrentTab('case_detail');
     };
 
-    const tabs = [
-        { id: 'overview', label: 'Overview', icon: 'layout-dashboard' },
-        { id: 'live_feed', label: 'Live Feed', icon: 'activity' },
-        { id: 'safety', label: 'Safety Center', icon: 'shield' },
-        { id: 'audit', label: 'Audit Trail', icon: 'list' },
-        { id: 'demo', label: 'Simulator', icon: 'play-circle' },
-        { id: 'architecture', label: 'Architecture', icon: 'network' },
-    ];
-
     return (
-        <div className="flex h-screen overflow-hidden bg-darker text-gray-200">
-            <div className="w-64 bg-dark border-r border-gray-800 flex flex-col">
-                <div className="p-6 border-b border-gray-800">
-                    <h1 className="font-bold tracking-widest text-lg text-white">CHAKRA</h1>
-                    <div className="text-xs text-blue-500 font-mono mt-1">COMMAND CENTER</div>
+        <div className="flex h-screen overflow-hidden bg-background">
+            {/* Sidebar */}
+            <div className="w-64 bg-white border-r border-border flex flex-col shrink-0">
+                <div className="p-6 border-b border-border">
+                    <h1 className="font-bold tracking-widest text-xl text-text-main">CHAKRA</h1>
                 </div>
-                <nav className="flex-1 p-4 space-y-2">
+                <nav className="flex-1 py-4 flex flex-col">
                     {tabs.map(t => (
                         <button
-                            key={t.id}
-                            onClick={() => { setCurrentTab(t.id); setSelectedCaseId(null); }}
-                            className={`w-full flex items-center space-x-3 px-4 py-3 rounded text-sm font-medium transition-colors ${currentTab === t.id && !selectedCaseId ? 'bg-blue-600/10 text-blue-400' : 'text-gray-400 hover:bg-gray-800 hover:text-gray-200'}`}
+                            key={t}
+                            onClick={() => { setCurrentTab(t); setSelectedCaseId(null); }}
+                            className={`w-full text-left px-6 py-2.5 text-sm font-medium transition-colors ${currentTab === t && !selectedCaseId ? 'text-rzp-blue bg-blue-50 border-r-2 border-rzp-blue' : 'text-text-muted hover:bg-gray-50 hover:text-text-main border-r-2 border-transparent'}`}
                         >
-                            <Icon name={t.icon} size={18} />
-                            <span>{t.label}</span>
+                            {t}
                         </button>
                     ))}
-                    {selectedCaseId && (
-                        <div className="px-4 py-3 text-sm font-medium text-blue-400 bg-blue-600/10 rounded flex items-center space-x-3">
-                            <Icon name="search" size={18} />
-                            <span>Case Detail</span>
-                        </div>
-                    )}
                 </nav>
+                <div className="p-6 border-t border-border">
+                    <Badge status="INFO"><span className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-2 animate-pulse"></span>SYNTHETIC DEMO</Badge>
+                </div>
             </div>
 
-            <div className="flex-1 overflow-auto pb-10">
-                {currentTab === 'overview' && !selectedCaseId && <Overview metrics={metrics} />}
-                {currentTab === 'live_feed' && !selectedCaseId && <LiveFeed auditTrail={auditTrail} onViewCase={viewCase} />}
-                {currentTab === 'safety' && !selectedCaseId && <SafetyCenter auditTrail={auditTrail} />}
-                {currentTab === 'audit' && !selectedCaseId && <AuditTrail auditTrail={auditTrail} />}
-                {currentTab === 'demo' && !selectedCaseId && <LiveDemo onViewCase={viewCase} />}
-                {currentTab === 'architecture' && !selectedCaseId && <Architecture />}
-                {selectedCaseId && <CaseDetail caseId={selectedCaseId} onBack={() => {setSelectedCaseId(null); setCurrentTab('live_feed');}} />}
+            {/* Main Content */}
+            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+                {/* Topbar */}
+                <header className="h-16 bg-white border-b border-border flex items-center justify-between px-6 shrink-0 shadow-sm z-10">
+                    <div className="flex items-center">
+                        {selectedCaseId ? (
+                            <div className="flex items-center text-sm font-medium text-text-muted">
+                                <span className="cursor-pointer hover:text-text-main" onClick={() => setSelectedCaseId(null)}>Opportunities</span>
+                                <Icon name="chevron-right" size={16} className="mx-2" />
+                                <span className="text-text-main font-mono">{selectedCaseId.substring(0,8)}</span>
+                            </div>
+                        ) : (
+                            <h2 className="text-lg font-semibold text-text-main">{currentTab}</h2>
+                        )}
+                    </div>
+                    <div className="flex items-center space-x-4">
+                        <div className="relative">
+                            <Icon name="search" size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+                            <input type="text" placeholder="Search cases..." className="pl-9 pr-4 py-1.5 border border-border rounded text-sm bg-gray-50 focus:bg-white focus:outline-none focus:border-rzp-blue focus:ring-1 focus:ring-rzp-blue transition-colors w-64" />
+                        </div>
+                        <div className="w-px h-6 bg-border"></div>
+                        <button 
+                            onClick={() => { setDemoMode(!demoMode); setDemoIndex(0); }}
+                            className={`flex items-center space-x-2 text-sm font-medium px-3 py-1.5 border rounded transition-colors ${demoMode ? 'bg-blue-50 border-rzp-blue text-rzp-blue' : 'bg-gray-50 border-border text-text-muted hover:bg-gray-100'}`}
+                        >
+                            <span className={`w-2 h-2 rounded-full ${demoMode ? 'bg-rzp-blue animate-pulse' : 'bg-gray-400'}`}></span>
+                            <span>{demoMode ? 'LIVE DEMO ●' : 'LIVE DEMO'}</span>
+                        </button>
+                        <div className="flex items-center space-x-2 text-sm text-text-muted font-medium bg-gray-50 px-3 py-1.5 border border-border rounded">
+                            <span>Synthetic</span>
+                        </div>
+                        <button className="text-text-muted hover:text-text-main p-1.5 rounded hover:bg-gray-100 transition-colors">
+                            <Icon name="settings" size={20} />
+                        </button>
+                    </div>
+                </header>
+
+                {/* Main Scrollable Area */}
+                <main className="flex-1 overflow-y-auto p-6 bg-background">
+                    {selectedCaseId ? (
+                        <CaseDetail caseData={cases.find(c => c.id === selectedCaseId)} onBack={() => setSelectedCaseId(null)} />
+                    ) : (
+                        <>
+                            {currentTab === 'Command Center' && <CommandCenter metrics={metrics} auditLog={auditLog} onViewCase={viewCase} />}
+                            {currentTab === 'Opportunities' && <Opportunities cases={cases} onViewCase={viewCase} />}
+                            {currentTab === 'Cases' && <Opportunities cases={cases} onViewCase={viewCase} />}
+                            {currentTab === 'Recovery' && <Recovery metrics={metrics} />}
+                            {currentTab === 'Safety' && <SafetyCenter cases={cases} />}
+                            {currentTab === 'Analytics' && <Analytics metrics={metrics} />}
+                            {currentTab === 'Audit Log' && <AuditLog auditLog={auditLog} onViewCase={viewCase} />}
+                        </>
+                    )}
+                </main>
             </div>
         </div>
     );
