@@ -91,7 +91,9 @@ def test_gemini_triage_ambiguous_case(mock_classify):
         action="ESCALATE",
         reason="Mocked ambiguous network anomaly",
         template=None,
-        delay_hours=None
+        delay_hours=None,
+        confidence=0.85,
+        model_used="gemini-2.5-flash"
     )
     
     ctx = RecoveryCase(
