@@ -1,7 +1,9 @@
+import { API_BASE } from '../services/api';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, XCircle, Loader2 } from 'lucide-react';
 import { formatCurrency } from '../lib/format';
+
 
 export const CheckoutRecovery = ({ refresh }: any) => {
     const navigate = useNavigate();
@@ -28,7 +30,7 @@ export const CheckoutRecovery = ({ refresh }: any) => {
         
         try {
             // 1. Create Order via backend
-            const orderRes = await fetch('http://localhost:8001/api/payments/create_order', {
+            const orderRes = await fetch(`${API_BASE}/api/payments/create_order`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ amount_inr: 5000, customer_id: 'cust_demo_001' })
@@ -37,7 +39,7 @@ export const CheckoutRecovery = ({ refresh }: any) => {
             setOrderId(orderData.order_id);
             
             // 2. Fetch config
-            const configRes = await fetch('http://localhost:8001/api/config');
+            const configRes = await fetch(`${API_BASE}/api/config`);
             const config = await configRes.json();
             
             // 3. Open Razorpay Checkout
@@ -85,7 +87,7 @@ export const CheckoutRecovery = ({ refresh }: any) => {
     const handleAbandonment = async () => {
         setStatus('RECOVERING');
         try {
-            const simRes = await fetch('http://localhost:8001/api/demo/simulate', {
+            const simRes = await fetch(`${API_BASE}/api/demo/simulate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

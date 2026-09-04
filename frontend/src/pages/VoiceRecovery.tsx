@@ -1,7 +1,9 @@
+import { API_BASE } from '../services/api';
 import React, { useState } from 'react';
 import { PhoneCall, Mic, MicOff, Phone, Loader2 } from 'lucide-react';
 import { formatCurrency } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
+
 
 export const VoiceRecovery = () => {
     const [status, setStatus] = useState<'IDLE'|'CONNECTING'|'RINGING'|'IN_PROGRESS'|'COMPLETED'|'FAILED'>('IDLE');
@@ -16,7 +18,7 @@ export const VoiceRecovery = () => {
         setIntent(null);
         
         try {
-            const res = await fetch('http://localhost:8001/api/receivables/voice/start', {
+            const res = await fetch(`${API_BASE}/api/receivables/voice/start`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

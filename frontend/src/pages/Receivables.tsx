@@ -1,8 +1,10 @@
+import { API_BASE } from '../services/api';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatCurrency, formatExact } from '../lib/format';
 import { FileText, Calendar, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
+
 
 export const Receivables = () => {
     const navigate = useNavigate();
@@ -12,7 +14,7 @@ export const Receivables = () => {
 
     const fetchReceivables = async () => {
         try {
-            const res = await fetch('http://localhost:8001/api/receivables');
+            const res = await fetch(`${API_BASE}/api/receivables`);
             const data = await res.json();
             setReceivables(data);
         } catch (e) {
@@ -28,16 +30,17 @@ export const Receivables = () => {
         return () => clearInterval(interval);
     }, []);
 
-    const handleCreatePromise = async (id: string, amount: number) => {
+    const handleCreatePromise = async (id: string, amount: number, customer: string) => {
         const date = prompt("Enter promised date (YYYY-MM-DD):", new Date(Date.now() + 86400000*3).toISOString().split('T')[0]);
         if (!date) return;
         
         try {
-            await fetch('http://localhost:8001/api/receivables/promise', {
+            await fetch(`${API_BASE}/api/receivables/promises`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     receivable_id: id,
+                    customer: customer,
                     amount: amount,
                     promised_date: date
                 })
@@ -50,13 +53,10 @@ export const Receivables = () => {
 
     const handleBreakPromise = async (recId: string, promiseId: string) => {
         try {
-            await fetch('http://localhost:8001/api/receivables/promise/break', {
+            await fetch(`${API_BASE}/api/receivables/promises/${promiseId}/break`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    receivable_id: recId,
-                    promise_id: promiseId
-                })
+                body: JSON.stringify({ receivable_id: recId })
             });
             fetchReceivables();
         } catch (e) {
@@ -201,7 +201,7 @@ export const Receivables = () => {
                                     <h4 className="text-[10px] text-text-muted uppercase tracking-widest mb-3 font-bold">Recovery Actions</h4>
                                     <div className="space-y-2">
                                         <button 
-                                            onClick={() => handleCreatePromise(selected.id, selected.amount)}
+                                            onClick={() => handleCreatePromise(selected.id, selected.amount, selected.customer)}
                                             className="w-full py-2 bg-rzp-blue text-white text-xs font-bold uppercase tracking-widest rounded hover:bg-blue-700 transition-colors"
                                         >
                                             Record Promise to Pay

@@ -148,6 +148,42 @@ async def create_promise(req: PromiseCreateRequest):
     return promise
 
 
+@router.post("/promises/{promise_id}/break")
+async def break_promise(promise_id: str):
+    """Mark a promise as BROKEN and feed BROKEN_PROMISE event into the pipeline."""
+    promise = next((p for p in _promises if p["id"] == promise_id), None)
+    if not promise:
+        raise HTTPException(status_code=404, detail="Promise not found")
+
+    promise["status"] = "BROKEN"
+
+    # Update receivable status
+    receivable = next((r for r in _receivables if r["id"] == promise["receivable_id"]), None)
+    if receivable:
+        receivable["status"] = "OVERDUE"
+        receivable["previous_promises"] = receivable.get("previous_promises", 0) + 1
+
+    # Feed broken promise event into pipeline
+    payload = {
+        "payment_id": promise_id,
+        "amount_inr": promise["amount"],
+        "error_code": "promise_broken",
+        "case_type": "PROMISE_TO_PAY",
+        "customer_id": promise["customer"],
+        "context": {
+            "promise_status": "BROKEN",
+            "invoice_id": promise["receivable_id"],
+            "promised_date": promise["promised_date"]
+        }
+    }
+    try:
+        await execute_recovery_pipeline(payload, dry_run=True)
+    except Exception:
+        pass
+
+    return promise
+
+
 @router.post("/{id}/recover")
 async def recover_receivable(id: str, action: str = "PAYMENT_LINK"):
     receivable = next((r for r in _receivables if r["id"] == id), None)
