@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.pytest_cache
+__pycache__
+*.pyc
+.git
+.github
+voice_notes

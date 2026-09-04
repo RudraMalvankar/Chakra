@@ -84,3 +84,34 @@ cd frontend
 npm run lint
 npm run build
 ```
+
+## CI/CD Pipeline
+
+Chakra includes a professional CI/CD pipeline managed via GitHub Actions (`.github/workflows/ci-cd.yml`).
+
+### CI (Continuous Integration)
+The CI pipeline runs automatically on all `push` and `pull_request` events targeting the `main` branch. It ensures system integrity by verifying:
+- **Backend**: Sets up Python 3.11, installs dependencies via `requirements.txt`, and runs the full Pytest suite (`python -m pytest -q backend/tests`).
+- **Frontend**: Sets up Node 20, installs dependencies (`npm ci`), and runs strict linting (`npm run lint`) and production builds (`npm run build`).
+
+*Note: CI explicitly runs without Razorpay API keys, seamlessly falling back to the Synthetic Gateway to guarantee reproducible and dependency-safe verification.*
+
+### CD (Continuous Delivery)
+When CI successfully passes on the `main` branch, the CD pipeline builds containerized artifacts and publishes them to the GitHub Container Registry (GHCR). 
+- `chakra-backend:latest`: Built via `backend/Dockerfile`.
+- `chakra-frontend:latest`: Built via `frontend/Dockerfile` (multi-stage Nginx container).
+
+Deployment activation is strictly contingent upon successful CI completion; untested or failing code is never built for delivery.
+
+### Reproducing CI Checks Locally
+To mirror the CI verification on your local machine, run the following commands:
+```bash
+# Backend Verification
+python -m pytest -q backend/tests
+
+# Frontend Verification
+cd frontend
+npm ci
+npm run lint
+npm run build
+```
