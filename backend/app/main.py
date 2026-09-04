@@ -112,9 +112,16 @@ import razorpay
 @app.get("/api/config")
 def get_config():
     rzp_key = os.getenv("RAZORPAY_KEY_ID")
+    if rzp_key:
+        return {
+            "provider": "razorpay_test",
+            "mode": "test",
+            "razorpay_key_id": rzp_key
+        }
     return {
-        "mode": "razorpay" if rzp_key else "synthetic",
-        "razorpay_key_id": rzp_key if rzp_key else None
+        "provider": "synthetic",
+        "mode": "synthetic",
+        "razorpay_key_id": None
     }
 
 class CreateOrderRequest(BaseModel):

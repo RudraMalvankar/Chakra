@@ -40,7 +40,7 @@ export const Batch = () => {
                     fraud_risk
                 });
                 success++;
-            } catch (err) {
+            } catch (_err) {
                 fail++;
             }
             setProgress(Math.round(((i + 1) / count) * 100));

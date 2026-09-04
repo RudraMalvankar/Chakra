@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-router-dom';
+import React from 'react';
+import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { useChakraData } from './hooks/useChakraData';
 import { CommandCenter } from './pages/CommandCenter';
 import { Simulator } from './pages/Simulator';

@@ -1,4 +1,4 @@
-import type { Case, Metrics, Payment } from '../types';
+import type { Metrics } from '../types';
 import { AuditLogSchema } from '../types/schemas';
 
 const API_BASE = 'http://localhost:8001';
@@ -17,7 +17,7 @@ export const fetchAuditLog = async (limit = 2000) => {
   try {
       const valid = AuditLogSchema.parse(data);
       return valid.events;
-  } catch (err) {
+  } catch (_err) {
       console.warn("Zod validation failed on audit log, falling back to raw data", err);
       return data.events || [];
   }
@@ -39,7 +39,7 @@ export const fetchMockPayments = async () => {
         if (!res.ok) return [];
         const data = await res.json();
         return data.items || [];
-    } catch (err) {
+    } catch (_err) {
         return [];
     }
 };

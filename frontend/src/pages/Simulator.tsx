@@ -43,7 +43,7 @@ export const Simulator = ({ refresh }: any) => {
                 failure_reason: failureReason
             });
             setResult(trace);
-            refresh && refresh();
+            if (refresh) refresh();
         } catch (err) {
             console.error(err);
         }
@@ -60,7 +60,7 @@ export const Simulator = ({ refresh }: any) => {
                 customer_id: payload.customer_id
             });
 
-            if (config.mode === 'razorpay' && config.razorpay_key_id && window.Razorpay) {
+            if (config.mode === 'test' && config.razorpay_key_id && window.Razorpay) {
                 const options = {
                     key: config.razorpay_key_id,
                     amount: orderRes.amount_inr * 100,
@@ -68,7 +68,7 @@ export const Simulator = ({ refresh }: any) => {
                     name: "Chakra Simulator",
                     description: "Test Transaction",
                     order_id: orderRes.order_id,
-                    handler: function (response: any) {
+                    handler: function (_response: any) {
                         alert("Payment succeeded. No recovery needed.");
                         setLoading(false);
                     },
@@ -83,7 +83,7 @@ export const Simulator = ({ refresh }: any) => {
                 };
                 const rzp = new window.Razorpay(options);
                 
-                rzp.on('payment.failed', async function (response: any) {
+                rzp.on('payment.failed', async function (_response: any) {
                     const reason = response.error.reason || payload.failure_reason;
                     await processChakraPipeline(reason);
                     setLoading(false);
@@ -108,7 +108,7 @@ export const Simulator = ({ refresh }: any) => {
                         <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Create Payment</h2>
                         <p className="text-xs text-text-muted mt-1 font-mono">Process a live event through the Chakra pipeline</p>
                     </div>
-                    {config.mode === 'razorpay' ? (
+                    {config.mode === 'test' ? (
                         <Badge status="SUCCESS">RAZORPAY TEST MODE</Badge>
                     ) : (
                         <Badge status="INFO">SYNTHETIC SIMULATOR</Badge>
@@ -156,7 +156,7 @@ export const Simulator = ({ refresh }: any) => {
                                 </select>
                             </div>
 
-                            {config.mode !== 'razorpay' && (
+                            {config.mode !== 'test' && (
                                 <div>
                                     <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider mb-1">Synthetic Failure Reason</label>
                                     <select value={payload.failure_reason} onChange={e => setPayload({...payload, failure_reason: e.target.value})} className="w-full border border-border rounded px-3 py-2 font-mono text-sm focus:border-rzp-blue focus:outline-none bg-white">
@@ -207,7 +207,7 @@ export const Simulator = ({ refresh }: any) => {
                                 {loading ? <Loader className="animate-spin" size={16} /> : 'CREATE & PROCESS PAYMENT'}
                             </button>
                             
-                            {config.mode === 'razorpay' && (
+                            {config.mode === 'test' && (
                                 <p className="text-[10px] text-text-muted text-center mt-2">
                                     This will open the Razorpay Test Checkout. Use a test card to simulate a failure.
                                 </p>

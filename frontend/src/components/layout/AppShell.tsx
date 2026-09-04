@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { Play, Pause, RotateCcw, Search, Settings, ChevronRight, Activity } from 'lucide-react';
+import { Play, Pause, RotateCcw, Search, Settings, ChevronRight } from 'lucide-react';
 import { Badge } from '../ui/Badge';
 
 export const AppShell = ({ children, data }: any) => {

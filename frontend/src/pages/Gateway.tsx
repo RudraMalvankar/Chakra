@@ -43,7 +43,7 @@ export const Gateway = () => {
                         Direct connection to provider events
                     </p>
                 </div>
-                {config.mode === 'razorpay' ? (
+                {config.mode === 'test' ? (
                     <Badge status="SUCCESS">RAZORPAY TEST MODE</Badge>
                 ) : (
                     <Badge status="INFO">SYNTHETIC GATEWAY</Badge>
@@ -105,7 +105,7 @@ export const Gateway = () => {
                                             {p.error_code || p.error_description || '-'}
                                         </td>
                                         <td className="px-6 py-4">
-                                            {p.status === 'failed' && config.mode !== 'razorpay' && (
+                                            {p.status === 'failed' && config.mode !== 'test' && (
                                                 <button
                                                     onClick={() => handleRetry(p.id)}
                                                     disabled={retrying === p.id}
