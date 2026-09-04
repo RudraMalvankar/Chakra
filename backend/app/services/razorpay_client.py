@@ -52,11 +52,13 @@ class RazorpayTestProvider(PaymentProvider):
             return False
 
     async def retry_payment(self, payment_id: str, delay_hours: int) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
-            response = await client.post(f"{self.base_url}/v1/payments/{payment_id}/retry", auth=(self.key_id, self.key_secret))
-            if response.status_code == 200:
-                return response.json()
-            return {"status": "failed", "payment_id": payment_id}
+        # Razorpay does not expose a generic /v1/payments/{id}/retry endpoint.
+        # Direct retries must be managed by the provider's subscription/checkout flow or payment links.
+        return {
+            "status": "failed", 
+            "error": "unsupported_operation", 
+            "message": "Direct generic retry API not supported by Razorpay Test Mode. Represented as provider-managed retry."
+        }
 
     async def create_payment_link(self, customer_id: str, amount: int, template: str, payment_id: str) -> Dict[str, Any]:
         payload = {"customer": {"contact": "9999999999", "email": "test@example.com"}, "amount": amount, "currency": "INR", "notes": {"payment_id": payment_id, "template": template}}
@@ -92,33 +94,33 @@ class SyntheticPaymentProvider(PaymentProvider):
         return hmac.compare_digest(expected_mac, signature.strip())
 
     async def retry_payment(self, payment_id: str, delay_hours: int) -> Dict[str, Any]:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             try:
                 response = await client.post(f"{self.base_url}/v1/payments/{payment_id}/retry")
                 if response.status_code == 200:
                     return response.json()
-            except:
-                pass
-            return {"status": "captured", "payment_id": payment_id, "amount_captured": 0}
+                return {"status": "failed", "error": f"HTTP {response.status_code}"}
+            except httpx.RequestError as e:
+                return {"status": "failed", "error": "network_error", "message": str(e)}
 
     async def create_payment_link(self, customer_id: str, amount: int, template: str, payment_id: str) -> Dict[str, Any]:
         payload = {"customer": {"id": customer_id}, "amount": amount, "notes": {"payment_id": payment_id, "template": template}}
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             try:
                 response = await client.post(f"{self.base_url}/v1/payment_links", json=payload)
                 if response.status_code == 200:
                     return response.json()
-            except:
-                pass
-            return {"status": "captured"}
+                return {"status": "failed", "error": f"HTTP {response.status_code}"}
+            except httpx.RequestError as e:
+                return {"status": "failed", "error": "network_error", "message": str(e)}
 
     async def get_payments(self) -> List[Dict[str, Any]]:
-        async with httpx.AsyncClient() as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
             try:
                 response = await client.get(f"{self.base_url}/v1/payments")
                 if response.status_code == 200:
                     return response.json().get("items", [])
-            except:
+            except httpx.RequestError:
                 pass
             return []
 
