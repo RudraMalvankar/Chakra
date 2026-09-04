@@ -1,7 +1,7 @@
 import type { Metrics } from '../types';
 import { AuditLogSchema } from '../types/schemas';
 
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001";
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 const GATEWAY_BASE = 'http://localhost:8002'; // Mock Razorpay
 
 export const fetchMetrics = async (): Promise<Metrics> => {
