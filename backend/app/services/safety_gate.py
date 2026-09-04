@@ -1,3 +1,21 @@
+
+from pathlib import Path
+import yaml
+from backend.app.config import settings
+
+def _load_threshold():
+    try:
+        policy_path = Path(settings.recovery_policy_path)
+        if policy_path.exists():
+            with open(policy_path, 'r') as f:
+                data = yaml.safe_load(f)
+                return data.get('policy', {}).get('regulatory', {}).get('afa_free_threshold_standard_inr', 15000)
+    except:
+        pass
+    return 15000
+
+REGULATORY_THRESHOLD = _load_threshold()
+
 from backend.app.models.case import RecoveryCase
 """
 Enforcer Safety Gate: Non-Overridable Deterministic Policy Enforcer.
@@ -78,7 +96,7 @@ class SafetyGate:
         network_caps = REGULATORY_POLICY.get("network_retry_caps", {"visa": 15, "mastercard": 10, "rupay": 15})
         max_budget = RECOVERY_POLICY.get("max_interventions_per_customer_per_month", 3)
         churn_threshold = RECOVERY_POLICY.get("high_alerts_ignored_threshold", 2)
-        afa_threshold = float(REGULATORY_POLICY.get("afa_free_threshold_standard_inr", 15000.0))
+        afa_threshold = float(REGULATORY_POLICY.get("afa_free_threshold_standard_inr", float(REGULATORY_THRESHOLD)))
 
         # Clone decision to prevent unexpected in-place side effects
         final_dec = proposed.model_copy()

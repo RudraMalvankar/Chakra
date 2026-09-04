@@ -148,6 +148,30 @@ async def execute_recovery_pipeline(
     ctx: RecoveryCase = ContextBuilder.build_context(payload)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
+    # 0. Triage (AI/Diagnostic classification)
+    from backend.app.services.triage import TriageEngine
+    from backend.app.lib.audit import log_audit_event
+    triage_result = TriageEngine.triage(ctx)
+    if triage_result.is_ambiguous:
+        log_audit_event(ctx.payment_id, "ai_triage_requested", {"error_code": ctx.error_code})
+        log_audit_event(ctx.payment_id, "ai_triage_completed", {
+            "error_code": ctx.error_code,
+            "classification": triage_result.recommended_action.value if hasattr(triage_result.recommended_action, 'value') else str(triage_result.recommended_action),
+            "confidence": triage_result.confidence,
+            "fallback_used": True,
+            "reason": triage_result.reason
+        })
+        # Map LLM output to standard error codes for RecoveryAgent
+        action_val = triage_result.recommended_action.value if hasattr(triage_result.recommended_action, 'value') else str(triage_result.recommended_action)
+        if action_val == "RETRY_LATER":
+            ctx.failure_reason = "payment_timed_out"
+        elif action_val == "PAYMENT_LINK":
+            ctx.failure_reason = "card_declined"
+        elif action_val == "BLOCK":
+            ctx.failure_reason = "fraud_flag"
+        else:
+            ctx.failure_reason = "escalated_by_triage"
+
     # 1. Detect & Assess Revenue Risk
     risk_assessment = RevenueRiskEngine.assess(ctx)
     log_audit_event(ctx.payment_id, "revenue_risk_assessed", risk_assessment.model_dump())

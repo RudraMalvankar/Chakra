@@ -1,4 +1,22 @@
 from typing import List
+
+from pathlib import Path
+import yaml
+from backend.app.config import settings
+
+def _load_threshold():
+    try:
+        policy_path = Path(settings.recovery_policy_path)
+        if policy_path.exists():
+            with open(policy_path, 'r') as f:
+                data = yaml.safe_load(f)
+                return data.get('policy', {}).get('regulatory', {}).get('afa_free_threshold_standard_inr', 15000)
+    except:
+        pass
+    return 15000
+
+REGULATORY_THRESHOLD = _load_threshold()
+
 from backend.app.models.case import RecoveryCase, AgentDecision, CandidateAction, InterventionType, CaseType
 
 class RecoveryAgent:
@@ -111,7 +129,7 @@ class RecoveryAgent:
                 add_candidate(InterventionType.REMINDER, 1.3, 5.0, "active promise pending fulfillment")
         
         # 4. Global Modifiers (AFA Limits)
-        if case.amount_at_risk > 15000:
+        if case.amount_at_risk > REGULATORY_THRESHOLD:
             for c in candidates:
                 if c.action in ["RETRY_NOW", "RETRY_LATER"] and c.eligible:
                     c.eligible = False
@@ -128,7 +146,7 @@ class RecoveryAgent:
         
         # Assemble decision factors for explanation
         decision_factors = [best_candidate.reason]
-        if case.amount_at_risk > 15000:
+        if case.amount_at_risk > REGULATORY_THRESHOLD:
             decision_factors.append("AFA threshold required authenticated intervention")
         if case.retry_count > 0:
             decision_factors.append(f"previous retries penalized score ({case.retry_count})")

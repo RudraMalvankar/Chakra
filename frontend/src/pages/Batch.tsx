@@ -97,7 +97,7 @@ export const Batch = () => {
                         </div>
                         <div className="p-4 bg-gray-50 border border-border rounded">
                             <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider mb-1">Recovery Rate</div>
-                            <div className="text-xl font-bold font-mono text-text-main">{(results.revenue_recovery_rate_pct * 100).toFixed(1)}%</div>
+                            <div className="text-xl font-bold font-mono text-text-main">{(results.revenue_recovery_rate_pct).toFixed(1)}%</div>
                         </div>
                     </div>
                 </div>

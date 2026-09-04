@@ -1,4 +1,22 @@
 from typing import List, Dict, Any
+
+from pathlib import Path
+import yaml
+from backend.app.config import settings
+
+def _load_threshold():
+    try:
+        policy_path = Path(settings.recovery_policy_path)
+        if policy_path.exists():
+            with open(policy_path, 'r') as f:
+                data = yaml.safe_load(f)
+                return data.get('policy', {}).get('regulatory', {}).get('afa_free_threshold_standard_inr', 15000)
+    except:
+        pass
+    return 15000
+
+REGULATORY_THRESHOLD = _load_threshold()
+
 from backend.app.models.case import RecoveryCase, RevenueRiskAssessment, CaseType
 
 class RevenueRiskEngine:
@@ -68,7 +86,7 @@ class RevenueRiskEngine:
                 window = "till_due_date"
         
         # Modifiers
-        if case.amount_at_risk > 15000:
+        if case.amount_at_risk > REGULATORY_THRESHOLD:
             priority = "HIGH"
             risk_factors.append("high_value_transaction")
             

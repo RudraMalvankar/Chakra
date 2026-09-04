@@ -15,10 +15,11 @@ if hasattr(sys.stdout, "reconfigure"):
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../..')))
 
-from backend.app.models.case import RecoveryCase, InterventionType, PaymentState
+from backend.app.models.case import RecoveryCase, InterventionType, PaymentState, RecoveryDecision
 from backend.app.services.context_builder import ContextBuilder
 from backend.app.services.triage import TriageEngine
-from backend.app.services.mandate_router import MandateRouter
+from backend.app.services.revenue_risk_engine import RevenueRiskEngine
+from backend.app.services.recovery_agent import RecoveryAgent
 from backend.app.services.safety_gate import SafetyGate, CUSTOMER_INTERVENTION_COUNTS, IDEMPOTENCY_STORE
 from backend.app.services.outcome_evaluator import OutcomeEvaluator
 
@@ -71,9 +72,26 @@ def run_eval(cases_path: str = "backend/eval/labeled_cases.json") -> Dict[str, A
 
             # 2. Triage Engine
             triage_result = TriageEngine.triage(ctx)
+            if triage_result.is_ambiguous:
+                action_val = triage_result.recommended_action.value if hasattr(triage_result.recommended_action, 'value') else str(triage_result.recommended_action)
+                if action_val == "RETRY_LATER":
+                    ctx.failure_reason = "payment_timed_out"
+                elif action_val == "PAYMENT_LINK":
+                    ctx.failure_reason = "card_declined"
+                elif action_val == "BLOCK":
+                    ctx.failure_reason = "fraud_flag"
+                else:
+                    ctx.failure_reason = "escalated_by_triage"
 
-            # 3. Mandate Router
-            proposed_decision = MandateRouter.route(ctx, triage_result)
+            # 3. Revenue Risk Engine & Recovery Agent
+            risk = RevenueRiskEngine.assess(ctx)
+            agent_dec = RecoveryAgent.decide(ctx)
+            proposed_decision = RecoveryDecision(
+                decision=InterventionType(agent_dec.selected_action),
+                reason_code="agent_decision",
+                policy_id="agent_policy",
+                delay_hours=24 if agent_dec.selected_action == "RETRY_LATER" else 0
+            )
 
             # 4. Safety Gate
             safety_decision = SafetyGate.evaluate(ctx, proposed_decision)

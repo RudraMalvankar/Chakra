@@ -32,7 +32,7 @@ export default function App() {
       <AppShell data={data}>
         <Routes>
           <Route path="/" element={<CommandCenter {...data} />} />
-          <Route path="/simulator" element={<Simulator {...data} />} />`n          <Route path="/batch" element={<Batch />} />`n          <Route path="/gateway" element={<Gateway />} />
+          <Route path="/simulator" element={<Simulator {...data} />} />          <Route path="/batch" element={<Batch />} />          <Route path="/gateway" element={<Gateway />} />
           <Route path="/opportunities" element={<Opportunities {...data} />} />
           <Route path="/cases" element={<Cases {...data} />} />
           <Route path="/cases/:id" element={<CaseDetail {...data} />} />

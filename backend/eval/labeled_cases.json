@@ -1,370 +1,399 @@
 {
-  "version": "1.0",
-  "description": "18 hand-labeled edge cases for Chakra triage accuracy evaluation. Each case represents a real Razorpay error scenario with the expected action based on RBI e-mandate rules and card network constraints.",
-  "labeled_by": "Chakra team",
-  "labeled_at": "2026-09-02",
-  "cases": [
-    {
-      "id": 1,
-      "name": "Standard insufficient_funds under AFA threshold",
-      "payment": {
-        "payment_id": "eval_001",
-        "amount": 49900,
-        "currency": "INR",
-        "error_code": "insufficient_funds",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "HDFC",
-          "network": "visa",
-          "retries_this_month": 1,
-          "pre_debit_alerts_ignored": 0
+    "version": "1.0",
+    "description": "18 hand-labeled edge cases for Chakra triage accuracy evaluation. Each case represents a real Razorpay error scenario with the expected action based on RBI e-mandate rules and card network constraints.",
+    "labeled_by": "Chakra team",
+    "labeled_at": "2026-09-02",
+    "cases": [
+        {
+            "id": 1,
+            "name": "Standard insufficient_funds under AFA threshold",
+            "payment": {
+                "payment_id": "eval_001",
+                "amount": 49900,
+                "currency": "INR",
+                "error_code": "insufficient_funds",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "HDFC",
+                    "network": "visa",
+                    "retries_this_month": 1,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "retry",
+            "expected_reason_contains": "insufficient_funds",
+            "rationale": "Below 15K AFA threshold, not first transaction, retries well under Visa 15/30d cap. Standard retry with salary-day timing."
+        },
+        {
+            "id": 2,
+            "name": "AFA threshold exceeded (16K INR)",
+            "payment": {
+                "payment_id": "eval_002",
+                "amount": 1600000,
+                "currency": "INR",
+                "error_code": "insufficient_funds",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "SBI",
+                    "network": "mastercard",
+                    "retries_this_month": 0,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "send_payment_link",
+            "expected_reason_contains": "afa_threshold",
+            "rationale": "Amount 16K > 15K standard AFA threshold. Must send OTP link, never silent retry."
+        },
+        {
+            "id": 3,
+            "name": "First transaction requires AFA",
+            "payment": {
+                "payment_id": "eval_003",
+                "amount": 29900,
+                "currency": "INR",
+                "error_code": "card_declined",
+                "is_first_transaction": true,
+                "metadata": {
+                    "bank_name": "ICICI",
+                    "network": "visa",
+                    "retries_this_month": 0,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "send_payment_link",
+            "expected_reason_contains": "first_transaction",
+            "rationale": "RBI rule: first transaction on any mandate always requires full AFA (OTP). No silent retry allowed."
+        },
+        {
+            "id": 4,
+            "name": "Fraud flag - hard escalate",
+            "payment": {
+                "payment_id": "eval_004",
+                "amount": 200000,
+                "currency": "INR",
+                "error_code": "fraud_flag",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "Axis",
+                    "network": "mastercard",
+                    "retries_this_month": 0,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "block",
+            "expected_reason_contains": "fraud_flag",
+            "rationale": "Hard decline. Retrying a fraud-flagged payment is offense-capable and disqualified per Track 02 rules. Must escalate to human."
+        },
+        {
+            "id": 5,
+            "name": "Mandate revoked - hard escalate",
+            "payment": {
+                "payment_id": "eval_005",
+                "amount": 99900,
+                "currency": "INR",
+                "error_code": "mandate_revoked",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "HDFC",
+                    "network": "visa",
+                    "retries_this_month": 0,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "block",
+            "expected_reason_contains": "mandate_revoked",
+            "rationale": "Customer explicitly revoked the mandate. Retrying violates consent. Must escalate."
+        },
+        {
+            "id": 6,
+            "name": "High pre-debit alerts ignored (churn signal)",
+            "payment": {
+                "payment_id": "eval_006",
+                "amount": 120000,
+                "currency": "INR",
+                "error_code": "payment_timed_out",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "SBI",
+                    "network": "rupay",
+                    "retries_this_month": 0,
+                    "pre_debit_alerts_ignored": 3
+                }
+            },
+            "expected_action": "escalate",
+            "expected_reason_contains": "alerts_ignored",
+            "rationale": "Customer ignored 3+ pre-debit alerts - strong churn signal. Burning a network retry slot on a likely-churned customer is wasteful. Escalate to human win-back path."
+        },
+        {
+            "id": 7,
+            "name": "Visa network retry cap reached",
+            "payment": {
+                "payment_id": "eval_007",
+                "amount": 99900,
+                "currency": "INR",
+                "error_code": "card_declined",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "ICICI",
+                    "network": "visa",
+                    "retries_this_month": 15,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "block",
+            "expected_reason_contains": "network_retry_cap",
+            "rationale": "Already at Visa's 15/30d retry cap. One more retry triggers $0.10-$2.00 fine per Visa rules, and flags the merchant for monitoring. Must stop."
+        },
+        {
+            "id": 8,
+            "name": "Mastercard retry cap reached (10/30d)",
+            "payment": {
+                "payment_id": "eval_008",
+                "amount": 49900,
+                "currency": "INR",
+                "error_code": "insufficient_funds",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "Axis",
+                    "network": "mastercard",
+                    "retries_this_month": 10,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "block",
+            "expected_reason_contains": "network_retry_cap",
+            "rationale": "Mastercard cap is stricter (10/30d vs Visa's 15). Reached cap. Escalate."
+        },
+        {
+            "id": 9,
+            "name": "High-value category exceeds 1L threshold",
+            "payment": {
+                "payment_id": "eval_009",
+                "amount": 15000000,
+                "currency": "INR",
+                "error_code": "card_declined",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "HDFC",
+                    "network": "visa",
+                    "retries_this_month": 0,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "send_payment_link",
+            "expected_reason_contains": "afa_threshold",
+            "rationale": "Amount 1.5L > 15K standard AFA threshold. Must route to OTP-link path."
+        },
+        {
+            "id": 10,
+            "name": "Payment timed out - standard retry",
+            "payment": {
+                "payment_id": "eval_010",
+                "amount": 19900,
+                "currency": "INR",
+                "error_code": "payment_timed_out",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "HDFC",
+                    "network": "visa",
+                    "retries_this_month": 0,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "retry",
+            "expected_reason_contains": "timeout",
+            "rationale": "Transient timeout. Retry with short delay (1 hour)."
+        },
+        {
+            "id": 11,
+            "name": "Expired card - send update link",
+            "payment": {
+                "payment_id": "eval_011",
+                "amount": 99900,
+                "currency": "INR",
+                "error_code": "expired_card",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "ICICI",
+                    "network": "visa",
+                    "retries_this_month": 0,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "send_payment_link",
+            "expected_reason_contains": "expired",
+            "rationale": "Card expired. Retrying same card will fail again. Send card-update DLT template."
+        },
+        {
+            "id": 12,
+            "name": "Card declined with low retry count - payment link",
+            "payment": {
+                "payment_id": "eval_012",
+                "amount": 99900,
+                "currency": "INR",
+                "error_code": "card_declined",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "HDFC",
+                    "network": "mastercard",
+                    "retries_this_month": 1,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "send_payment_link",
+            "expected_reason_contains": "card_declined",
+            "rationale": "Generic issuer decline. Offer UPI alternate via payment link - different payment method often succeeds."
+        },
+        {
+            "id": 13,
+            "name": "Boundary case - exactly 15K INR (just at threshold)",
+            "payment": {
+                "payment_id": "eval_013",
+                "amount": 1500000,
+                "currency": "INR",
+                "error_code": "insufficient_funds",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "SBI",
+                    "network": "rupay",
+                    "retries_this_month": 0,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "retry",
+            "expected_reason_contains": "insufficient_funds",
+            "rationale": "Amount is exactly 15K, which is the threshold. Per RBI rule 'recurring debits up to 15K can auto-execute', this is the boundary - silent retry allowed."
+        },
+        {
+            "id": 14,
+            "name": "Pre-debit alerts at threshold (2)",
+            "payment": {
+                "payment_id": "eval_014",
+                "amount": 19900,
+                "currency": "INR",
+                "error_code": "card_declined",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "HDFC",
+                    "network": "visa",
+                    "retries_this_month": 0,
+                    "pre_debit_alerts_ignored": 2
+                }
+            },
+            "expected_action": "escalate",
+            "expected_reason_contains": "alerts_ignored",
+            "rationale": "At exactly 2 alerts ignored (threshold). Compliance rule trips. Escalate to prevent burning retry slot on likely-churned customer."
+        },
+        {
+            "id": 15,
+            "name": "Insufficient funds with high retry count but not capped",
+            "payment": {
+                "payment_id": "eval_015",
+                "amount": 49900,
+                "currency": "INR",
+                "error_code": "insufficient_funds",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "ICICI",
+                    "network": "visa",
+                    "retries_this_month": 14,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "retry",
+            "expected_reason_contains": "insufficient_funds",
+            "rationale": "At 14/15 Visa retries, one more is allowed but risky. Compliance gate allows it (under cap). Triage can still retry - but this is a near-cap case worth flagging in production."
+        },
+        {
+            "id": 16,
+            "name": "UPI Autopay insufficient_funds on first retry",
+            "payment": {
+                "payment_id": "eval_016",
+                "amount": 29900,
+                "currency": "INR",
+                "error_code": "insufficient_funds",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "PhonePe",
+                    "network": "upi",
+                    "retries_this_month": 0,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "retry",
+            "expected_reason_contains": "insufficient_funds",
+            "rationale": "UPI Autopay - standard retry, 0 alerts ignored, no cap concerns."
+        },
+        {
+            "id": 17,
+            "name": "Fraud flag on first transaction",
+            "payment": {
+                "payment_id": "eval_017",
+                "amount": 50000,
+                "currency": "INR",
+                "error_code": "fraud_flag",
+                "is_first_transaction": true,
+                "metadata": {
+                    "bank_name": "HDFC",
+                    "network": "visa",
+                    "retries_this_month": 0,
+                    "pre_debit_alerts_ignored": 0
+                }
+            },
+            "expected_action": "block",
+            "expected_reason_contains": "fraud_flag",
+            "rationale": "Fraud check comes BEFORE first-transaction AFA rule. Hard decline always wins. AI literally cannot override."
+        },
+        {
+            "id": 18,
+            "name": "Customer hitting monthly intervention budget",
+            "payment": {
+                "payment_id": "eval_018",
+                "customer_id": "cust_eval_018",
+                "amount": 99900,
+                "currency": "INR",
+                "error_code": "insufficient_funds",
+                "is_first_transaction": false,
+                "metadata": {
+                    "bank_name": "HDFC",
+                    "network": "visa",
+                    "retries_this_month": 2,
+                    "pre_debit_alerts_ignored": 0,
+                    "previous_interventions_this_month": 3
+                }
+            },
+            "expected_action": "block",
+            "expected_reason_contains": "budget",
+            "rationale": "Already at 3-intervention monthly cap. Safety gate blocks further action. Escalate to prevent customer harassment."
+        },
+        {
+            "id": 19,
+            "name": "Unknown failure code fallback to AI",
+            "payment": {
+                "payment_id": "eval_019",
+                "amount_inr": 2000.0,
+                "error_code": "network_authorization_anomaly",
+                "customer_id": "cust_eval_019",
+                "case_type": "PAYMENT_FAILURE"
+            },
+            "expected_action": "escalate|retry",
+            "expected_reason_contains": ""
+        },
+        {
+            "id": 20,
+            "name": "Subscription payment failure",
+            "payment": {
+                "payment_id": "eval_020",
+                "amount_inr": 2000.0,
+                "error_code": "insufficient_funds",
+                "customer_id": "cust_eval_020",
+                "case_type": "SUBSCRIPTION",
+                "metadata": {
+                    "days_overdue": 5
+                }
+            },
+            "expected_action": "send_payment_link",
+            "expected_reason_contains": "link"
         }
-      },
-      "expected_action": "retry",
-      "expected_reason_contains": "insufficient_funds",
-      "rationale": "Below 15K AFA threshold, not first transaction, retries well under Visa 15/30d cap. Standard retry with salary-day timing."
-    },
-    {
-      "id": 2,
-      "name": "AFA threshold exceeded (16K INR)",
-      "payment": {
-        "payment_id": "eval_002",
-        "amount": 1600000,
-        "currency": "INR",
-        "error_code": "insufficient_funds",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "SBI",
-          "network": "mastercard",
-          "retries_this_month": 0,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "send_payment_link",
-      "expected_reason_contains": "afa_threshold",
-      "rationale": "Amount 16K > 15K standard AFA threshold. Must send OTP link, never silent retry."
-    },
-    {
-      "id": 3,
-      "name": "First transaction requires AFA",
-      "payment": {
-        "payment_id": "eval_003",
-        "amount": 29900,
-        "currency": "INR",
-        "error_code": "card_declined",
-        "is_first_transaction": true,
-        "metadata": {
-          "bank_name": "ICICI",
-          "network": "visa",
-          "retries_this_month": 0,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "send_payment_link",
-      "expected_reason_contains": "first_transaction",
-      "rationale": "RBI rule: first transaction on any mandate always requires full AFA (OTP). No silent retry allowed."
-    },
-    {
-      "id": 4,
-      "name": "Fraud flag - hard escalate",
-      "payment": {
-        "payment_id": "eval_004",
-        "amount": 200000,
-        "currency": "INR",
-        "error_code": "fraud_flag",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "Axis",
-          "network": "mastercard",
-          "retries_this_month": 0,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "block",
-      "expected_reason_contains": "fraud_flag",
-      "rationale": "Hard decline. Retrying a fraud-flagged payment is offense-capable and disqualified per Track 02 rules. Must escalate to human."
-    },
-    {
-      "id": 5,
-      "name": "Mandate revoked - hard escalate",
-      "payment": {
-        "payment_id": "eval_005",
-        "amount": 99900,
-        "currency": "INR",
-        "error_code": "mandate_revoked",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "HDFC",
-          "network": "visa",
-          "retries_this_month": 0,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "block",
-      "expected_reason_contains": "mandate_revoked",
-      "rationale": "Customer explicitly revoked the mandate. Retrying violates consent. Must escalate."
-    },
-    {
-      "id": 6,
-      "name": "High pre-debit alerts ignored (churn signal)",
-      "payment": {
-        "payment_id": "eval_006",
-        "amount": 120000,
-        "currency": "INR",
-        "error_code": "payment_timed_out",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "SBI",
-          "network": "rupay",
-          "retries_this_month": 0,
-          "pre_debit_alerts_ignored": 3
-        }
-      },
-      "expected_action": "escalate",
-      "expected_reason_contains": "alerts_ignored",
-      "rationale": "Customer ignored 3+ pre-debit alerts - strong churn signal. Burning a network retry slot on a likely-churned customer is wasteful. Escalate to human win-back path."
-    },
-    {
-      "id": 7,
-      "name": "Visa network retry cap reached",
-      "payment": {
-        "payment_id": "eval_007",
-        "amount": 99900,
-        "currency": "INR",
-        "error_code": "card_declined",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "ICICI",
-          "network": "visa",
-          "retries_this_month": 15,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "block",
-      "expected_reason_contains": "network_retry_cap",
-      "rationale": "Already at Visa's 15/30d retry cap. One more retry triggers $0.10-$2.00 fine per Visa rules, and flags the merchant for monitoring. Must stop."
-    },
-    {
-      "id": 8,
-      "name": "Mastercard retry cap reached (10/30d)",
-      "payment": {
-        "payment_id": "eval_008",
-        "amount": 49900,
-        "currency": "INR",
-        "error_code": "insufficient_funds",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "Axis",
-          "network": "mastercard",
-          "retries_this_month": 10,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "block",
-      "expected_reason_contains": "network_retry_cap",
-      "rationale": "Mastercard cap is stricter (10/30d vs Visa's 15). Reached cap. Escalate."
-    },
-    {
-      "id": 9,
-      "name": "High-value category exceeds 1L threshold",
-      "payment": {
-        "payment_id": "eval_009",
-        "amount": 15000000,
-        "currency": "INR",
-        "error_code": "card_declined",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "HDFC",
-          "network": "visa",
-          "retries_this_month": 0,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "send_payment_link",
-      "expected_reason_contains": "afa_threshold",
-      "rationale": "Amount 1.5L > 15K standard AFA threshold. Must route to OTP-link path."
-    },
-    {
-      "id": 10,
-      "name": "Payment timed out - standard retry",
-      "payment": {
-        "payment_id": "eval_010",
-        "amount": 19900,
-        "currency": "INR",
-        "error_code": "payment_timed_out",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "HDFC",
-          "network": "visa",
-          "retries_this_month": 0,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "retry",
-      "expected_reason_contains": "timeout",
-      "rationale": "Transient timeout. Retry with short delay (1 hour)."
-    },
-    {
-      "id": 11,
-      "name": "Expired card - send update link",
-      "payment": {
-        "payment_id": "eval_011",
-        "amount": 99900,
-        "currency": "INR",
-        "error_code": "expired_card",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "ICICI",
-          "network": "visa",
-          "retries_this_month": 0,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "send_payment_link",
-      "expected_reason_contains": "expired",
-      "rationale": "Card expired. Retrying same card will fail again. Send card-update DLT template."
-    },
-    {
-      "id": 12,
-      "name": "Card declined with low retry count - payment link",
-      "payment": {
-        "payment_id": "eval_012",
-        "amount": 99900,
-        "currency": "INR",
-        "error_code": "card_declined",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "HDFC",
-          "network": "mastercard",
-          "retries_this_month": 1,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "send_payment_link",
-      "expected_reason_contains": "card_declined",
-      "rationale": "Generic issuer decline. Offer UPI alternate via payment link - different payment method often succeeds."
-    },
-    {
-      "id": 13,
-      "name": "Boundary case - exactly 15K INR (just at threshold)",
-      "payment": {
-        "payment_id": "eval_013",
-        "amount": 1500000,
-        "currency": "INR",
-        "error_code": "insufficient_funds",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "SBI",
-          "network": "rupay",
-          "retries_this_month": 0,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "retry",
-      "expected_reason_contains": "insufficient_funds",
-      "rationale": "Amount is exactly 15K, which is the threshold. Per RBI rule 'recurring debits up to 15K can auto-execute', this is the boundary - silent retry allowed."
-    },
-    {
-      "id": 14,
-      "name": "Pre-debit alerts at threshold (2)",
-      "payment": {
-        "payment_id": "eval_014",
-        "amount": 19900,
-        "currency": "INR",
-        "error_code": "card_declined",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "HDFC",
-          "network": "visa",
-          "retries_this_month": 0,
-          "pre_debit_alerts_ignored": 2
-        }
-      },
-      "expected_action": "escalate",
-      "expected_reason_contains": "alerts_ignored",
-      "rationale": "At exactly 2 alerts ignored (threshold). Compliance rule trips. Escalate to prevent burning retry slot on likely-churned customer."
-    },
-    {
-      "id": 15,
-      "name": "Insufficient funds with high retry count but not capped",
-      "payment": {
-        "payment_id": "eval_015",
-        "amount": 49900,
-        "currency": "INR",
-        "error_code": "insufficient_funds",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "ICICI",
-          "network": "visa",
-          "retries_this_month": 14,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "retry",
-      "expected_reason_contains": "insufficient_funds",
-      "rationale": "At 14/15 Visa retries, one more is allowed but risky. Compliance gate allows it (under cap). Triage can still retry - but this is a near-cap case worth flagging in production."
-    },
-    {
-      "id": 16,
-      "name": "UPI Autopay insufficient_funds on first retry",
-      "payment": {
-        "payment_id": "eval_016",
-        "amount": 29900,
-        "currency": "INR",
-        "error_code": "insufficient_funds",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "PhonePe",
-          "network": "upi",
-          "retries_this_month": 0,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "retry",
-      "expected_reason_contains": "insufficient_funds",
-      "rationale": "UPI Autopay - standard retry, 0 alerts ignored, no cap concerns."
-    },
-    {
-      "id": 17,
-      "name": "Fraud flag on first transaction",
-      "payment": {
-        "payment_id": "eval_017",
-        "amount": 50000,
-        "currency": "INR",
-        "error_code": "fraud_flag",
-        "is_first_transaction": true,
-        "metadata": {
-          "bank_name": "HDFC",
-          "network": "visa",
-          "retries_this_month": 0,
-          "pre_debit_alerts_ignored": 0
-        }
-      },
-      "expected_action": "block",
-      "expected_reason_contains": "fraud_flag",
-      "rationale": "Fraud check comes BEFORE first-transaction AFA rule. Hard decline always wins. AI literally cannot override."
-    },
-    {
-      "id": 18,
-      "name": "Customer hitting monthly intervention budget",
-      "payment": {
-        "payment_id": "eval_018",
-        "customer_id": "cust_eval_018",
-        "amount": 99900,
-        "currency": "INR",
-        "error_code": "insufficient_funds",
-        "is_first_transaction": false,
-        "metadata": {
-          "bank_name": "HDFC",
-          "network": "visa",
-          "retries_this_month": 2,
-          "pre_debit_alerts_ignored": 0,
-          "previous_interventions_this_month": 3
-        }
-      },
-      "expected_action": "block",
-      "expected_reason_contains": "budget",
-      "rationale": "Already at 3-intervention monthly cap. Safety gate blocks further action. Escalate to prevent customer harassment."
-    }
-  ]
+    ]
 }
