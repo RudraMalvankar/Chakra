@@ -1,80 +1,107 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import { formatPercent } from '../lib/format';
+import { ShieldCheck, ShieldAlert, Shield, Lock, AlertTriangle } from 'lucide-react';
+import { Badge } from '../components/ui/Badge';
+import { formatCurrency } from '../lib/format';
 
-export const Safety = ({ cases, metrics }: any) => {
+export const Safety = ({ cases }: any) => {
     const navigate = useNavigate();
-    const safetyEvents = cases.filter((c: any) => c.safety).map((c: any) => ({...c.safety, id: c.id, timestamp: c.last_updated})).sort((a: any,b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 50);
     
-    const processed = metrics?.payments_processed || 1;
-    const blockedRate = ((metrics?.payments_blocked || 0) / processed) * 100;
+    // Sort recent decisions
+    const recentDecisions = cases.filter((c: any) => c.safety != null).sort((a: any, b: any) => new Date(b.last_updated).getTime() - new Date(a.last_updated).getTime()).slice(0, 15);
+
+    const rules = [
+        { name: "Maximum Retry Attempts", value: "3 per month", type: "CAP" },
+        { name: "Fraud Threshold", value: "Strict (Block High)", type: "RISK" },
+        { name: "Mandate Revoked Policy", value: "Hard Stop (BLOCK)", type: "COMPLIANCE" },
+        { name: "Repeated Failure Policy", value: "Escalate after 3 fails", type: "ESCALATION" },
+        { name: "Monthly Recovery Budget", value: "₹50,000", type: "BUDGET" },
+        { name: "AFA Payment Links", value: "Enabled (<₹5000)", type: "CAP" },
+        { name: "Stopping Rule: Dispute", value: "Hard Stop (ESCALATE)", type: "COMPLIANCE" }
+    ];
 
     return (
-        <div className="space-y-6 max-w-6xl mx-auto">
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <div className="bg-white border border-border shadow-sm p-6 text-center">
-                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-2">Safety Decisions</div>
-                    <div className="text-3xl font-mono text-text-main">{processed}</div>
+        <div className="max-w-7xl mx-auto space-y-6">
+            <div className="bg-white border border-border shadow-sm p-6 flex justify-between items-center">
+                <div>
+                    <h2 className="text-lg font-bold text-text-main uppercase tracking-wider flex items-center">
+                        <Shield className="mr-3 text-rzp-blue" size={20} />
+                        Safety & Policies
+                    </h2>
+                    <p className="text-sm text-text-muted mt-1">Deterministic financial controls that cannot be overridden by AI.</p>
                 </div>
-                <div className="bg-white border border-border shadow-sm p-6 text-center">
-                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-2">Allowed</div>
-                    <div className="text-3xl font-mono text-green-600">{processed - (metrics?.payments_blocked||0) - (metrics?.payments_escalated||0)}</div>
-                </div>
-                <div className="bg-white border border-border shadow-sm p-6 text-center">
-                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-2">Blocked</div>
-                    <div className="text-3xl font-mono text-red-600">{metrics?.payments_blocked || 0}</div>
-                </div>
-                <div className="bg-white border border-border shadow-sm p-6 text-center">
-                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-2">Block Rate</div>
-                    <div className="text-3xl font-mono text-text-main">{formatPercent(blockedRate)}</div>
+                <div className="bg-gray-50 border border-gray-200 p-3 rounded flex items-center">
+                    <Lock className="text-rzp-blue mr-2" size={16} />
+                    <span className="text-xs font-bold text-text-main uppercase tracking-widest">AI OVERRIDE: DISABLED</span>
                 </div>
             </div>
-            
-            <div className="bg-white border border-border shadow-sm">
-                <div className="px-6 py-5 border-b border-border bg-gray-50 flex justify-between items-center">
-                    <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Enforced Policy Controls</h2>
-                </div>
-                <div className="p-6 grid grid-cols-2 md:grid-cols-4 gap-4">
-                    {['Fraud Protection', 'Mandate Validation', 'Retry Limits', 'AFA Enforcement', 'Intervention Budget', 'Idempotency', 'Escalation Rules', 'Stopping Rules'].map(rule => (
-                        <div key={rule} className="flex flex-col justify-between p-3 border border-border rounded bg-gray-50 h-20">
-                            <span className="text-xs font-semibold text-text-main uppercase">{rule}</span>
-                            <span className="text-[10px] font-bold text-rzp-blue uppercase tracking-widest">Enforced</span>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="bg-white border border-border shadow-sm flex flex-col h-[600px]">
+                    <div className="px-6 py-4 border-b border-border bg-gray-50">
+                        <h3 className="text-xs font-bold text-text-main uppercase tracking-wider">Active Policies</h3>
+                    </div>
+                    <div className="p-6 space-y-4 overflow-auto flex-1">
+                        {rules.map((r, i) => (
+                            <div key={i} className="pb-4 border-b border-border last:border-0 last:pb-0">
+                                <div className="flex justify-between items-start mb-1">
+                                    <span className="font-bold text-text-main text-sm">{r.name}</span>
+                                    <Badge status={r.type === 'COMPLIANCE' ? 'CRITICAL' : r.type === 'RISK' ? 'HIGH' : 'LOW'} className="text-[10px]">{r.type}</Badge>
+                                </div>
+                                <div className="font-mono text-sm text-text-muted">{r.value}</div>
+                            </div>
+                        ))}
+                        
+                        <div className="mt-8 p-4 bg-blue-50 border border-blue-100 rounded flex items-start">
+                            <AlertTriangle className="text-rzp-blue mr-3 shrink-0 mt-0.5" size={16} />
+                            <div className="text-xs text-rzp-blue">
+                                <span className="font-bold uppercase tracking-widest block mb-1">Architecture Note</span>
+                                The Safety Gate executes deterministically after the AI Triage and Recovery Agent. It evaluates the agent's proposed action against these hardcoded rules.
+                            </div>
                         </div>
-                    ))}
+                    </div>
                 </div>
-            </div>
-            
-            <div className="bg-white border border-border shadow-sm">
-                <div className="px-6 py-4 border-b border-border bg-gray-50">
-                    <h3 className="text-xs font-bold text-text-main uppercase tracking-wider">Recent Safety Decisions</h3>
-                </div>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm whitespace-nowrap">
-                        <thead className="bg-gray-50 border-b border-border text-text-muted">
-                            <tr>
-                                <th className="px-6 py-3 font-semibold">Timestamp</th>
-                                <th className="px-6 py-3 font-semibold">Case</th>
-                                <th className="px-6 py-3 font-semibold">Decision</th>
-                                <th className="px-6 py-3 font-semibold">Eligibility</th>
-                                <th className="px-6 py-3 font-semibold">Reason Code</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border">
-                            {safetyEvents.map((s: any, i: number) => (
-                                <tr key={i} onClick={() => navigate(`/cases/${s.id}`)} className="hover:bg-gray-50 cursor-pointer text-xs font-mono">
-                                    <td className="px-6 py-3 text-text-muted">{new Date(s.timestamp).toLocaleTimeString()}</td>
-                                    <td className="px-6 py-3 font-bold text-rzp-blue">{s.id.substring(0,8)}</td>
-                                    <td className="px-6 py-3 uppercase">{s.decision || '-'}</td>
-                                    <td className="px-6 py-3 uppercase">
-                                        {s.eligibility === 'ALLOWED' && <span className="text-green-600 font-bold">ALLOWED</span>}
-                                        {(s.eligibility === 'BLOCKED' || s.decision === 'BLOCK') && <span className="text-red-600 font-bold">BLOCKED</span>}
-                                        {(s.eligibility === 'ESCALATED' || s.decision === 'ESCALATE') && <span className="text-orange-500 font-bold">ESCALATED</span>}
-                                    </td>
-                                    <td className="px-6 py-3 text-text-muted">{s.reason_code || '-'}</td>
+
+                <div className="lg:col-span-2 bg-white border border-border shadow-sm flex flex-col h-[600px]">
+                    <div className="px-6 py-4 border-b border-border bg-gray-50">
+                        <h3 className="text-xs font-bold text-text-main uppercase tracking-wider">Recent Safety Decisions</h3>
+                    </div>
+                    <div className="overflow-auto flex-1">
+                        <table className="w-full text-left text-sm whitespace-nowrap">
+                            <thead className="bg-white border-b border-border text-text-muted sticky top-0">
+                                <tr>
+                                    <th className="px-6 py-3 font-semibold text-xs tracking-wider uppercase">Case</th>
+                                    <th className="px-6 py-3 font-semibold text-xs tracking-wider uppercase">Proposed Action</th>
+                                    <th className="px-6 py-3 font-semibold text-xs tracking-wider uppercase">Safety Decision</th>
+                                    <th className="px-6 py-3 font-semibold text-xs tracking-wider uppercase">Reason</th>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                            </thead>
+                            <tbody className="divide-y divide-border">
+                                {recentDecisions.map((c: any) => (
+                                    <tr key={c.id} onClick={() => navigate(`/cases/${c.id}`)} className="hover:bg-gray-50 cursor-pointer">
+                                        <td className="px-6 py-3 font-mono font-medium text-rzp-blue">{c.id.substring(0,8)}</td>
+                                        <td className="px-6 py-3 font-mono text-xs">{c.agent?.selected_action || '-'}</td>
+                                        <td className="px-6 py-3">
+                                            <div className="flex items-center">
+                                                {c.safety?.eligibility === 'ALLOWED' && <ShieldCheck className="text-green-500 mr-2" size={14} />}
+                                                {(c.safety?.eligibility === 'BLOCKED' || c.safety?.decision === 'BLOCK') && <ShieldAlert className="text-red-500 mr-2" size={14} />}
+                                                {(c.safety?.eligibility === 'ESCALATED' || c.safety?.decision === 'ESCALATE') && <ShieldAlert className="text-orange-500 mr-2" size={14} />}
+                                                <span className={`text-xs font-bold uppercase tracking-wider ${
+                                                    c.safety?.eligibility === 'ALLOWED' ? 'text-green-600' :
+                                                    (c.safety?.eligibility === 'BLOCKED' || c.safety?.decision === 'BLOCK') ? 'text-red-600' : 'text-orange-600'
+                                                }`}>
+                                                    {c.safety?.eligibility || c.safety?.decision}
+                                                </span>
+                                            </div>
+                                        </td>
+                                        <td className="px-6 py-3 font-mono text-xs text-text-muted max-w-[200px] truncate" title={c.safety?.reason_code}>
+                                            {c.safety?.reason_code || '-'}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </div>

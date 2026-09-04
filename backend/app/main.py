@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from typing import Dict, Any, Optional
 
 from backend.app.api.webhooks import router as webhook_router
+from backend.app.api.receivables import router as receivables_router
 from backend.app.services.metrics_aggregator import generate_metrics_report
 from backend.app.lib.audit import AUDIT_FILE
 from backend.app.models.case import RecoveryCase, CaseType
@@ -23,6 +24,7 @@ app.add_middleware(
 )
 
 app.include_router(webhook_router, prefix="/webhooks")
+app.include_router(receivables_router, prefix="/api/receivables")
 
 @app.get("/health")
 def health_check():

@@ -11,9 +11,23 @@ export const AppShell = ({ children, data }: any) => {
 
     const navGroups = [
         { title: 'MAIN', items: [{ path: '/', label: 'Command Center' }] },
-        { title: 'OPERATE', items: [{ path: '/opportunities', label: 'Opportunities' }, { path: '/cases', label: 'Cases' }, { path: '/recovery', label: 'Recovery' }] },
-        { title: 'SIMULATOR', items: [{ path: '/simulator', label: 'Create Payment' }, { path: '/gateway', label: 'Gateway Console' }, { path: '/batch', label: 'Batch Simulator' }] },
-        { title: 'CONTROL', items: [{ path: '/safety', label: 'Safety' }, { path: '/analytics', label: 'Analytics' }, { path: '/audit', label: 'Audit Log' }] }
+        { title: 'RECOVERY', items: [{ path: '/opportunities', label: 'Opportunities' }, { path: '/cases', label: 'Cases' }, { path: '/cases/missions', label: 'Recovery Missions' }] },
+        { title: 'WORKFLOWS', items: [
+            { path: '/checkout-recovery', label: 'Checkout Recovery' },
+            { path: '/receivables', label: 'Receivables' },
+            { path: '/promise-to-pay', label: 'Promise-to-Pay' },
+            { path: '/voice-recovery', label: 'Voice Recovery' }
+        ]},
+        { title: 'SIMULATION', items: [
+            { path: '/scenario-lab', label: 'Scenario Lab' },
+            { path: '/gateway', label: 'Gateway Console' },
+            { path: '/batch', label: 'Batch Simulator' }
+        ]},
+        { title: 'CONTROL', items: [
+            { path: '/safety', label: 'Safety & Policies' },
+            { path: '/analytics', label: 'Analytics' },
+            { path: '/audit', label: 'Audit Log' }
+        ]}
     ];
 
     return (
@@ -31,7 +45,7 @@ export const AppShell = ({ children, data }: any) => {
                                 <Link
                                     key={t.path}
                                     to={t.path}
-                                    className={`block w-full text-left px-6 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${location.pathname === t.path || (location.pathname.startsWith('/cases/') && t.path === '/cases') ? 'text-rzp-blue bg-blue-50/50 border-r-2 border-rzp-blue' : 'text-text-muted hover:bg-gray-50 hover:text-text-main border-r-2 border-transparent'}`}
+                                    className={`block w-full text-left px-6 py-2 text-xs font-bold uppercase tracking-wider transition-colors ${location.pathname === t.path ? 'text-rzp-blue bg-blue-50/50 border-r-2 border-rzp-blue' : 'text-text-muted hover:bg-gray-50 hover:text-text-main border-r-2 border-transparent'}`}
                                 >
                                     {t.label}
                                 </Link>

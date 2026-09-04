@@ -17,7 +17,7 @@ declare global {
   }
 }
 
-export const Simulator = ({ refresh }: any) => {
+export const ScenarioLab = ({ refresh }: any) => {
     const navigate = useNavigate();
     const [payload, setPayload] = useState(PRESETS[0].payload);
     const [loading, setLoading] = useState(false);
@@ -251,3 +251,6 @@ export const Simulator = ({ refresh }: any) => {
         </div>
     );
 };
+
+// Backward compat alias
+export const Simulator = ScenarioLab;

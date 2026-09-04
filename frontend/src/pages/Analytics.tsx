@@ -1,40 +1,103 @@
 import React from 'react';
-import { Badge } from '../components/ui/Badge';
-import { formatExact } from '../lib/format';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { formatCurrency, formatPercent } from '../lib/format';
+import { TrendingUp } from 'lucide-react';
 
 export const Analytics = ({ metrics }: any) => {
     if (!metrics) return null;
-    const m = metrics.by_case_type || {};
-    
+    const m = metrics;
+
+    const byWorkflow = Object.entries(m.by_case_type || {}).map(([name, data]: any) => ({
+        name: name.replace(/_/g, ' '),
+        attempted: data.revenue_attempted_inr || 0,
+        recovered: data.revenue_recovered_inr || 0
+    }));
+
+    const byIntervention = Object.entries(m.by_intervention || {}).map(([name, data]: any) => ({
+        name: name.replace(/_/g, ' '),
+        recovered: data.revenue_recovered_inr || 0,
+        count: data.count || 0
+    })).filter(x => x.count > 0);
+
+    const outcomesData = [
+        { name: 'Recovered', value: m.payments_recovered, color: '#00BA88' },
+        { name: 'Blocked', value: m.payments_blocked, color: '#E42C66' },
+        { name: 'Escalated', value: m.payments_escalated, color: '#F4B740' },
+        { name: 'Failed', value: m.payments_processed - m.payments_recovered - m.payments_blocked - m.payments_escalated, color: '#6A7280' }
+    ].filter(x => x.value > 0);
+
     return (
-        <div className="space-y-6 max-w-5xl mx-auto">
-            <div className="bg-white border border-border shadow-sm">
-                <div className="px-6 py-5 border-b border-border bg-gray-50 flex justify-between items-center">
-                    <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Recovery by Workflow</h2>
-                    <Badge status="INFO">SYNTHETIC BENCHMARK</Badge>
+        <div className="max-w-7xl mx-auto space-y-6">
+            <div className="bg-white border border-border shadow-sm p-6 flex justify-between items-center">
+                <div>
+                    <h2 className="text-lg font-bold text-text-main uppercase tracking-wider flex items-center">
+                        <TrendingUp className="mr-3 text-rzp-blue" size={20} />
+                        Analytics
+                    </h2>
+                    <p className="text-sm text-text-muted mt-1">Authoritative backend revenue metrics and recovery performance.</p>
                 </div>
-                <div className="p-8 space-y-8">
-                    {Object.entries(m).map(([type, stats]: [string, any]) => {
-                        const rate = stats.at_risk > 0 ? (stats.recovered_inr / stats.at_risk) * 100 : 0;
-                        return (
-                            <div key={type}>
-                                <div className="flex justify-between items-end mb-2">
-                                    <div>
-                                        <div className="text-sm font-bold text-text-main uppercase">{type.replace(/_/g, ' ')}</div>
-                                        <div className="text-xs text-text-muted mt-1">{stats.processed} cases processed</div>
-                                    </div>
-                                    <div className="text-right">
-                                        <span className="font-mono font-bold text-rzp-green mr-2">{formatExact(stats.recovered_inr)}</span>
-                                        <span className="text-text-muted text-xs font-mono">/ {formatExact(stats.at_risk)}</span>
-                                    </div>
-                                </div>
-                                <div className="w-full bg-gray-100 h-2 relative overflow-hidden rounded">
-                                    <div className="bg-rzp-blue h-2 absolute left-0 top-0 transition-all duration-500 rounded" style={{ width: `${rate}%` }}></div>
-                                </div>
-                                <div className="text-[10px] font-mono text-text-muted mt-1 text-right">{rate.toFixed(1)}% recovery rate</div>
-                            </div>
-                        );
-                    })}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+                <div className="bg-white border border-border shadow-sm p-6">
+                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Revenue at Risk</div>
+                    <div className="text-2xl font-bold font-mono text-text-main">{formatCurrency(m.revenue_at_risk_inr)}</div>
+                </div>
+                <div className="bg-white border border-border shadow-sm p-6">
+                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Attempted</div>
+                    <div className="text-2xl font-bold font-mono text-text-main">{formatCurrency(m.revenue_attempted_inr)}</div>
+                </div>
+                <div className="bg-white border border-border shadow-sm p-6">
+                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Recovered</div>
+                    <div className="text-2xl font-bold font-mono text-rzp-green">{formatCurrency(m.revenue_recovered_inr)}</div>
+                </div>
+                <div className="bg-white border border-border shadow-sm p-6">
+                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Blocked</div>
+                    <div className="text-2xl font-bold font-mono text-rzp-red">{formatCurrency(m.revenue_blocked_inr)}</div>
+                </div>
+                <div className="bg-white border border-border shadow-sm p-6">
+                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Recovery Rate</div>
+                    <div className="text-2xl font-bold font-mono text-rzp-blue">{formatPercent(m.revenue_recovery_rate_pct)}</div>
+                </div>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white border border-border shadow-sm p-6 h-[400px]">
+                    <h3 className="text-xs font-bold text-text-main uppercase tracking-wider mb-6">Recovery by Workflow</h3>
+                    {byWorkflow.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart data={byWorkflow} margin={{ top: 5, right: 30, left: 20, bottom: 25 }}>
+                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB"/>
+                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#6A7280' }}/>
+                                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#6A7280' }} tickFormatter={(val) => `₹${val/1000}k`}/>
+                                <RechartsTooltip formatter={(val: number) => formatCurrency(val)} cursor={{ fill: '#F9FAFB' }}/>
+                                <Legend wrapperStyle={{ fontSize: '10px' }}/>
+                                <Bar dataKey="attempted" name="Attempted" fill="#9CA3AF" radius={[2, 2, 0, 0]} />
+                                <Bar dataKey="recovered" name="Recovered" fill="#00BA88" radius={[2, 2, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-sm font-mono text-text-muted">No workflow data available.</div>
+                    )}
+                </div>
+
+                <div className="bg-white border border-border shadow-sm p-6 h-[400px]">
+                    <h3 className="text-xs font-bold text-text-main uppercase tracking-wider mb-6">Execution Outcomes</h3>
+                    {outcomesData.length > 0 ? (
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie data={outcomesData} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={2} dataKey="value">
+                                    {outcomesData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={entry.color} />
+                                    ))}
+                                </Pie>
+                                <RechartsTooltip formatter={(val: number) => `${val} cases`} />
+                                <Legend wrapperStyle={{ fontSize: '10px' }}/>
+                            </PieChart>
+                        </ResponsiveContainer>
+                    ) : (
+                        <div className="flex items-center justify-center h-full text-sm font-mono text-text-muted">No outcome data available.</div>
+                    )}
                 </div>
             </div>
         </div>

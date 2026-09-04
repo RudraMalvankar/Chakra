@@ -99,3 +99,53 @@ async def razorpay_webhook(
     except Exception:
         _processed_events[event_id] = "FAILED"
         raise
+
+from fastapi import Request, Form
+from fastapi.responses import HTMLResponse
+from backend.app.services.voice import extract_voice_intent
+
+@router.post("/twilio/twiml")
+async def twilio_twiml(request: Request, case_id: str = "", amount: str = ""):
+    # Hinglish MVP Prompt
+    twiml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+    <Gather input="speech" action="/webhooks/twilio/gather?case_id={case_id}&amp;amount={amount}" language="hi-IN" timeout="5">
+        <Say language="hi-IN">Namaste. Chakra se call hai. Aapka {amount} rupaye ka payment bacha hai. Kya aap abhi pay karenge ya kal?</Say>
+    </Gather>
+</Response>'''
+    return HTMLResponse(content=twiml, media_type="text/xml")
+
+@router.post("/twilio/gather")
+async def twilio_gather(request: Request, case_id: str = "", amount: str = ""):
+    form = await request.form()
+    speech = form.get("SpeechResult", "")
+    
+    intent = await extract_voice_intent(speech)
+    
+    twiml = '<?xml version="1.0" encoding="UTF-8"?><Response>'
+    
+    if intent.intent == "promise_to_pay":
+        twiml += '<Say language="hi-IN">Dhanyavaad. Humne aapka promise record kar liya hai. Kal reminder bhejenge.</Say>'
+        
+        # We should simulate the promise creation here
+        payload = {
+            "payment_id": f"ptp_voice_{case_id}",
+            "amount_inr": float(amount) if amount else 0.0,
+            "error_code": "promise_created_via_voice",
+            "case_type": "PROMISE_TO_PAY",
+            "customer_id": "unknown",
+            "context": {
+                "promise_status": "ACTIVE",
+                "invoice_id": case_id,
+                "transcript": speech
+            }
+        }
+        await execute_recovery_pipeline(payload, dry_run=True)
+        
+    elif intent.intent == "pay_now":
+        twiml += '<Say language="hi-IN">Dhanyavaad. Aapko payment link SMS kar diya gaya hai.</Say>'
+    else:
+        twiml += '<Say language="hi-IN">Theek hai. Hum baad me sampark karenge.</Say>'
+        
+    twiml += '</Response>'
+    return HTMLResponse(content=twiml, media_type="text/xml")

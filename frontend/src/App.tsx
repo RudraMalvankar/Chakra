@@ -2,13 +2,16 @@ import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import { useChakraData } from './hooks/useChakraData';
 import { CommandCenter } from './pages/CommandCenter';
-import { Simulator } from './pages/Simulator';
+import { ScenarioLab } from './pages/ScenarioLab';
 import { Batch } from './pages/Batch';
 import { Gateway } from './pages/Gateway';
 import { Opportunities } from './pages/Opportunities';
 import { Cases } from './pages/Cases';
 import { CaseDetail } from './pages/CaseDetail';
-import { Recovery } from './pages/Recovery';
+import { CheckoutRecovery } from './pages/CheckoutRecovery';
+import { Receivables } from './pages/Receivables';
+import { PromiseToPay } from './pages/PromiseToPay';
+import { VoiceRecovery } from './pages/VoiceRecovery';
 import { Safety } from './pages/Safety';
 import { Analytics } from './pages/Analytics';
 import { AuditLog } from './pages/AuditLog';
@@ -32,11 +35,19 @@ export default function App() {
       <AppShell data={data}>
         <Routes>
           <Route path="/" element={<CommandCenter {...data} />} />
-          <Route path="/simulator" element={<Simulator {...data} />} />          <Route path="/batch" element={<Batch />} />          <Route path="/gateway" element={<Gateway />} />
           <Route path="/opportunities" element={<Opportunities {...data} />} />
           <Route path="/cases" element={<Cases {...data} />} />
           <Route path="/cases/:id" element={<CaseDetail {...data} />} />
-          <Route path="/recovery" element={<Recovery {...data} />} />
+          
+          <Route path="/checkout-recovery" element={<CheckoutRecovery {...data} />} />
+          <Route path="/receivables" element={<Receivables {...data} />} />
+          <Route path="/promise-to-pay" element={<PromiseToPay {...data} />} />
+          <Route path="/voice-recovery" element={<VoiceRecovery {...data} />} />
+
+          <Route path="/scenario-lab" element={<ScenarioLab {...data} />} />
+          <Route path="/gateway" element={<Gateway />} />
+          <Route path="/batch" element={<Batch />} />
+          
           <Route path="/safety" element={<Safety {...data} />} />
           <Route path="/analytics" element={<Analytics {...data} />} />
           <Route path="/audit" element={<AuditLog {...data} />} />
