@@ -150,6 +150,9 @@ class TriageEngine:
             template_id=llm_decision.template,
             delay_hours=llm_decision.delay_hours,
             requires_human=requires_human,
+            ai_used=getattr(llm_decision, "ai_used", True),
+            model_used=getattr(llm_decision, "model_used", None),
+            fallback_used=getattr(llm_decision, "fallback_used", False),
         )
 
 

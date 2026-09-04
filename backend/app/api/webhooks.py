@@ -104,8 +104,40 @@ from fastapi import Request, Form
 from fastapi.responses import HTMLResponse
 from backend.app.services.voice import extract_voice_intent
 
+def verify_twilio_signature(request: Request, params: dict, signature: Optional[str]) -> bool:
+    """Verifies incoming Twilio webhooks using twilio.request_validator.RequestValidator."""
+    if not settings.twilio_auth_token:
+        # In mock / synthetic mode, allow requests through without signature
+        return True
+    if not signature:
+        return False
+    try:
+        from twilio.request_validator import RequestValidator
+        validator = RequestValidator(settings.twilio_auth_token)
+        # Reconstruct effective URL
+        url = str(request.url)
+        if settings.twilio_webhook_base_url:
+            base = settings.twilio_webhook_base_url.rstrip("/")
+            url = f"{base}{request.url.path}"
+            if request.url.query:
+                url = f"{url}?{request.url.query}"
+        return validator.validate(url, params, signature)
+    except Exception:
+        return False
+
 @router.post("/twilio/twiml")
-async def twilio_twiml(request: Request, case_id: str = "", amount: str = ""):
+async def twilio_twiml(
+    request: Request,
+    case_id: str = "",
+    amount: str = "",
+    x_twilio_signature: Optional[str] = Header(None),
+):
+    # Verify Twilio signature if configured
+    if settings.twilio_auth_token:
+        form_params = dict(await request.form()) if request.headers.get("content-type", "").startswith("application/x-www-form-urlencoded") else {}
+        if not verify_twilio_signature(request, form_params, x_twilio_signature):
+            raise HTTPException(status_code=403, detail="Invalid Twilio signature")
+
     # Hinglish MVP Prompt
     twiml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
@@ -116,10 +148,20 @@ async def twilio_twiml(request: Request, case_id: str = "", amount: str = ""):
     return HTMLResponse(content=twiml, media_type="text/xml")
 
 @router.post("/twilio/gather")
-async def twilio_gather(request: Request, case_id: str = "", amount: str = ""):
+async def twilio_gather(
+    request: Request,
+    case_id: str = "",
+    amount: str = "",
+    x_twilio_signature: Optional[str] = Header(None),
+):
     form = await request.form()
-    speech = form.get("SpeechResult", "")
+    form_params = dict(form)
     
+    if settings.twilio_auth_token:
+        if not verify_twilio_signature(request, form_params, x_twilio_signature):
+            raise HTTPException(status_code=403, detail="Invalid Twilio signature")
+
+    speech = form.get("SpeechResult", "")
     intent = await extract_voice_intent(speech)
     
     twiml = '<?xml version="1.0" encoding="UTF-8"?><Response>'
@@ -127,7 +169,6 @@ async def twilio_gather(request: Request, case_id: str = "", amount: str = ""):
     if intent.intent == "promise_to_pay":
         twiml += '<Say language="hi-IN">Dhanyavaad. Humne aapka promise record kar liya hai. Kal reminder bhejenge.</Say>'
         
-        # We should simulate the promise creation here
         payload = {
             "payment_id": f"ptp_voice_{case_id}",
             "amount_inr": float(amount) if amount else 0.0,

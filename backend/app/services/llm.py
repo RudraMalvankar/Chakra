@@ -1,10 +1,13 @@
 """
-Gemini LLM Service with Strict Structured Output and Graceful Degradation.
+Gemini LLM Service with Multi-Model Fallback, Structured Output, and Graceful Degradation.
 Enforces DPDP Act PII redaction checks before sending prompts to Gemini.
-Catches 429/timeouts/exceptions and safely escalates without crashing the pipeline.
+Tries primary model (gemini-2.5-flash), falls back to secondary model (gemini-3-flash-preview)
+on 429/quota limits, and safely escalates without crashing the pipeline if unavailable.
 """
 from typing import Dict, Any, Optional
 import json
+import logging
+
 try:
     from google import genai
     from google.genai import types
@@ -15,8 +18,9 @@ except ImportError:
     GEMINI_AVAILABLE = False
 
 from pydantic import BaseModel, Field
-
 from backend.app.config import settings
+
+logger = logging.getLogger("chakra.llm")
 
 
 class TriageDecision(BaseModel):
@@ -25,12 +29,16 @@ class TriageDecision(BaseModel):
     template: Optional[str] = Field(None, description="The DLT template ID if action is 'send_payment_link'")
     delay_hours: Optional[int] = Field(None, description="Hours to wait before retry, if action is 'retry'")
     confidence: float = Field(description="Confidence score between 0.0 and 1.0")
+    model_used: Optional[str] = Field(None, description="The Gemini model that generated this triage")
+    ai_used: bool = Field(True, description="True if a live Gemini model generated the response")
+    fallback_used: bool = Field(False, description="True if fallback heuristic had to be used")
 
 
 def gemini_classify(redacted_payment: Dict[str, Any]) -> TriageDecision:
     """
-    Calls Gemini 2.5 Flash using structured output to classify ambiguous failures.
+    Calls Gemini using structured output to classify ambiguous failures.
     Strictly verifies pii_redacted flag is True before invocation.
+    Supports primary model -> fallback model -> safe rule fallback.
     """
     if not isinstance(redacted_payment, dict) or not redacted_payment.get("pii_redacted"):
         raise ValueError("FATAL: Unredacted PII sent to LLM. Execution blocked.")
@@ -49,50 +57,69 @@ def gemini_classify(redacted_payment: Dict[str, Any]) -> TriageDecision:
     - Your output MUST match the TriageDecision schema exactly.
     """
 
-    try:
-        if not GEMINI_AVAILABLE:
-            return TriageDecision(
-                action="escalate",
-                reason="llm_dependency_missing",
-                confidence=1.0,
-            )
-
-        api_key = settings.gemini_api_key
-        if not api_key:
-            return TriageDecision(
-                action="escalate",
-                reason="llm_api_failure_fallback",
-                confidence=1.0,
-            )
-
-        client = genai.Client(api_key=api_key)
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=TriageDecision,
-                temperature=0.1,
-            ),
+    if not GEMINI_AVAILABLE:
+        return TriageDecision(
+            action="escalate",
+            reason="llm_dependency_missing",
+            confidence=1.0,
+            ai_used=False,
+            fallback_used=True,
         )
-        if response.parsed and isinstance(response.parsed, TriageDecision):
-            return response.parsed
-        elif response.text:
-            parsed_dict = json.loads(response.text)
-            return TriageDecision(**parsed_dict)
-        return TriageDecision(action="escalate", reason="llm_api_failure_fallback", confidence=1.0)
-    except Exception as e:
-        err_msg = str(e)
-        if "429" in err_msg or "RESOURCE_EXHAUSTED" in err_msg:
-            # Graceful degradation notice for rate limits
-            pass
+
+    api_key = settings.gemini_api_key
+    if not api_key:
         return TriageDecision(
             action="escalate",
             reason="llm_api_failure_fallback",
             confidence=1.0,
+            ai_used=False,
+            fallback_used=True,
         )
+
+    try:
+        client = genai.Client(api_key=api_key)
+        models_to_try = [settings.gemini_model, settings.gemini_fallback_model]
+
+        for model_name in models_to_try:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=TriageDecision,
+                        temperature=0.1,
+                    ),
+                )
+                parsed = None
+                if response.parsed and isinstance(response.parsed, TriageDecision):
+                    parsed = response.parsed
+                elif response.text:
+                    parsed_dict = json.loads(response.text)
+                    parsed = TriageDecision(**parsed_dict)
+
+                if parsed:
+                    parsed.model_used = model_name
+                    parsed.ai_used = True
+                    parsed.fallback_used = False
+                    return parsed
+
+            except Exception as e:
+                err_msg = str(e)
+                logger.warning(f"Gemini call to {model_name} failed: {err_msg[:120]}")
+                continue
+    except Exception as outer_e:
+        logger.warning(f"Gemini client initialization failed: {outer_e}")
+
+    # All model attempts failed, safely escalate without crashing
+    return TriageDecision(
+        action="escalate",
+        reason="llm_api_failure_fallback",
+        confidence=1.0,
+        ai_used=False,
+        fallback_used=True,
+    )
 
 
 # Module-level convenience aliases
 classify_ambiguous_error = gemini_classify
-

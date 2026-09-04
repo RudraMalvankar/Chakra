@@ -7,7 +7,10 @@ client = TestClient(app)
 def test_health():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy"}
+    data = response.json()
+    assert data["status"] == "healthy"
+    assert "database" in data
+    assert "razorpay" in data
 
 def test_metrics():
     response = client.get("/api/metrics")

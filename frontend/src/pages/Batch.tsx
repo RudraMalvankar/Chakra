@@ -1,55 +1,66 @@
 import React, { useState } from 'react';
-import { simulatePayment, fetchMetrics } from '../services/api';
+import { API_BASE, fetchMetrics } from '../services/api';
 import { formatCurrency } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
 import { Loader } from 'lucide-react';
-
-const SCENARIOS = ['payment_timed_out', 'insufficient_funds', 'card_declined', 'mandate_revoked', 'fraud_suspected'];
 
 export const Batch = () => {
     const [count, setCount] = useState(100);
     const [running, setRunning] = useState(false);
     const [progress, setProgress] = useState(0);
+    const [batchId, setBatchId] = useState<string | null>(null);
+    const [batchStatus, setBatchStatus] = useState<string | null>(null);
     const [results, setResults] = useState<any>(null);
 
     const runBatch = async () => {
         setRunning(true);
         setProgress(0);
         setResults(null);
-        
-        let success = 0;
-        let fail = 0;
+        setBatchId(null);
+        setBatchStatus('INITIATING');
 
-        // Generate synthetic payments and process
-        for (let i = 0; i < count; i++) {
-            const failure_reason = SCENARIOS[Math.floor(Math.random() * SCENARIOS.length)];
-            const amount_inr = Math.floor(Math.random() * 10000) + 500;
-            const churn_risk = Math.random() > 0.8 ? 'HIGH' : 'LOW';
-            const fraud_risk = failure_reason === 'fraud_suspected' ? 'HIGH' : 'LOW';
-            const method = Math.random() > 0.5 ? 'UPI' : 'CARD';
-            
-            try {
-                await simulatePayment({
-                    case_type: 'PAYMENT_FAILURE',
-                    amount_inr,
-                    failure_reason,
-                    mandate_state: 'ACTIVE',
-                    customer_id: `batch_cust_${i}`,
-                    method,
-                    churn_risk,
-                    fraud_risk
-                });
-                success++;
-            } catch (_err) {
-                fail++;
+        try {
+            // 1. Trigger backend-controlled batch run
+            const createRes = await fetch(`${API_BASE}/api/batches/`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ count, scenario_mix: 'standard' }),
+            });
+            if (!createRes.ok) {
+                throw new Error('Failed to create batch on backend');
             }
-            setProgress(Math.round(((i + 1) / count) * 100));
-        }
+            const batch = await createRes.json();
+            setBatchId(batch.batch_id);
+            setBatchStatus(batch.status);
 
-        // Fetch authoritative metrics after batch
-        const metrics = await fetchMetrics();
-        setResults(metrics);
-        setRunning(false);
+            // 2. Poll status until COMPLETED or FAILED
+            const pollInterval = setInterval(async () => {
+                try {
+                    const statusRes = await fetch(`${API_BASE}/api/batches/${batch.batch_id}`);
+                    if (statusRes.ok) {
+                        const statusData = await statusRes.json();
+                        setBatchStatus(statusData.status);
+                        const pct = statusData.total_cases > 0 
+                            ? Math.round((statusData.processed_cases / statusData.total_cases) * 100)
+                            : 0;
+                        setProgress(pct);
+
+                        if (statusData.status === 'COMPLETED' || statusData.status === 'FAILED') {
+                            clearInterval(pollInterval);
+                            setRunning(false);
+                            // Fetch authoritative metrics after batch
+                            const metrics = await fetchMetrics();
+                            setResults(metrics);
+                        }
+                    }
+                } catch (_pollErr) {
+                    // Continue polling
+                }
+            }, 1000);
+        } catch (_err) {
+            setRunning(false);
+            setBatchStatus('ERROR');
+        }
     };
 
     return (
@@ -58,7 +69,7 @@ export const Batch = () => {
                 <div className="flex justify-between items-center mb-6">
                     <div>
                         <h2 className="text-lg font-bold text-text-main uppercase tracking-wider">Batch Simulator</h2>
-                        <p className="text-xs text-text-muted mt-1 font-mono">Run high-volume synthetic scenarios through Chakra pipeline</p>
+                        <p className="text-xs text-text-muted mt-1 font-mono">Backend-controlled batch runner with Neon Postgres persistence</p>
                     </div>
                     <Badge status="INFO">SYNTHETIC BENCHMARK</Badge>
                 </div>
@@ -72,10 +83,16 @@ export const Batch = () => {
                             <option value="1000">1,000</option>
                         </select>
                     </div>
+                    {batchId && (
+                        <div className="p-3 bg-gray-50 border border-border rounded flex flex-col justify-center">
+                            <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider">Batch ID & Status</div>
+                            <div className="text-xs font-mono font-bold text-text-main mt-0.5">{batchId} ({batchStatus})</div>
+                        </div>
+                    )}
                 </div>
 
                 <button onClick={runBatch} disabled={running} className="w-full bg-rzp-blue text-white font-bold uppercase tracking-widest text-xs py-3 rounded hover:bg-blue-700 transition-colors flex justify-center items-center">
-                    {running ? <><Loader className="animate-spin mr-2" size={16} /> RUNNING {progress}%</> : 'RUN BATCH SIMULATION'}
+                    {running ? <><Loader className="animate-spin mr-2" size={16} /> RUNNING {progress}% ({batchStatus})</> : 'RUN BATCH SIMULATION'}
                 </button>
             </div>
 

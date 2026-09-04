@@ -33,6 +33,20 @@ def verify_invariants(metrics: Dict[str, Any]) -> Dict[str, bool]:
 
 
 def generate_metrics_report(audit_file: Optional[str] = None) -> Dict[str, Any]:
+    from backend.app.config import settings
+    if audit_file is None and settings.is_database_configured:
+        try:
+            from backend.app.services.db_service import DBService
+            db_metrics = DBService.get_metrics()
+            if db_metrics and db_metrics.get("payments_processed", 0) > 0:
+                return {
+                    "metrics": db_metrics,
+                    "invariants": verify_invariants(db_metrics),
+                    "simulation_disclosure": SIMULATION_DISCLOSURE,
+                }
+        except Exception:
+            pass
+
     log_path = audit_file or AUDIT_FILE
     if not os.path.exists(log_path):
         return {

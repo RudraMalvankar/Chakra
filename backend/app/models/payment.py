@@ -42,6 +42,9 @@ class TriageResult(BaseModel):
     template_id: Optional[str] = None
     delay_hours: Optional[int] = None
     requires_human: bool = False
+    ai_used: bool = False
+    model_used: Optional[str] = None
+    fallback_used: bool = False
 
     @property
     def action(self) -> str:

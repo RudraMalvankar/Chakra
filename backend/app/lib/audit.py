@@ -40,6 +40,17 @@ def log_audit_event(
 
     line = json.dumps(event) + "\n"
 
+    # Dual-write to Neon Postgres audit_events table
+    try:
+        from backend.app.services.db_service import DBService
+        DBService.record_audit_event(
+            payment_id=str(payment_id),
+            event_type=str(event_type),
+            details=clean_details,
+        )
+    except Exception:
+        pass
+
     # Robust file append with retry for Windows file locking
     for attempt in range(5):
         try:
@@ -54,7 +65,13 @@ def log_audit_event(
 
 
 def clear_audit_log(filepath: str = AUDIT_FILE) -> None:
-    """Explicit benchmark reset support. Clears the audit log file safely on Windows."""
+    """Explicit benchmark reset support. Clears the audit log file safely on Windows and resets database state."""
+    try:
+        from backend.app.services.db_service import DBService
+        DBService.reset_database()
+    except Exception:
+        pass
+
     for attempt in range(5):
         try:
             with open(filepath, "w", encoding="utf-8") as f:

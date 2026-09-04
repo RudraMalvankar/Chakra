@@ -144,9 +144,30 @@ async def execute_recovery_pipeline(
     """
     from backend.app.services.revenue_risk_engine import RevenueRiskEngine
     from backend.app.services.recovery_agent import RecoveryAgent
+    from backend.app.services.db_service import DBService
     
     ctx: RecoveryCase = ContextBuilder.build_context(payload)
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    # DB Persistence: Register Customer, Payment & Case initial state
+    cust_ext_id = ctx.customer_id or "cust_unknown"
+    cust_db_id = DBService.upsert_customer(cust_ext_id)
+    case_type_str = ctx.case_type.value if hasattr(ctx.case_type, "value") else str(ctx.case_type)
+    
+    DBService.upsert_payment(
+        payment_id=ctx.payment_id,
+        amount_inr=ctx.amount_inr,
+        customer_id=cust_db_id,
+        status="FAILED",
+        failure_code=ctx.error_code or "unknown",
+    )
+    DBService.upsert_recovery_case(
+        case_id=ctx.case_id or ctx.payment_id,
+        payment_id=ctx.payment_id,
+        case_type=case_type_str,
+        amount_at_risk=ctx.amount_inr,
+        status="PENDING",
+    )
 
     # 0. Triage (AI/Diagnostic classification)
     from backend.app.services.triage import TriageEngine
@@ -154,15 +175,32 @@ async def execute_recovery_pipeline(
     triage_result = TriageEngine.triage(ctx)
     if triage_result.is_ambiguous:
         log_audit_event(ctx.payment_id, "ai_triage_requested", {"error_code": ctx.error_code})
+        action_val = triage_result.recommended_action.value if hasattr(triage_result.recommended_action, 'value') else str(triage_result.recommended_action)
+        
         log_audit_event(ctx.payment_id, "ai_triage_completed", {
             "error_code": ctx.error_code,
-            "classification": triage_result.recommended_action.value if hasattr(triage_result.recommended_action, 'value') else str(triage_result.recommended_action),
+            "classification": action_val,
             "confidence": triage_result.confidence,
-            "fallback_used": True,
+            "ai_used": getattr(triage_result, "ai_used", True),
+            "model_used": getattr(triage_result, "model_used", None),
+            "fallback_used": getattr(triage_result, "fallback_used", False),
             "reason": triage_result.reason
         })
+        
+        # Persist AI triage in DB
+        DBService.upsert_recovery_case(
+            case_id=ctx.case_id or ctx.payment_id,
+            payment_id=ctx.payment_id,
+            case_type=case_type_str,
+            amount_at_risk=ctx.amount_inr,
+            ai_used=getattr(triage_result, "ai_used", True),
+            ai_classification=action_val,
+            ai_confidence=triage_result.confidence,
+            ai_reasoning=triage_result.reason,
+            ai_fallback_used=getattr(triage_result, "fallback_used", False),
+        )
+
         # Map LLM output to standard error codes for RecoveryAgent
-        action_val = triage_result.recommended_action.value if hasattr(triage_result.recommended_action, 'value') else str(triage_result.recommended_action)
         if action_val == "RETRY_LATER":
             ctx.failure_reason = "payment_timed_out"
         elif action_val == "PAYMENT_LINK":
@@ -175,13 +213,42 @@ async def execute_recovery_pipeline(
     # 1. Detect & Assess Revenue Risk
     risk_assessment = RevenueRiskEngine.assess(ctx)
     log_audit_event(ctx.payment_id, "revenue_risk_assessed", risk_assessment.model_dump())
+    DBService.record_recovery_event(
+        case_id=ctx.case_id or ctx.payment_id,
+        event_type="revenue_risk_assessed",
+        amount=risk_assessment.revenue_at_risk_inr,
+        metadata=risk_assessment.model_dump(),
+    )
+    DBService.upsert_recovery_case(
+        case_id=ctx.case_id or ctx.payment_id,
+        payment_id=ctx.payment_id,
+        case_type=case_type_str,
+        amount_at_risk=risk_assessment.revenue_at_risk_inr,
+        risk_probability=risk_assessment.recovery_probability,
+        recovery_eligible=getattr(risk_assessment, "recovery_eligible", True),
+    )
 
     # 2. Agent Decision
     agent_decision = RecoveryAgent.decide(ctx)
     log_data = agent_decision.model_dump()
     log_data["amount_inr"] = ctx.amount_inr
-    log_data["case_type"] = ctx.case_type.value if hasattr(ctx.case_type, "value") else str(ctx.case_type)
+    log_data["case_type"] = case_type_str
     log_audit_event(ctx.payment_id, "agent_decision_proposed", log_data)
+    
+    # Persist decision in DB
+    selected_act = agent_decision.selected_action
+    cand = next((c for c in agent_decision.candidate_actions if c.action == selected_act), None)
+    DBService.record_decision(
+        case_id=ctx.case_id or ctx.payment_id,
+        selected_action=selected_act,
+        confidence=agent_decision.confidence,
+        reasoning_summary=f"Selected {selected_act} with expected recovery INR {agent_decision.expected_recovery_inr:.2f}",
+        base_probability=cand.base_probability if cand else 0.5,
+        probability_modifier=cand.probability_modifier if cand else 1.0,
+        effective_probability=cand.effective_probability if cand else 0.5,
+        expected_recovery=agent_decision.expected_recovery_inr,
+        score=cand.score if cand else 0.0,
+    )
 
     # Map AgentDecision to RecoveryDecision for SafetyGate compatibility
     from backend.app.models.case import RecoveryDecision
@@ -196,7 +263,39 @@ async def execute_recovery_pipeline(
     ctx.current_state = PaymentState.SAFETY_CHECK
     approved_decision = SafetyGate.evaluate(ctx, proposed_decision, today)
     log_audit_event(ctx.payment_id, "safety_check_completed", approved_decision.model_dump())
+    DBService.record_recovery_event(
+        case_id=ctx.case_id or ctx.payment_id,
+        event_type="safety_check_completed",
+        action=approved_decision.decision.value,
+        status=approved_decision.eligibility if hasattr(approved_decision, "eligibility") else approved_decision.decision.value,
+        metadata=approved_decision.model_dump(),
+    )
 
     # 4. Execution
     final_ctx = await RecoveryExecutor.execute(ctx, approved_decision, dry_run=dry_run)
+    
+    # DB Persistence: Final Case & Payment State
+    final_status = final_ctx.current_state.value
+    DBService.upsert_recovery_case(
+        case_id=ctx.case_id or ctx.payment_id,
+        payment_id=ctx.payment_id,
+        case_type=case_type_str,
+        amount_at_risk=ctx.amount_inr,
+        status=final_status,
+        current_action=approved_decision.decision.value,
+    )
+    if final_ctx.current_state == PaymentState.RECOVERED:
+        DBService.upsert_payment(
+            payment_id=ctx.payment_id,
+            amount_inr=ctx.amount_inr,
+            status="CAPTURED",
+        )
+    elif final_ctx.current_state in (PaymentState.RECOVERY_PENDING, PaymentState.INTERVENTION_ATTEMPTED):
+        DBService.upsert_payment(
+            payment_id=ctx.payment_id,
+            amount_inr=ctx.amount_inr,
+            status="PENDING",
+        )
+
     return final_ctx
+

@@ -2,8 +2,6 @@ import { API_BASE } from '../services/api';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShoppingBag, XCircle, Loader2 } from 'lucide-react';
-import { formatCurrency } from '../lib/format';
-
 
 export const CheckoutRecovery = ({ refresh }: any) => {
     const navigate = useNavigate();
@@ -13,31 +11,55 @@ export const CheckoutRecovery = ({ refresh }: any) => {
     const [paymentLink, setPaymentLink] = useState<string | null>(null);
     const [caseId, setCaseId] = useState<string | null>(null);
     
-    // Simulate Razorpay Checkout via fake Razorpay object for the demo, 
-    // OR use the real script if you want. 
-    // The requirement says: "use actual Razorpay Checkout". 
     useEffect(() => {
         const script = document.createElement('script');
         script.src = 'https://checkout.razorpay.com/v1/checkout.js';
         script.async = true;
         document.body.appendChild(script);
-        return () => { document.body.removeChild(script); };
+        return () => { 
+            if (document.body.contains(script)) {
+                document.body.removeChild(script); 
+            }
+        };
     }, []);
 
     const startCheckout = async () => {
         setLoading(true);
         setStatus('CREATING');
+        setPaymentLink(null);
+        setCaseId(null);
         
         try {
             // 1. Create Order via backend
-            const orderRes = await fetch(`${API_BASE}/api/payments/create_order`, {
+            const orderRes = await fetch(`${API_BASE}/api/payments/orders`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ amount_inr: 5000, customer_id: 'cust_demo_001' })
             });
-            const orderData = await orderRes.json();
-            setOrderId(orderData.order_id);
-            
+            if (!orderRes.ok) {
+                // Fallback to create_order endpoint
+                const fbRes = await fetch(`${API_BASE}/api/payments/create_order`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ amount_inr: 5000, customer_id: 'cust_demo_001' })
+                });
+                const fbData = await fbRes.json();
+                setOrderId(fbData.order_id);
+                initiateModal(fbData.order_id);
+            } else {
+                const orderData = await orderRes.json();
+                setOrderId(orderData.order_id);
+                initiateModal(orderData.order_id);
+            }
+        } catch (e) {
+            console.error('Error starting checkout:', e);
+            setStatus('IDLE');
+            setLoading(false);
+        }
+    };
+
+    const initiateModal = async (createdOrderId: string) => {
+        try {
             // 2. Fetch config
             const configRes = await fetch(`${API_BASE}/api/config`);
             const config = await configRes.json();
@@ -51,15 +73,36 @@ export const CheckoutRecovery = ({ refresh }: any) => {
                 currency: 'INR',
                 name: 'Chakra Demo Store',
                 description: 'Test Transaction',
-                order_id: orderData.order_id,
-                handler: function (response: any) {
-                    console.log('Payment success', response);
-                    setStatus('RECOVERED');
+                order_id: createdOrderId,
+                handler: async function (response: any) {
+                    console.log('Payment success response received:', response);
+                    setStatus('RECOVERING');
+                    try {
+                        const verifyRes = await fetch(`${API_BASE}/api/payments/verify`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                razorpay_order_id: response.razorpay_order_id || createdOrderId,
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_signature: response.razorpay_signature || 'mock_sig_valid',
+                                amount_inr: 5000,
+                            })
+                        });
+                        if (verifyRes.ok) {
+                            setStatus('RECOVERED');
+                            if (refresh) refresh();
+                        } else {
+                            setStatus('ABANDONED');
+                        }
+                    } catch (verifyErr) {
+                        console.error('Verification error:', verifyErr);
+                        setStatus('ABANDONED');
+                    }
                 },
                 modal: {
                     ondismiss: async function() {
                         setStatus('ABANDONED');
-                        await handleAbandonment();
+                        await handleAbandonment(createdOrderId);
                     }
                 }
             };
@@ -70,10 +113,9 @@ export const CheckoutRecovery = ({ refresh }: any) => {
                 const rzp = new window.Razorpay(options);
                 rzp.open();
             } else {
-                // Fallback if script failed
                 setTimeout(() => {
                     setStatus('ABANDONED');
-                    handleAbandonment();
+                    handleAbandonment(createdOrderId);
                 }, 2000);
             }
         } catch (e) {
@@ -84,32 +126,38 @@ export const CheckoutRecovery = ({ refresh }: any) => {
         }
     };
     
-    const handleAbandonment = async () => {
+    const handleAbandonment = async (orderIdToAbandon: string) => {
         setStatus('RECOVERING');
         try {
-            const simRes = await fetch(`${API_BASE}/api/demo/simulate`, {
+            const abandonRes = await fetch(`${API_BASE}/api/payments/abandon`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    case_type: 'CHECKOUT_ABANDONMENT',
+                    order_id: orderIdToAbandon,
                     amount_inr: 5000,
-                    failure_reason: 'user_abandoned',
                     customer_id: 'cust_demo_001'
                 })
             });
-            const simData = await simRes.json();
-            setCaseId(simData.case_id);
+            const data = await abandonRes.json();
+            setCaseId(data.case_id);
             
-            // Refresh global state so Command Center updates
             if (refresh) refresh();
             
-            // Look into the trace to see if a payment link was generated
-            const lastEvent = simData.trace[simData.trace.length - 1];
-            if (lastEvent && lastEvent.details && lastEvent.details.recovery_url) {
-                setPaymentLink(lastEvent.details.recovery_url);
+            // Query case detail to retrieve recovery payment link if available
+            try {
+                const caseRes = await fetch(`${API_BASE}/api/cases/${data.case_id}`);
+                if (caseRes.ok) {
+                    const caseDetail = await caseRes.json();
+                    const linkEv = caseDetail.events?.find((e: any) => e.metadata?.recovery_url);
+                    if (linkEv?.metadata?.recovery_url) {
+                        setPaymentLink(linkEv.metadata.recovery_url);
+                    }
+                }
+            } catch (_err) {
+                // Ignore link retrieval failure
             }
         } catch (e) {
-            console.error(e);
+            console.error('Abandonment handler error:', e);
         }
     };
 
@@ -139,8 +187,12 @@ export const CheckoutRecovery = ({ refresh }: any) => {
                             <span className="font-mono">cust_demo_001</span>
                         </div>
                         <div className="flex justify-between border-b border-border pb-2">
+                            <span className="text-text-muted">Order ID</span>
+                            <span className="font-mono text-xs">{orderId || 'Generated on click'}</span>
+                        </div>
+                        <div className="flex justify-between border-b border-border pb-2">
                             <span className="text-text-muted">Method</span>
-                            <span className="font-mono">UPI / Card</span>
+                            <span className="font-mono">Razorpay Test Mode / Synthetic</span>
                         </div>
                     </div>
                     
@@ -159,18 +211,18 @@ export const CheckoutRecovery = ({ refresh }: any) => {
                     
                     <div className="space-y-6 font-mono text-sm">
                         <Step active={status !== 'IDLE'} label="CHECKOUT OPENED" />
-                        <Step active={status === 'ABANDONED' || status === 'RECOVERING' || status === 'RECOVERED'} label="CHECKOUT ABANDONED" error={status === 'ABANDONED'} />
-                        <Step active={status === 'RECOVERING' || status === 'RECOVERED'} label="REVENUE AT RISK" />
-                        <Step active={(status === 'RECOVERING' || status === 'RECOVERED') && caseId != null} label="AI TRIAGE & RISK ASSESSMENT" />
-                        <Step active={(status === 'RECOVERING' || status === 'RECOVERED') && caseId != null} label="RECOVERY AGENT & SAFETY GATE" />
+                        <Step active={status === 'ABANDONED' || status === 'RECOVERING' || status === 'RECOVERED'} label="CHECKOUT ABANDONED / DISMISSED" error={status === 'ABANDONED'} />
+                        <Step active={status === 'RECOVERING' || status === 'RECOVERED'} label="REVENUE AT RISK EVALUATED" />
+                        <Step active={(status === 'RECOVERING' || status === 'RECOVERED') && caseId != null} label="AI TRIAGE & SAFETY GATE" />
+                        <Step active={status === 'RECOVERED'} label="RECOVERY VERIFIED (SIGNATURE VALIDATED)" />
                         
                         {paymentLink && (
                             <div className="p-4 bg-blue-50 border border-blue-200 rounded mt-4">
                                 <div className="text-xs font-bold text-rzp-blue uppercase tracking-wider mb-2">Payment Link Generated</div>
-                                <a href={paymentLink} target="_blank" rel="noreferrer" className="text-rzp-blue underline break-all">
+                                <a href={paymentLink} target="_blank" rel="noreferrer" className="text-rzp-blue underline break-all text-xs">
                                     {paymentLink}
                                 </a>
-                                <div className="mt-2 text-xs text-text-muted">Click link to complete payment in Test Mode</div>
+                                <div className="mt-2 text-[10px] text-text-muted">Click link to complete payment in Test Mode</div>
                             </div>
                         )}
                     </div>
@@ -178,7 +230,7 @@ export const CheckoutRecovery = ({ refresh }: any) => {
                     {caseId && (
                         <div className="mt-8 pt-6 border-t border-border">
                             <button onClick={() => navigate(`/cases/${caseId}`)} className="text-rzp-blue text-xs font-bold uppercase tracking-wider hover:underline">
-                                View Recovery Mission →
+                                View Recovery Mission ({caseId}) →
                             </button>
                         </div>
                     )}

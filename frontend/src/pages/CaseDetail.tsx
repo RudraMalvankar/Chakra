@@ -53,24 +53,34 @@ export const CaseDetail = ({ cases, data }: any) => {
                     
                     {/* 1. AI Reasoning */}
                     <div className="bg-white border border-border shadow-sm">
-                        <div className="px-6 py-4 border-b border-border bg-gray-50 flex items-center">
-                            <BrainCircuit className="text-purple-500 mr-3" size={18}/>
-                            <h3 className="text-xs font-bold text-text-main uppercase tracking-wider">AI Reasoning & Classification</h3>
+                        <div className="px-6 py-4 border-b border-border bg-gray-50 flex items-center justify-between">
+                            <div className="flex items-center">
+                                <BrainCircuit className="text-purple-500 mr-3" size={18}/>
+                                <h3 className="text-xs font-bold text-text-main uppercase tracking-wider">AI Reasoning & Classification</h3>
+                            </div>
+                            {(c.ai_used || triage.ai_used) && (
+                                <span className="px-2 py-0.5 text-[10px] font-bold bg-purple-100 text-purple-800 rounded font-mono">
+                                    {c.model_used || triage.model_used || "GEMINI"}
+                                    {(c.fallback_used || triage.fallback_used) ? " (FALLBACK)" : ""}
+                                </span>
+                            )}
                         </div>
                         <div className="p-6 font-mono text-sm space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <div className="p-4 bg-purple-50 border border-purple-100 rounded">
                                     <div className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-1">Detected Failure Category</div>
-                                    <div className="font-bold text-purple-700">{triage.category || '-'}</div>
+                                    <div className="font-bold text-purple-700">{c.ai_classification || triage.classification || triage.category || 'DETERMINISTIC / NONE'}</div>
                                 </div>
                                 <div className="p-4 bg-purple-50 border border-purple-100 rounded">
                                     <div className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-1">Confidence</div>
-                                    <div className="font-bold text-purple-700">{triage.confidence ? `${Math.round(triage.confidence * 100)}%` : '-'}</div>
+                                    <div className="font-bold text-purple-700">
+                                        {(c.ai_confidence || triage.confidence) ? `${Math.round((c.ai_confidence || triage.confidence) * 100)}%` : '-'}
+                                    </div>
                                 </div>
                             </div>
                             <div className="text-text-muted p-4 bg-gray-50 border border-border rounded text-xs">
-                                <span className="font-bold text-text-main">Extracted Context: </span>
-                                {triage.summary || "No AI summary available (deterministic fallback or not invoked)."}
+                                <span className="font-bold text-text-main">AI Reasoning: </span>
+                                {c.ai_reasoning || triage.reason || triage.summary || "No AI invocation needed (deterministic recovery route executed)."}
                             </div>
                         </div>
                     </div>
