@@ -10,3 +10,8 @@ def setup_test_environment():
     init_db()
     clear_audit_log()
 
+    # Prevent safety_gate DB state from leaking between tests
+    import backend.app.services.safety_gate as sg
+    sg._skip_db_state = True
+    sg.reset_safety_state()
+

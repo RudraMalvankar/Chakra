@@ -5,12 +5,12 @@ Provides VoiceProvider, TwilioVoiceProvider, MockVoiceProvider abstractions.
 Also maintains generate_hinglish_voice_note for backward compat with RecoveryExecutor.
 AI intent extraction uses Gemini via gemini_classify with keyword-override fallback.
 """
-import os
 from typing import Dict, Any, Optional
 import httpx
 import json
 
 from pydantic import BaseModel, Field
+from backend.app.config import settings
 
 
 class VoiceProvider:
@@ -20,15 +20,15 @@ class VoiceProvider:
 
 class TwilioVoiceProvider(VoiceProvider):
     def __init__(self):
-        self.account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-        self.auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-        self.from_number = os.getenv("TWILIO_FROM_NUMBER")
+        self.account_sid = settings.twilio_account_sid
+        self.auth_token = settings.twilio_auth_token
+        self.from_number = settings.twilio_from_number
 
     async def start_call(self, to_number: str, context: Dict[str, Any]) -> Dict[str, Any]:
         if not self.account_sid or not self.auth_token or not self.from_number:
-            return {"status": "error", "message": "Twilio not configured"}
+            return {"status": "error", "message": "TWILIO NOT CONFIGURED"}
 
-        backend_url = os.getenv("CHAKRA_BACKEND_URL", "http://localhost:8001")
+        backend_url = settings.twilio_webhook_base_url or "http://localhost:8001"
         webhook_url = f"{backend_url}/webhooks/twilio/twiml?case_id={context.get('case_id')}&amount={context.get('amount')}"
 
         payload = {
@@ -52,15 +52,17 @@ class TwilioVoiceProvider(VoiceProvider):
 
 class MockVoiceProvider(VoiceProvider):
     async def start_call(self, to_number: str, context: Dict[str, Any]) -> Dict[str, Any]:
+        import os as _os
         return {
             "status": "success",
-            "call_sid": f"CA_mock_{os.urandom(8).hex()}",
-            "mocked": True
+            "call_sid": f"CA_mock_{_os.urandom(8).hex()}",
+            "mocked": True,
+            "provider_status": "SIMULATED"
         }
 
 
 def get_voice_provider() -> VoiceProvider:
-    if os.getenv("TWILIO_ACCOUNT_SID"):
+    if settings.is_twilio_configured:
         return TwilioVoiceProvider()
     return MockVoiceProvider()
 

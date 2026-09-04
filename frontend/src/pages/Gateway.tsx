@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchMockPayments, retryMockPayment, fetchConfig } from '../services/api';
+import { fetchMockPayments, fetchConfig } from '../services/api';
 import { formatExact } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
 import { Loader } from 'lucide-react';
@@ -26,7 +26,7 @@ export const Gateway = () => {
     const handleRetry = async (id: string) => {
         setRetrying(id);
         try {
-            await retryMockPayment(id);
+            await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/payments/${id}/retry`, { method: 'POST' });
             await load();
         } catch (e) {
             console.error(e);

@@ -43,7 +43,7 @@ async def test_executor_dry_run_mode():
         delay_hours=24,
     )
     res = await RecoveryExecutor.execute(ctx, decision, dry_run=True)
-    assert res.current_state == PaymentState.INTERVENTION_ATTEMPTED
+    assert res.current_state == PaymentState.RECOVERY_PENDING
 
 
 @pytest.mark.asyncio
@@ -150,4 +150,4 @@ async def test_full_pipeline_orchestrator():
     final_ctx = await execute_recovery_pipeline(payload, dry_run=True)
     assert final_ctx.payment_id == "p_pipe_1"
     assert final_ctx.amount_inr == 499.0
-    assert final_ctx.current_state == PaymentState.INTERVENTION_ATTEMPTED
+    assert final_ctx.current_state == PaymentState.RECOVERY_PENDING

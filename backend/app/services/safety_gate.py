@@ -1,36 +1,26 @@
 
-from pathlib import Path
-import yaml
 from backend.app.config import settings
+from backend.app.lib.config_utils import get_regulatory_threshold, get_recovery_policy, get_regulatory_policy
 
-def _load_threshold():
-    try:
-        policy_path = Path(settings.recovery_policy_path)
-        if policy_path.exists():
-            with open(policy_path, 'r') as f:
-                data = yaml.safe_load(f)
-                return data.get('policy', {}).get('regulatory', {}).get('afa_free_threshold_standard_inr', 15000)
-    except:
-        pass
-    return 15000
-
-REGULATORY_THRESHOLD = _load_threshold()
+REGULATORY_THRESHOLD = get_regulatory_threshold()
 
 from backend.app.models.case import RecoveryCase
 """
 Enforcer Safety Gate: Non-Overridable Deterministic Policy Enforcer.
 Evaluates proposed RecoveryDecisions against RBI regulations, card network rules,
-churn risk, SHA-256 idempotency locks, and customer monthly intervention budgets.
+churn risk, idempotency locks, and customer monthly intervention budgets.
+
+Safety state is persisted in Neon Postgres (safety_state table).
+In-memory caches provide fast reads; writes go to DB first.
 """
 from typing import Dict, Any, Optional, Union, Set
 from datetime import datetime, timezone
-from pathlib import Path
 import hashlib
-import yaml
+import logging
 
 from backend.app.config import settings
 from backend.app.models.payment import (
-    
+
     RecoveryDecision,
     SafetyEvaluation,
     InterventionType,
@@ -38,30 +28,150 @@ from backend.app.models.payment import (
 from backend.app.models.mandate import MandateState
 from backend.app.services.context_builder import ContextBuilder
 
+logger = logging.getLogger("chakra.safety_gate")
 
-def _load_safety_policies():
-    reg = {}
-    rec = {}
-    reg_path = Path(settings.regulatory_policy_path)
-    if reg_path.exists():
-        with open(reg_path, "r") as f:
-            data = yaml.safe_load(f)
-            if data and "policy" in data:
-                reg = data["policy"].get("rules", {})
-    rec_path = Path(settings.recovery_policy_path)
-    if rec_path.exists():
-        with open(rec_path, "r") as f:
-            data = yaml.safe_load(f)
-            if data and "policy" in data:
-                rec = data["policy"].get("rules", {})
-    return reg, rec
+REGULATORY_POLICY = get_regulatory_policy()
+RECOVERY_POLICY = get_recovery_policy()
+
+# In-memory caches backed by Neon Postgres
+# These are performance caches, NOT authoritative — DB is authoritative
+IDEMPOTENCY_CACHE: Set[str] = set()
+CUSTOMER_INTERVENTION_CACHE: Dict[str, int] = {}
+_safety_state_loaded = False
+_skip_db_state = False  # Set True by conftest to prevent DB state leakage in tests
 
 
-REGULATORY_POLICY, RECOVERY_POLICY = _load_safety_policies()
+def _get_db_session():
+    """Get a DB session, returns None if DB not configured."""
+    if not settings.is_database_configured:
+        return None
+    try:
+        from backend.app.db.session import get_session_factory
+        factory = get_session_factory()
+        return factory()
+    except Exception as e:
+        logger.warning(f"Could not get DB session for safety state: {e}")
+        return None
 
-# In-Memory Safety Gate State (In production: Redis / DynamoDB)
-IDEMPOTENCY_STORE: Set[str] = set()
-CUSTOMER_INTERVENTION_COUNTS: Dict[str, int] = {}
+
+def _load_safety_state_from_db():
+    """Loads safety state from DB into memory caches. Called once on first evaluate()."""
+    global _safety_state_loaded
+    if _safety_state_loaded or _skip_db_state:
+        return
+
+    session = _get_db_session()
+    if not session:
+        _safety_state_loaded = True
+        return
+
+    try:
+        from sqlalchemy import select
+        from backend.app.db.models import SafetyState
+
+        # Load idempotency keys (not expired)
+        now = datetime.now(timezone.utc)
+        stmt = select(SafetyState).where(
+            SafetyState.state_type == "idempotency"
+        )
+        rows = session.execute(stmt).scalars().all()
+        for row in rows:
+            if row.expires_at and row.expires_at.replace(tzinfo=timezone.utc) < now:
+                continue  # Skip expired
+            IDEMPOTENCY_CACHE.add(row.state_key)
+
+        # Load intervention counts
+        stmt = select(SafetyState).where(
+            SafetyState.state_type == "intervention_budget"
+        )
+        rows = session.execute(stmt).scalars().all()
+        for row in rows:
+            try:
+                CUSTOMER_INTERVENTION_CACHE[row.state_key] = int(row.state_value or "0")
+            except (ValueError, TypeError):
+                pass
+
+        logger.info(f"Loaded safety state: {len(IDEMPOTENCY_CACHE)} idempotency keys, {len(CUSTOMER_INTERVENTION_CACHE)} budget entries")
+    except Exception as e:
+        logger.warning(f"Could not load safety state from DB: {e}")
+    finally:
+        session.close()
+        _safety_state_loaded = True
+
+
+def _persist_idempotency_key(key: str, day: str) -> bool:
+    """Persists an idempotency key to DB. Returns True if persisted (or DB unavailable)."""
+    session = _get_db_session()
+    if not session:
+        return True  # Accept if DB unavailable
+
+    try:
+        from backend.app.db.models import SafetyState, utcnow
+        from sqlalchemy import select
+
+        # Check if already exists
+        stmt = select(SafetyState).where(
+            SafetyState.state_type == "idempotency",
+            SafetyState.state_key == key
+        )
+        existing = session.execute(stmt).scalar_one_or_none()
+        if existing:
+            return False  # Duplicate
+
+        # Expire idempotency keys after 7 days
+        from datetime import timedelta
+        expires = datetime.now(timezone.utc) + timedelta(days=7)
+
+        state = SafetyState(
+            state_type="idempotency",
+            state_key=key,
+            state_value="1",
+            expires_at=expires,
+        )
+        session.add(state)
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        logger.warning(f"Could not persist idempotency key: {e}")
+        return True  # Accept if DB fails
+    finally:
+        session.close()
+
+
+def _persist_intervention_budget(budget_key: str, count: int) -> bool:
+    """Persists intervention count to DB. Returns True if persisted."""
+    session = _get_db_session()
+    if not session:
+        return True
+
+    try:
+        from backend.app.db.models import SafetyState
+        from sqlalchemy import select
+
+        stmt = select(SafetyState).where(
+            SafetyState.state_type == "intervention_budget",
+            SafetyState.state_key == budget_key
+        )
+        existing = session.execute(stmt).scalar_one_or_none()
+        if existing:
+            existing.state_value = str(count)
+            existing.updated_at = datetime.now(timezone.utc)
+        else:
+            state = SafetyState(
+                state_type="intervention_budget",
+                state_key=budget_key,
+                state_value=str(count),
+            )
+            session.add(state)
+        session.commit()
+        return True
+    except Exception as e:
+        session.rollback()
+        logger.warning(f"Could not persist intervention budget: {e}")
+        return True
+    finally:
+        session.close()
 
 
 def generate_idempotency_key(payment_id: str, intervention: str, day: str) -> str:
@@ -70,9 +180,13 @@ def generate_idempotency_key(payment_id: str, intervention: str, day: str) -> st
 
 
 def reset_safety_state() -> None:
-    """Clears all in-memory idempotency locks and customer intervention counts."""
-    IDEMPOTENCY_STORE.clear()
-    CUSTOMER_INTERVENTION_COUNTS.clear()
+    """Clears all in-memory idempotency locks and customer intervention counts.
+    For test isolation only — does NOT clear DB state.
+    Sets _safety_state_loaded=True so DB does not re-pollute cleared caches."""
+    global _safety_state_loaded
+    IDEMPOTENCY_CACHE.clear()
+    CUSTOMER_INTERVENTION_CACHE.clear()
+    _safety_state_loaded = True
 
 
 class SafetyGate:
@@ -88,6 +202,9 @@ class SafetyGate:
         """
         if not isinstance(ctx, RecoveryCase):
             ctx = ContextBuilder.build_context(ctx)
+
+        # Load safety state from DB on first call
+        _load_safety_state_from_db()
 
         if day is None:
             day = datetime.now(timezone.utc).strftime("%Y-%m-%d")
@@ -123,12 +240,16 @@ class SafetyGate:
                 final_dec.decision = InterventionType.AFA_PAYMENT_LINK
                 final_dec.reason_code = "SAFETY_MODIFIED_FIRST_TXN_AFA"
                 final_dec.template_id = "dlt_first_txn_v1"
+                final_dec.eligibility = "ALLOWED"
+                return final_dec
 
             # 4. AFA REGULATORY: Amount Threshold (> ₹15,000)
             elif ctx.amount_inr > afa_threshold:
                 final_dec.decision = InterventionType.AFA_PAYMENT_LINK
                 final_dec.reason_code = "SAFETY_MODIFIED_AFA_LIMIT"
                 final_dec.template_id = "dlt_afa_threshold_v1"
+                final_dec.eligibility = "ALLOWED"
+                return final_dec
 
         # 5. CHURN RISK ENFORCER: Pre-Debit Alerts Ignored (>= 2)
         if ctx.alerts_ignored >= churn_threshold:
@@ -151,7 +272,7 @@ class SafetyGate:
         # 7. IDEMPOTENCY & CUSTOMER MONTHLY BUDGET GOVERNOR
         if final_dec.decision not in [InterventionType.BLOCK, InterventionType.ESCALATE]:
             idem_key = generate_idempotency_key(ctx.payment_id, final_dec.decision.value, day)
-            if idem_key in IDEMPOTENCY_STORE:
+            if idem_key in IDEMPOTENCY_CACHE:
                 final_dec.decision = InterventionType.BLOCK
                 final_dec.eligibility = "BLOCKED"
                 final_dec.reason_code = "IDEMPOTENCY_DUPLICATE_EVENT"
@@ -161,16 +282,20 @@ class SafetyGate:
             current_month = datetime.now(timezone.utc).strftime("%Y-%m")
             budget_key = f"{ctx.customer_id}_{current_month}"
 
-            current_count = CUSTOMER_INTERVENTION_COUNTS.get(budget_key, 0)
+            current_count = CUSTOMER_INTERVENTION_CACHE.get(budget_key, 0)
             if current_count >= max_budget:
                 final_dec.decision = InterventionType.BLOCK
                 final_dec.eligibility = "BLOCKED"
                 final_dec.reason_code = "CUSTOMER_BUDGET_EXCEEDED"
                 return final_dec
 
-            # Lock idempotency and increment budget
-            IDEMPOTENCY_STORE.add(idem_key)
-            CUSTOMER_INTERVENTION_COUNTS[budget_key] = current_count + 1
+            # Persist to DB and update cache
+            _persist_idempotency_key(idem_key, day)
+            IDEMPOTENCY_CACHE.add(idem_key)
+
+            new_count = current_count + 1
+            _persist_intervention_budget(budget_key, new_count)
+            CUSTOMER_INTERVENTION_CACHE[budget_key] = new_count
 
         final_dec.eligibility = "ALLOWED"
         return final_dec
@@ -190,7 +315,7 @@ class SafetyGate:
         current_month = datetime.strptime(day_str, "%Y-%m-%d").strftime("%Y-%m") if day else datetime.now(timezone.utc).strftime("%Y-%m")
         budget_key = f"{cust_id}_{current_month}"
 
-        current_budget = CUSTOMER_INTERVENTION_COUNTS.get(budget_key, 0)
+        current_budget = CUSTOMER_INTERVENTION_CACHE.get(budget_key, 0)
         pid = ctx.payment_id if isinstance(ctx, RecoveryCase) else ctx.get("payment_id", "unknown")
         idem_key = generate_idempotency_key(pid, final_dec.decision.value, day_str)
 

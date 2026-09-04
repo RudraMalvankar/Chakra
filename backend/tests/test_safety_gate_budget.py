@@ -1,9 +1,9 @@
 import pytest
-from backend.app.services.safety_gate import SafetyGate, CUSTOMER_INTERVENTION_COUNTS
+from backend.app.services.safety_gate import SafetyGate, CUSTOMER_INTERVENTION_CACHE
 from backend.app.models.case import RecoveryCase, RecoveryDecision, InterventionType
 
 def test_budget_limit():
-    CUSTOMER_INTERVENTION_COUNTS.clear()
+    CUSTOMER_INTERVENTION_CACHE.clear()
     
     decision = RecoveryDecision(
         decision=InterventionType.RETRY_LATER, 

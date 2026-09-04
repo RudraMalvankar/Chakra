@@ -15,6 +15,7 @@ import { VoiceRecovery } from './pages/VoiceRecovery';
 import { Safety } from './pages/Safety';
 import { Analytics } from './pages/Analytics';
 import { AuditLog } from './pages/AuditLog';
+import { Recovery } from './pages/Recovery';
 import { AppShell } from './components/layout/AppShell';
 
 export default function App() {
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="/opportunities" element={<Opportunities {...data} />} />
           <Route path="/cases" element={<Cases {...data} />} />
           <Route path="/cases/:id" element={<CaseDetail {...data} />} />
+          <Route path="/recovery" element={<Recovery {...data} />} />
           
           <Route path="/checkout-recovery" element={<CheckoutRecovery {...data} />} />
           <Route path="/receivables" element={<Receivables {...data} />} />

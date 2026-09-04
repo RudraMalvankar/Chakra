@@ -8,12 +8,15 @@ from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime, timezone
 import uuid
+import logging
 
 from sqlalchemy import select, func, desc
 from backend.app.config import settings
 from backend.app.db.session import get_session_factory
 from backend.app.db.models import Receivable, PromiseToPay, VoiceInteraction, Customer, utcnow
 from backend.app.services.recovery_executor import execute_recovery_pipeline
+
+logger = logging.getLogger("chakra.receivables")
 
 router = APIRouter()
 
@@ -216,8 +219,8 @@ async def create_promise(req: PromiseCreateRequest):
     }
     try:
         await execute_recovery_pipeline(payload, dry_run=True)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Pipeline error after promise creation: {e}")
 
     return {
         "id": promise_id,
@@ -271,8 +274,8 @@ async def break_promise(promise_id: str):
     }
     try:
         await execute_recovery_pipeline(payload, dry_run=True)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Pipeline error after promise break: {e}")
 
     return {
         "id": promise_id,
@@ -358,8 +361,8 @@ async def start_voice_recovery(req: VoiceRecoveryRequest):
     }
     try:
         await execute_recovery_pipeline(payload, dry_run=True)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Pipeline error after voice start: {e}")
 
     return res
 

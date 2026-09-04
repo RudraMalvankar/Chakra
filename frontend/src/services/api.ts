@@ -1,13 +1,13 @@
 import type { Metrics } from '../types';
 import { AuditLogSchema } from '../types/schemas';
 
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-const GATEWAY_BASE = 'http://localhost:8002'; // Mock Razorpay
+export const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001";
 
 export const fetchMetrics = async (): Promise<Metrics> => {
   const res = await fetch(`${API_BASE}/api/metrics`);
   if (!res.ok) throw new Error("Failed to fetch metrics");
-  return res.json();
+  const data = await res.json();
+  return data.metrics || data;
 };
 
 export const fetchAuditLog = async (limit = 2000) => {
@@ -18,7 +18,7 @@ export const fetchAuditLog = async (limit = 2000) => {
       const valid = AuditLogSchema.parse(data);
       return valid.events;
   } catch (_err) {
-      console.warn("Zod validation failed on audit log, falling back to raw data", err);
+      console.warn("Zod validation failed on audit log, falling back to raw data");
       return data.events || [];
   }
 };
@@ -42,12 +42,6 @@ export const fetchMockPayments = async () => {
     } catch (_err) {
         return [];
     }
-};
-
-export const retryMockPayment = async (id: string) => {
-    const res = await fetch(`${GATEWAY_BASE}/v1/payments/${id}/retry`, { method: 'POST' });
-    if (!res.ok) throw new Error("Failed");
-    return res.json();
 };
 
 export const fetchConfig = async () => {

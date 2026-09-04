@@ -513,22 +513,23 @@ class DBService:
             for c in cases:
                 ctype = c.case_type or "PAYMENT_FAILURE"
                 if ctype not in by_case_type:
-                    by_case_type[ctype] = {"total_cases": 0, "recovered_cases": 0, "amount_at_risk": 0.0, "recovered_amount": 0.0}
-                by_case_type[ctype]["total_cases"] += 1
-                by_case_type[ctype]["amount_at_risk"] += c.amount_at_risk
+                    by_case_type[ctype] = {"processed": 0, "recovered": 0, "revenue_at_risk": 0.0, "revenue_recovered": 0.0}
+                by_case_type[ctype]["processed"] += 1
+                by_case_type[ctype]["revenue_at_risk"] += c.amount_at_risk
                 if c.status == "RECOVERED":
-                    by_case_type[ctype]["recovered_cases"] += 1
-                    by_case_type[ctype]["recovered_amount"] += c.amount_at_risk
+                    by_case_type[ctype]["recovered"] += 1
+                    by_case_type[ctype]["revenue_recovered"] += c.amount_at_risk
 
             # Group by intervention
             by_intervention: Dict[str, Any] = {}
             for c in cases:
                 act = c.current_action or "NONE"
                 if act not in by_intervention:
-                    by_intervention[act] = {"attempted": 0, "recovered": 0}
+                    by_intervention[act] = {"attempted": 0, "succeeded": 0, "recovered_inr": 0.0}
                 by_intervention[act]["attempted"] += 1
                 if c.status == "RECOVERED":
-                    by_intervention[act]["recovered"] += 1
+                    by_intervention[act]["succeeded"] += 1
+                    by_intervention[act]["recovered_inr"] += c.amount_at_risk
 
             return {
                 "payments_processed": payments_processed,

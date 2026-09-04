@@ -18,17 +18,21 @@ from backend.app.models.payment import PaymentState
 from backend.app.services.recovery_executor import execute_recovery_pipeline
 from backend.app.services.razorpay_client import get_payment_provider
 from backend.app.services.db_service import DBService
-from backend.app.db.session import init_db
+from backend.app.db.session import init_db, ensure_schema
 
 app = FastAPI(title="Chakra Recovery Engine")
 
-# Initialize database schema on startup if needed
+# Verify database schema on startup (production uses Alembic, not create_all)
 @app.on_event("startup")
 def startup_event():
-    try:
-        init_db()
-    except Exception as e:
-        print(f"Notice: Database init skipped or failed: {e}")
+    if settings.is_database_configured:
+        try:
+            ensure_schema()
+        except Exception as e:
+            print(f"WARNING: Database schema check failed: {e}")
+            print("Run 'alembic upgrade head' to initialize the schema.")
+    else:
+        print("NOTICE: DATABASE_URL not configured. Running without database persistence.")
 
 app.add_middleware(
     CORSMiddleware,

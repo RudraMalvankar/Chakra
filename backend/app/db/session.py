@@ -59,7 +59,30 @@ def get_db() -> Generator[Session, None, None]:
         raise
 
 def init_db():
-    """Initializes tables if not already created."""
+    """Initializes tables if not already created. TEST/BOOTSTRAP ONLY — production uses Alembic."""
     engine = get_engine()
     from backend.app.db import models  # noqa: F401
     Base.metadata.create_all(bind=engine)
+
+
+def ensure_schema():
+    """Production schema check: verifies tables exist without mutating schema.
+    Raises RuntimeError if schema is missing, directing to run alembic upgrade head."""
+    try:
+        engine = get_engine()
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        tables = inspector.get_table_names()
+        required = ['customers', 'payments', 'recovery_cases', 'recovery_decisions',
+                     'recovery_events', 'provider_events', 'audit_events',
+                     'batch_runs', 'batch_cases', 'receivables', 'promises_to_pay',
+                     'voice_interactions']
+        missing = [t for t in required if t not in tables]
+        if missing:
+            raise RuntimeError(
+                f"Missing tables: {missing}. Run 'alembic upgrade head' to create the schema."
+            )
+    except RuntimeError:
+        raise
+    except Exception as e:
+        logger.warning(f"Schema check skipped: {e}")

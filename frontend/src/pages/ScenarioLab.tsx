@@ -83,8 +83,8 @@ export const ScenarioLab = ({ refresh }: any) => {
                 };
                 const rzp = new window.Razorpay(options);
                 
-                rzp.on('payment.failed', async function (_response: any) {
-                    const reason = response.error.reason || payload.failure_reason;
+                rzp.on('payment.failed', async function (resp: any) {
+                    const reason = resp?.error?.reason || payload.failure_reason;
                     await processChakraPipeline(reason);
                     setLoading(false);
                 });

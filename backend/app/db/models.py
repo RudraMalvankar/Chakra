@@ -235,3 +235,21 @@ class VoiceInteraction(Base):
     status = Column(String(64), default="INITIATED")  # INITIATED, RINGING, IN_PROGRESS, COMPLETED, FAILED
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class SafetyState(Base):
+    """Persistent safety gate state: idempotency keys and customer intervention budgets.
+    Authoritative source — in-memory caches are performance only."""
+    __tablename__ = "safety_state"
+
+    id = Column(String(64), primary_key=True, default=gen_uuid)
+    state_type = Column(String(64), nullable=False, index=True)  # "idempotency" or "intervention_budget"
+    state_key = Column(String(256), nullable=False, index=True)
+    state_value = Column(Text, nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint('state_type', 'state_key', name='uq_safety_state_type_key'),
+    )

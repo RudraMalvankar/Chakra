@@ -6,8 +6,8 @@ from backend.app.services.safety_gate import (
     enforce_safety,
     generate_idempotency_key,
     reset_safety_state,
-    IDEMPOTENCY_STORE,
-    CUSTOMER_INTERVENTION_COUNTS,
+    IDEMPOTENCY_CACHE,
+    CUSTOMER_INTERVENTION_CACHE,
 )
 
 __all__ = [
@@ -15,6 +15,6 @@ __all__ = [
     "enforce_safety",
     "generate_idempotency_key",
     "reset_safety_state",
-    "IDEMPOTENCY_STORE",
-    "CUSTOMER_INTERVENTION_COUNTS",
+    "IDEMPOTENCY_CACHE",
+    "CUSTOMER_INTERVENTION_CACHE",
 ]

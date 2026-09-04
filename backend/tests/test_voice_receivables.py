@@ -42,7 +42,7 @@ class TestTwilioVoiceProviderUnconfigured:
             provider.start_call("+919999999999", {"case_id": "test", "amount": 100})
         )
         assert result["status"] == "error"
-        assert "Twilio not configured" in result["message"]
+        assert "TWILIO NOT CONFIGURED" in result["message"]
 
     def test_twilio_never_fakes_success_on_missing_config(self, monkeypatch):
         monkeypatch.delenv("TWILIO_ACCOUNT_SID", raising=False)
@@ -60,7 +60,9 @@ class TestGetVoiceProvider:
         assert isinstance(provider, MockVoiceProvider)
 
     def test_returns_twilio_when_configured(self, monkeypatch):
-        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "ACtest123")
+        monkeypatch.setattr("backend.app.config.settings.twilio_account_sid", "ACtest123")
+        monkeypatch.setattr("backend.app.config.settings.twilio_auth_token", "authtoken")
+        monkeypatch.setattr("backend.app.config.settings.twilio_from_number", "+1555000000")
         provider = get_voice_provider()
         assert isinstance(provider, TwilioVoiceProvider)
 

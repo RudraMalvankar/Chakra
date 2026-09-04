@@ -9,14 +9,14 @@ export const Analytics = ({ metrics }: any) => {
 
     const byWorkflow = Object.entries(m.by_case_type || {}).map(([name, data]: any) => ({
         name: name.replace(/_/g, ' '),
-        attempted: data.revenue_attempted_inr || 0,
-        recovered: data.revenue_recovered_inr || 0
+        at_risk: data.revenue_at_risk || 0,
+        recovered: data.revenue_recovered || 0
     }));
 
     const byIntervention = Object.entries(m.by_intervention || {}).map(([name, data]: any) => ({
         name: name.replace(/_/g, ' '),
-        recovered: data.revenue_recovered_inr || 0,
-        count: data.count || 0
+        recovered: data.recovered_inr || 0,
+        count: data.attempted || 0
     })).filter(x => x.count > 0);
 
     const outcomesData = [
@@ -72,7 +72,7 @@ export const Analytics = ({ metrics }: any) => {
                                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#6A7280' }} tickFormatter={(val) => `₹${val/1000}k`}/>
                                 <RechartsTooltip formatter={(val: number) => formatCurrency(val)} cursor={{ fill: '#F9FAFB' }}/>
                                 <Legend wrapperStyle={{ fontSize: '10px' }}/>
-                                <Bar dataKey="attempted" name="Attempted" fill="#9CA3AF" radius={[2, 2, 0, 0]} />
+                                <Bar dataKey="at_risk" name="At Risk" fill="#9CA3AF" radius={[2, 2, 0, 0]} />
                                 <Bar dataKey="recovered" name="Recovered" fill="#00BA88" radius={[2, 2, 0, 0]} />
                             </BarChart>
                         </ResponsiveContainer>

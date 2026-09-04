@@ -4,13 +4,27 @@ import { formatCurrency } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
 import { Loader } from 'lucide-react';
 
+interface BatchResponse {
+    batch_id: string;
+    status: string;
+    requested_count: number;
+    processed_count: number;
+    recovered_count: number;
+    revenue_at_risk_inr: number;
+    revenue_attempted_inr: number;
+    revenue_recovered_inr: number;
+    revenue_blocked_inr: number;
+    revenue_escalated_inr: number;
+    recovery_rate_pct: number;
+}
+
 export const Batch = () => {
     const [count, setCount] = useState(100);
     const [running, setRunning] = useState(false);
     const [progress, setProgress] = useState(0);
     const [batchId, setBatchId] = useState<string | null>(null);
     const [batchStatus, setBatchStatus] = useState<string | null>(null);
-    const [results, setResults] = useState<any>(null);
+    const [results, setResults] = useState<BatchResponse | null>(null);
 
     const runBatch = async () => {
         setRunning(true);
@@ -20,11 +34,10 @@ export const Batch = () => {
         setBatchStatus('INITIATING');
 
         try {
-            // 1. Trigger backend-controlled batch run
             const createRes = await fetch(`${API_BASE}/api/batches/`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ count, scenario_mix: 'standard' }),
+                body: JSON.stringify({ count, scenario: 'mixed' }),
             });
             if (!createRes.ok) {
                 throw new Error('Failed to create batch on backend');
@@ -33,24 +46,21 @@ export const Batch = () => {
             setBatchId(batch.batch_id);
             setBatchStatus(batch.status);
 
-            // 2. Poll status until COMPLETED or FAILED
             const pollInterval = setInterval(async () => {
                 try {
                     const statusRes = await fetch(`${API_BASE}/api/batches/${batch.batch_id}`);
                     if (statusRes.ok) {
-                        const statusData = await statusRes.json();
+                        const statusData: BatchResponse = await statusRes.json();
                         setBatchStatus(statusData.status);
-                        const pct = statusData.total_cases > 0 
-                            ? Math.round((statusData.processed_cases / statusData.total_cases) * 100)
+                        const pct = statusData.requested_count > 0
+                            ? Math.round((statusData.processed_count / statusData.requested_count) * 100)
                             : 0;
                         setProgress(pct);
 
                         if (statusData.status === 'COMPLETED' || statusData.status === 'FAILED') {
                             clearInterval(pollInterval);
                             setRunning(false);
-                            // Fetch authoritative metrics after batch
-                            const metrics = await fetchMetrics();
-                            setResults(metrics);
+                            setResults(statusData);
                         }
                     }
                 } catch (_pollErr) {
@@ -102,7 +112,7 @@ export const Batch = () => {
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div className="p-4 bg-gray-50 border border-border rounded">
                             <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider mb-1">Payments Processed</div>
-                            <div className="text-xl font-bold font-mono text-text-main">{results.payments_processed}</div>
+                            <div className="text-xl font-bold font-mono text-text-main">{results.processed_count} / {results.requested_count}</div>
                         </div>
                         <div className="p-4 bg-gray-50 border border-border rounded">
                             <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider mb-1">Revenue at Risk</div>
@@ -114,7 +124,21 @@ export const Batch = () => {
                         </div>
                         <div className="p-4 bg-gray-50 border border-border rounded">
                             <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider mb-1">Recovery Rate</div>
-                            <div className="text-xl font-bold font-mono text-text-main">{(results.revenue_recovery_rate_pct).toFixed(1)}%</div>
+                            <div className="text-xl font-bold font-mono text-text-main">{results.recovery_rate_pct.toFixed(1)}%</div>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mt-4">
+                        <div className="p-4 bg-gray-50 border border-border rounded">
+                            <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider mb-1">Revenue Attempted</div>
+                            <div className="text-xl font-bold font-mono text-text-main">{formatCurrency(results.revenue_attempted_inr)}</div>
+                        </div>
+                        <div className="p-4 bg-gray-50 border border-border rounded">
+                            <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider mb-1">Blocked Revenue</div>
+                            <div className="text-xl font-bold font-mono text-rzp-red">{formatCurrency(results.revenue_blocked_inr)}</div>
+                        </div>
+                        <div className="p-4 bg-gray-50 border border-border rounded">
+                            <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider mb-1">Escalated Revenue</div>
+                            <div className="text-xl font-bold font-mono text-orange-500">{formatCurrency(results.revenue_escalated_inr)}</div>
                         </div>
                     </div>
                 </div>

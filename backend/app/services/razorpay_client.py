@@ -1,7 +1,6 @@
 import httpx
 from typing import Dict, Any, List
 from backend.app.config import settings
-import os
 import uuid
 import razorpay
 from razorpay.errors import SignatureVerificationError
@@ -126,10 +125,8 @@ class SyntheticPaymentProvider(PaymentProvider):
 
 
 def get_payment_provider() -> PaymentProvider:
-    rzp_key = os.getenv("RAZORPAY_KEY_ID")
-    rzp_secret = os.getenv("RAZORPAY_KEY_SECRET")
-    if rzp_key and rzp_secret:
-        return RazorpayTestProvider(key_id=rzp_key, key_secret=rzp_secret)
+    if settings.razorpay_key_id and settings.razorpay_key_secret:
+        return RazorpayTestProvider(key_id=settings.razorpay_key_id, key_secret=settings.razorpay_key_secret)
     return SyntheticPaymentProvider()
 
 # For backwards compatibility with other files using razorpay_client

@@ -1,21 +1,8 @@
 from typing import List
 
-from pathlib import Path
-import yaml
-from backend.app.config import settings
+from backend.app.lib.config_utils import get_regulatory_threshold
 
-def _load_threshold():
-    try:
-        policy_path = Path(settings.recovery_policy_path)
-        if policy_path.exists():
-            with open(policy_path, 'r') as f:
-                data = yaml.safe_load(f)
-                return data.get('policy', {}).get('regulatory', {}).get('afa_free_threshold_standard_inr', 15000)
-    except:
-        pass
-    return 15000
-
-REGULATORY_THRESHOLD = _load_threshold()
+REGULATORY_THRESHOLD = get_regulatory_threshold()
 
 from backend.app.models.case import RecoveryCase, AgentDecision, CandidateAction, InterventionType, CaseType
 

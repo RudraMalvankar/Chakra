@@ -7,8 +7,8 @@ from backend.app.services.safety_gate import (
     enforce_safety,
     reset_safety_state,
     generate_idempotency_key,
-    IDEMPOTENCY_STORE,
-    CUSTOMER_INTERVENTION_COUNTS,
+    IDEMPOTENCY_CACHE,
+    CUSTOMER_INTERVENTION_CACHE,
 )
 from backend.app.services.safety_engine import enforce_safety as legacy_enforce_safety
 
@@ -246,7 +246,8 @@ def test_safety_gate_detailed_evaluation():
     assert eval_res.modified_from_proposed is True
     assert eval_res.reason_code == "SAFETY_MODIFIED_AFA_LIMIT"
     assert eval_res.idempotency_key is not None
-    assert eval_res.budget_count == 1
+    # AFA is a regulatory hard return — bypasses budget check, so budget_count stays 0
+    assert eval_res.budget_count == 0
 
 
 def test_safety_engine_re_export_compatibility():

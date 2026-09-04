@@ -57,11 +57,14 @@ class RecoveryExecutor:
 
         # 4. Handle Dry-Run Mode
         if dry_run:
+            ctx.current_state = PaymentState.RECOVERY_PENDING
             log_audit_event(ctx.payment_id, "dry_run_execution", {
                 "simulated_action": decision.decision.value,
                 "reason_code": decision.reason_code,
                 "delay_hours": decision.delay_hours,
                 "template_id": decision.template_id,
+                "status": "DRY_RUN",
+                "note": "SIMULATED — no real provider action taken",
             })
             return ctx
 

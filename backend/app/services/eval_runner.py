@@ -20,7 +20,7 @@ from backend.app.services.context_builder import ContextBuilder
 from backend.app.services.triage import TriageEngine
 from backend.app.services.revenue_risk_engine import RevenueRiskEngine
 from backend.app.services.recovery_agent import RecoveryAgent
-from backend.app.services.safety_gate import SafetyGate, CUSTOMER_INTERVENTION_COUNTS, IDEMPOTENCY_STORE
+from backend.app.services.safety_gate import SafetyGate, CUSTOMER_INTERVENTION_CACHE, IDEMPOTENCY_CACHE
 from backend.app.services.outcome_evaluator import OutcomeEvaluator
 
 
@@ -38,8 +38,8 @@ def load_eval_cases(path: str = "backend/eval/labeled_cases.json") -> List[Dict[
 
 def reset_safety_state() -> None:
     """Reset in-memory state so eval doesn't carry over from previous runs."""
-    IDEMPOTENCY_STORE.clear()
-    CUSTOMER_INTERVENTION_COUNTS.clear()
+    IDEMPOTENCY_CACHE.clear()
+    CUSTOMER_INTERVENTION_CACHE.clear()
 
 
 def run_eval(cases_path: str = "backend/eval/labeled_cases.json") -> Dict[str, Any]:
@@ -64,7 +64,7 @@ def run_eval(cases_path: str = "backend/eval/labeled_cases.json") -> Dict[str, A
             cust_id = case["payment"].get("customer_id", "cust_eval_018")
             from datetime import datetime, timezone
             current_month = datetime.now(timezone.utc).strftime("%Y-%m")
-            CUSTOMER_INTERVENTION_COUNTS[f"{cust_id}_{current_month}"] = 3
+            CUSTOMER_INTERVENTION_CACHE[f"{cust_id}_{current_month}"] = 3
 
         try:
             # 1. Context Builder

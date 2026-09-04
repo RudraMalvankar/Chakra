@@ -11,7 +11,7 @@ export const AppShell = ({ children, data }: any) => {
 
     const navGroups = [
         { title: 'MAIN', items: [{ path: '/', label: 'Command Center' }] },
-        { title: 'RECOVERY', items: [{ path: '/opportunities', label: 'Opportunities' }, { path: '/cases', label: 'Cases' }, { path: '/cases/missions', label: 'Recovery Missions' }] },
+        { title: 'RECOVERY', items: [{ path: '/opportunities', label: 'Opportunities' }, { path: '/cases', label: 'Cases' }, { path: '/recovery', label: 'Recovery' }] },
         { title: 'WORKFLOWS', items: [
             { path: '/checkout-recovery', label: 'Checkout Recovery' },
             { path: '/receivables', label: 'Receivables' },

@@ -26,9 +26,51 @@ def verify_signature(body: bytes, signature: str, secret: str) -> bool:
 import json
 from collections import OrderedDict
 
-# Simple OrderedDict as an LRU cache for webhook idempotency
+# In-memory LRU cache for fast duplicate detection (performance cache, NOT authoritative)
 _processed_events = OrderedDict()
 _MAX_PROCESSED = 10000
+
+
+def _is_duplicate_webhook(event_id: str) -> bool:
+    """Check idempotency using in-memory cache first, then DB."""
+    # Fast path: in-memory cache
+    status = _processed_events.get(event_id)
+    if status == "COMPLETED":
+        return True
+    if status == "PROCESSING":
+        return True
+
+    # Slow path: check DB for events processed in previous server sessions
+    if settings.is_database_configured:
+        try:
+            from backend.app.services.db_service import DBService
+            if not DBService.record_provider_event(
+                provider="razorpay",
+                provider_event_id=event_id,
+                event_type="webhook",
+                processed=False,
+            ):
+                return True  # Duplicate in DB
+        except Exception:
+            pass  # Fall through to process if DB check fails
+
+    return False
+
+
+def _mark_webhook_completed(event_id: str) -> None:
+    """Mark webhook as completed in both cache and DB."""
+    _processed_events[event_id] = "COMPLETED"
+    if settings.is_database_configured:
+        try:
+            from backend.app.services.db_service import DBService
+            DBService.record_provider_event(
+                provider="razorpay",
+                provider_event_id=event_id,
+                event_type="webhook",
+                processed=True,
+            )
+        except Exception:
+            pass
 
 @router.post("/razorpay")
 async def razorpay_webhook(
@@ -55,12 +97,9 @@ async def razorpay_webhook(
     # Idempotency check: use event ID or payload hash if not present
     event_id = x_razorpay_event_id or hashlib.sha256(body).hexdigest()
     
-    status = _processed_events.get(event_id)
-    if status == "COMPLETED":
+    if _is_duplicate_webhook(event_id):
         return {"status": "ignored", "reason": "duplicate_webhook"}
-    if status == "PROCESSING":
-        return {"status": "ignored", "reason": "concurrent_processing"}
-        
+
     _processed_events[event_id] = "PROCESSING"
     if len(_processed_events) > _MAX_PROCESSED:
         _processed_events.popitem(last=False)
@@ -83,18 +122,18 @@ async def razorpay_webhook(
             
             # If case_id is missing/unknown, it's not a valid case for recovery
             if ctx.case_id == "unknown" and not ctx.payment_id:
-                _processed_events[event_id] = "COMPLETED"
+                _mark_webhook_completed(event_id)
                 return {"status": "ignored", "reason": "insufficient_data"}
                 
             final_ctx = await execute_recovery_pipeline(ctx, dry_run=settings.dry_run)
-            _processed_events[event_id] = "COMPLETED"
+            _mark_webhook_completed(event_id)
             return {
                 "status": "ok",
                 "case_id": final_ctx.case_id,
                 "state": final_ctx.current_state.value if hasattr(final_ctx.current_state, "value") else final_ctx.current_state,
             }
 
-        _processed_events[event_id] = "COMPLETED"
+        _mark_webhook_completed(event_id)
         return {"status": "ignored", "event": event_type}
     except Exception:
         _processed_events[event_id] = "FAILED"
