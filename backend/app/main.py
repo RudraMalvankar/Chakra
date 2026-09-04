@@ -76,6 +76,8 @@ class SimulateEventRequest(BaseModel):
     failure_reason: str = "insufficient_funds"
     mandate_state: str = "ACTIVE"
     customer_id: str = "cust_demo123"
+    churn_risk: str = "LOW"
+    fraud_risk: str = "LOW"
 
 @app.post("/api/demo/simulate")
 async def simulate_event(req: SimulateEventRequest):
@@ -92,7 +94,9 @@ async def simulate_event(req: SimulateEventRequest):
             "mandate_state": req.mandate_state,
             "bank_name": "Demo Bank",
             "is_first_transaction": False,
-            "network": "Visa"
+            "network": "Visa",
+            "churn_risk": req.churn_risk,
+            "fraud_risk": req.fraud_risk
         }
     }
     
@@ -102,3 +106,40 @@ async def simulate_event(req: SimulateEventRequest):
     # Return the trace for the UI to animate
     return get_case_trace(case_id)
 
+
+import razorpay
+
+@app.get("/api/config")
+def get_config():
+    rzp_key = os.getenv("RAZORPAY_KEY_ID")
+    return {
+        "mode": "razorpay" if rzp_key else "synthetic",
+        "razorpay_key_id": rzp_key if rzp_key else None
+    }
+
+class CreateOrderRequest(BaseModel):
+    amount_inr: float
+    customer_id: str
+
+@app.post("/api/payments/create_order")
+def create_order(req: CreateOrderRequest):
+    rzp_key = os.getenv("RAZORPAY_KEY_ID")
+    rzp_secret = os.getenv("RAZORPAY_KEY_SECRET")
+    
+    if rzp_key and rzp_secret:
+        client = razorpay.Client(auth=(rzp_key, rzp_secret))
+        order = client.order.create({
+            "amount": int(req.amount_inr * 100),
+            "currency": "INR",
+            "receipt": f"rcpt_{uuid.uuid4().hex[:8]}",
+            "notes": {
+                "customer_id": req.customer_id
+            }
+        })
+        return {"order_id": order["id"], "amount_inr": req.amount_inr, "mode": "razorpay"}
+    else:
+        return {
+            "order_id": f"order_synth_{uuid.uuid4().hex[:8]}",
+            "amount_inr": req.amount_inr,
+            "mode": "synthetic"
+        }

@@ -49,3 +49,19 @@ export const retryMockPayment = async (id: string) => {
     if (!res.ok) throw new Error("Failed");
     return res.json();
 };
+
+export const fetchConfig = async () => {
+    const res = await fetch(`${API_BASE}/api/config`);
+    if (!res.ok) return { mode: 'synthetic' };
+    return res.json();
+};
+
+export const createOrder = async (payload: any) => {
+    const res = await fetch(`${API_BASE}/api/payments/create_order`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error("Failed to create order");
+    return res.json();
+};

@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, useNavigate, useLocation } from 'react-ro
 import { useChakraData } from './hooks/useChakraData';
 import { CommandCenter } from './pages/CommandCenter';
 import { Simulator } from './pages/Simulator';
+import { Batch } from './pages/Batch';
 import { Gateway } from './pages/Gateway';
 import { Opportunities } from './pages/Opportunities';
 import { Cases } from './pages/Cases';
@@ -31,7 +32,7 @@ export default function App() {
       <AppShell data={data}>
         <Routes>
           <Route path="/" element={<CommandCenter {...data} />} />
-          <Route path="/simulator" element={<Simulator {...data} />} />`n          <Route path="/gateway" element={<Gateway />} />
+          <Route path="/simulator" element={<Simulator {...data} />} />`n          <Route path="/batch" element={<Batch />} />`n          <Route path="/gateway" element={<Gateway />} />
           <Route path="/opportunities" element={<Opportunities {...data} />} />
           <Route path="/cases" element={<Cases {...data} />} />
           <Route path="/cases/:id" element={<CaseDetail {...data} />} />
