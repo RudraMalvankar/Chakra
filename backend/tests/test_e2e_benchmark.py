@@ -78,6 +78,7 @@ async def test_120_payment_benchmark_dry_run():
             "INTERVENTION_ATTEMPTED",
             "RECOVERED",
             "RECOVERY_FAILED",
+            "RECOVERY_PENDING",
         ]
 
     report = generate_metrics_report()
