@@ -86,12 +86,13 @@ def test_neon_persistence_crud():
 @patch("backend.app.services.triage.gemini_classify")
 def test_gemini_triage_ambiguous_case(mock_classify):
     """Verifies that ambiguous network_authorization_anomaly triggers AI classification."""
-    mock_classify.return_value = {
-        "action": "ESCALATE",
-        "reason": "Mocked ambiguous network anomaly",
-        "template": None,
-        "delay_hours": None
-    }
+    from backend.app.services.llm import TriageDecision
+    mock_classify.return_value = TriageDecision(
+        action="ESCALATE",
+        reason="Mocked ambiguous network anomaly",
+        template=None,
+        delay_hours=None
+    )
     
     ctx = RecoveryCase(
         case_id="pay_ambiguous_test_001",
