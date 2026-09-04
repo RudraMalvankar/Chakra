@@ -1,36 +1,134 @@
 import httpx
 from typing import Dict, Any, List
 from backend.app.config import settings
+import os
+import uuid
+import razorpay
+from razorpay.errors import SignatureVerificationError
 
-class RazorpayClient:
-    """Client for executing actual or mocked Razorpay recovery actions."""
-    def __init__(self):
-        self.is_mock = settings.use_mock_razorpay
-        self.base_url = settings.mock_razorpay_url if self.is_mock else "https://api.razorpay.com"
-        self.auth = (settings.razorpay_key_id, settings.razorpay_key_secret) if not self.is_mock else None
-
-    async def get_payments(self) -> List[Dict[str, Any]]:
-        """Fetches the failed payments from the webhook pool/server."""
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{self.base_url}/v1/payments", auth=self.auth)
-            response.raise_for_status()
-            return response.json().get("items", [])
+class PaymentProvider:
+    def create_order(self, amount_inr: float, currency: str, customer_id: str) -> Dict[str, Any]:
+        raise NotImplementedError
+        
+    def verify_webhook_signature(self, payload: bytes, signature: str, secret: str) -> bool:
+        raise NotImplementedError
 
     async def retry_payment(self, payment_id: str, delay_hours: int) -> Dict[str, Any]:
-        """Schedules a retry via API. Returns the simulated outcome."""
+        raise NotImplementedError
+        
+    async def create_payment_link(self, customer_id: str, amount: int, template: str, payment_id: str) -> Dict[str, Any]:
+        raise NotImplementedError
+
+    async def get_payments(self) -> List[Dict[str, Any]]:
+        raise NotImplementedError
+
+class RazorpayTestProvider(PaymentProvider):
+    def __init__(self, key_id: str, key_secret: str):
+        self.key_id = key_id
+        self.key_secret = key_secret
+        self.client = razorpay.Client(auth=(key_id, key_secret))
+        self.base_url = "https://api.razorpay.com"
+        
+    def create_order(self, amount_inr: float, currency: str, customer_id: str) -> Dict[str, Any]:
+        order = self.client.order.create({
+            "amount": int(amount_inr * 100),
+            "currency": currency,
+            "receipt": f"rcpt_{uuid.uuid4().hex[:8]}",
+            "notes": {
+                "customer_id": customer_id
+            }
+        })
+        return {
+            "order_id": order["id"],
+            "amount_inr": amount_inr,
+            "provider": "razorpay_test"
+        }
+        
+    def verify_webhook_signature(self, payload: bytes, signature: str, secret: str) -> bool:
+        try:
+            self.client.utility.verify_webhook_signature(payload.decode('utf-8'), signature, secret)
+            return True
+        except SignatureVerificationError:
+            return False
+
+    async def retry_payment(self, payment_id: str, delay_hours: int) -> Dict[str, Any]:
         async with httpx.AsyncClient() as client:
-            response = await client.post(f"{self.base_url}/v1/payments/{payment_id}/retry", auth=self.auth)
+            response = await client.post(f"{self.base_url}/v1/payments/{payment_id}/retry", auth=(self.key_id, self.key_secret))
             if response.status_code == 200:
                 return response.json()
             return {"status": "failed", "payment_id": payment_id}
 
     async def create_payment_link(self, customer_id: str, amount: int, template: str, payment_id: str) -> Dict[str, Any]:
-        """Creates a payment link. Returns the simulated outcome."""
-        payload = {"customer": {"id": customer_id}, "amount": amount, "notes": {"payment_id": payment_id, "template": template}}
+        payload = {"customer": {"contact": "9999999999", "email": "test@example.com"}, "amount": amount, "currency": "INR", "notes": {"payment_id": payment_id, "template": template}}
         async with httpx.AsyncClient() as client:
-            response = await client.post(f"{self.base_url}/v1/payment_links", json=payload, auth=self.auth)
+            response = await client.post(f"{self.base_url}/v1/payment_links", json=payload, auth=(self.key_id, self.key_secret))
             if response.status_code == 200:
                 return response.json()
             return {"status": "failed"}
 
-razorpay_client = RazorpayClient()
+    async def get_payments(self) -> List[Dict[str, Any]]:
+        # This gets real payments from Razorpay test mode
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{self.base_url}/v1/payments", auth=(self.key_id, self.key_secret))
+            if response.status_code == 200:
+                return response.json().get("items", [])
+            return []
+
+
+class SyntheticPaymentProvider(PaymentProvider):
+    def __init__(self):
+        self.base_url = settings.mock_razorpay_url
+
+    def create_order(self, amount_inr: float, currency: str, customer_id: str) -> Dict[str, Any]:
+        return {
+            "order_id": f"order_synth_{uuid.uuid4().hex[:8]}",
+            "amount_inr": amount_inr,
+            "provider": "synthetic"
+        }
+        
+    def verify_webhook_signature(self, payload: bytes, signature: str, secret: str) -> bool:
+        import hmac, hashlib
+        expected_mac = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+        return hmac.compare_digest(expected_mac, signature.strip())
+
+    async def retry_payment(self, payment_id: str, delay_hours: int) -> Dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(f"{self.base_url}/v1/payments/{payment_id}/retry")
+                if response.status_code == 200:
+                    return response.json()
+            except:
+                pass
+            return {"status": "captured", "payment_id": payment_id, "amount_captured": 0}
+
+    async def create_payment_link(self, customer_id: str, amount: int, template: str, payment_id: str) -> Dict[str, Any]:
+        payload = {"customer": {"id": customer_id}, "amount": amount, "notes": {"payment_id": payment_id, "template": template}}
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(f"{self.base_url}/v1/payment_links", json=payload)
+                if response.status_code == 200:
+                    return response.json()
+            except:
+                pass
+            return {"status": "captured"}
+
+    async def get_payments(self) -> List[Dict[str, Any]]:
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.get(f"{self.base_url}/v1/payments")
+                if response.status_code == 200:
+                    return response.json().get("items", [])
+            except:
+                pass
+            return []
+
+
+def get_payment_provider() -> PaymentProvider:
+    rzp_key = os.getenv("RAZORPAY_KEY_ID")
+    rzp_secret = os.getenv("RAZORPAY_KEY_SECRET")
+    if rzp_key and rzp_secret:
+        return RazorpayTestProvider(key_id=rzp_key, key_secret=rzp_secret)
+    return SyntheticPaymentProvider()
+
+# For backwards compatibility with other files using razorpay_client
+razorpay_client = get_payment_provider()

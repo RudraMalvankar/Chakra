@@ -14,12 +14,13 @@ from backend.app.services.recovery_executor import execute_recovery_pipeline
 router = APIRouter()
 
 
+from backend.app.services.razorpay_client import get_payment_provider
+
 def verify_signature(body: bytes, signature: str, secret: str) -> bool:
-    """Verifies HMAC SHA-256 signature against webhook payload bytes."""
     if not signature or not secret:
         return False
-    expected_mac = hmac.new(secret.encode("utf-8"), body, hashlib.sha256).hexdigest()
-    return hmac.compare_digest(expected_mac, signature.strip())
+    provider = get_payment_provider()
+    return provider.verify_webhook_signature(body, signature, secret)
 
 
 import json

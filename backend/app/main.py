@@ -121,25 +121,18 @@ class CreateOrderRequest(BaseModel):
     amount_inr: float
     customer_id: str
 
+from backend.app.services.razorpay_client import get_payment_provider
+
 @app.post("/api/payments/create_order")
 def create_order(req: CreateOrderRequest):
-    rzp_key = os.getenv("RAZORPAY_KEY_ID")
-    rzp_secret = os.getenv("RAZORPAY_KEY_SECRET")
-    
-    if rzp_key and rzp_secret:
-        client = razorpay.Client(auth=(rzp_key, rzp_secret))
-        order = client.order.create({
-            "amount": int(req.amount_inr * 100),
-            "currency": "INR",
-            "receipt": f"rcpt_{uuid.uuid4().hex[:8]}",
-            "notes": {
-                "customer_id": req.customer_id
-            }
-        })
-        return {"order_id": order["id"], "amount_inr": req.amount_inr, "mode": "razorpay"}
-    else:
-        return {
-            "order_id": f"order_synth_{uuid.uuid4().hex[:8]}",
-            "amount_inr": req.amount_inr,
-            "mode": "synthetic"
-        }
+    provider = get_payment_provider()
+    result = provider.create_order(req.amount_inr, "INR", req.customer_id)
+    return {
+        "order_id": result["order_id"],
+        "amount_inr": result["amount_inr"],
+        "mode": "razorpay" if result["provider"] == "razorpay_test" else "synthetic"
+    }
+@app.get("/api/payments")
+async def get_payments():
+    provider = get_payment_provider()
+    return await provider.get_payments()

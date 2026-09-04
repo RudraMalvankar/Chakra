@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchMockPayments, retryMockPayment } from '../services/api';
+import { fetchMockPayments, retryMockPayment, fetchConfig } from '../services/api';
 import { formatExact } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
 import { Loader } from 'lucide-react';
@@ -8,11 +8,14 @@ export const Gateway = () => {
     const [payments, setPayments] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [retrying, setRetrying] = useState<string | null>(null);
+    const [config, setConfig] = useState<any>({ mode: 'synthetic' });
 
     const load = async () => {
         setLoading(true);
         const data = await fetchMockPayments();
         setPayments(data);
+        const cfg = await fetchConfig();
+        setConfig(cfg);
         setLoading(false);
     };
 
@@ -32,61 +35,92 @@ export const Gateway = () => {
     };
 
     return (
-        <div className="bg-white border border-border shadow-sm flex flex-col h-[calc(100vh-80px)] max-w-7xl mx-auto">
-            <div className="px-6 py-5 border-b border-border bg-gray-50 flex justify-between items-center shrink-0">
+        <div className="max-w-6xl mx-auto space-y-6">
+            <div className="flex justify-between items-center">
                 <div>
-                    <h2 className="text-lg font-bold text-text-main uppercase tracking-wider flex items-center space-x-3">
-                        <span>Mock Gateway Console</span>
-                        <Badge status="INFO">SYNTHETIC ENVIRONMENT</Badge>
-                    </h2>
-                    <p className="text-[10px] font-mono text-text-muted mt-1 uppercase tracking-widest">Synthetic Payment Provider (Port 8002)</p>
+                    <h1 className="text-2xl font-bold text-text-main">Payment Operations</h1>
+                    <p className="text-sm text-text-muted mt-1 font-mono">
+                        Direct connection to provider events
+                    </p>
                 </div>
-                <button onClick={load} className="px-4 py-2 border border-border rounded text-xs font-bold uppercase tracking-widest hover:bg-gray-100 transition-colors">
-                    Refresh
-                </button>
-            </div>
-            
-            <div className="overflow-auto flex-1">
-                {loading ? (
-                    <div className="flex h-full items-center justify-center text-text-muted"><Loader className="animate-spin" /></div>
-                ) : payments.length === 0 ? (
-                    <div className="flex h-full items-center justify-center text-sm font-mono text-text-muted">No transactions found or mock gateway is offline (Port 8002).</div>
+                {config.mode === 'razorpay' ? (
+                    <Badge status="SUCCESS">RAZORPAY TEST MODE</Badge>
                 ) : (
-                    <table className="w-full text-left text-sm whitespace-nowrap">
-                        <thead className="bg-gray-50 border-b border-border text-text-muted sticky top-0">
-                            <tr>
-                                <th className="px-6 py-3 font-semibold">Payment ID</th>
-                                <th className="px-6 py-3 font-semibold">Customer</th>
-                                <th className="px-6 py-3 font-semibold text-right">Amount</th>
-                                <th className="px-6 py-3 font-semibold">Failure Reason</th>
-                                <th className="px-6 py-3 font-semibold">Status</th>
-                                <th className="px-6 py-3 font-semibold">Controls</th>
+                    <Badge status="INFO">SYNTHETIC GATEWAY</Badge>
+                )}
+            </div>
+
+            <div className="bg-white border border-border shadow-sm">
+                <div className="px-6 py-4 border-b border-border bg-gray-50 flex justify-between items-center">
+                    <h2 className="text-xs font-bold text-text-muted uppercase tracking-wider">Gateway State</h2>
+                    <button onClick={load} className="text-xs font-mono text-rzp-blue hover:underline">
+                        Refresh
+                    </button>
+                </div>
+
+                <div className="overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                        <thead>
+                            <tr className="border-b border-border bg-gray-50/50">
+                                <th className="px-6 py-3 text-[10px] font-bold text-text-muted uppercase tracking-wider">Payment ID / Order ID</th>
+                                <th className="px-6 py-3 text-[10px] font-bold text-text-muted uppercase tracking-wider">Amount</th>
+                                <th className="px-6 py-3 text-[10px] font-bold text-text-muted uppercase tracking-wider">Customer</th>
+                                <th className="px-6 py-3 text-[10px] font-bold text-text-muted uppercase tracking-wider">Status</th>
+                                <th className="px-6 py-3 text-[10px] font-bold text-text-muted uppercase tracking-wider">Failure Reason</th>
+                                <th className="px-6 py-3 text-[10px] font-bold text-text-muted uppercase tracking-wider">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-border">
-                            {payments.map(p => (
-                                <tr key={p.payment_id} className="hover:bg-gray-50 text-xs font-mono">
-                                    <td className="px-6 py-3 font-bold text-rzp-blue">{p.payment_id}</td>
-                                    <td className="px-6 py-3 text-text-main">{p.customer_id}</td>
-                                    <td className="px-6 py-3 text-right text-text-main">{formatExact(p.amount_inr)}</td>
-                                    <td className="px-6 py-3 text-text-muted">{p.error_code || '-'}</td>
-                                    <td className="px-6 py-3"><Badge status={p.status}>{p.status}</Badge></td>
-                                    <td className="px-6 py-3">
-                                        {p.status !== 'captured' && (
-                                            <button 
-                                                onClick={() => handleRetry(p.payment_id)}
-                                                disabled={retrying === p.payment_id}
-                                                className="px-3 py-1 border border-border rounded text-[10px] font-bold uppercase hover:bg-gray-100"
-                                            >
-                                                {retrying === p.payment_id ? 'Retrying...' : 'Force Retry'}
-                                            </button>
-                                        )}
+                            {loading && payments.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="px-6 py-12 text-center text-text-muted text-sm font-mono">
+                                        Loading provider state...
                                     </td>
                                 </tr>
-                            ))}
+                            ) : payments.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="px-6 py-12 text-center text-text-muted text-sm font-mono">
+                                        No payments found in provider.
+                                    </td>
+                                </tr>
+                            ) : (
+                                payments.map((p) => (
+                                    <tr key={p.id} className="hover:bg-gray-50 transition-colors">
+                                        <td className="px-6 py-4">
+                                            <div className="font-mono text-xs text-text-main font-bold">{p.id}</div>
+                                            <div className="font-mono text-[10px] text-text-muted mt-1">{p.order_id || 'N/A'}</div>
+                                        </td>
+                                        <td className="px-6 py-4 font-mono text-sm text-text-main">
+                                            {formatExact(p.amount / 100)} {p.currency}
+                                        </td>
+                                        <td className="px-6 py-4 text-sm text-text-main">
+                                            {p.customer_id || p.contact || p.email || 'Unknown'}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            <Badge status={p.status === 'captured' ? 'SUCCESS' : p.status === 'failed' ? 'FAILED' : 'INFO'}>
+                                                {p.status}
+                                            </Badge>
+                                        </td>
+                                        <td className="px-6 py-4 text-xs font-mono text-text-muted">
+                                            {p.error_code || p.error_description || '-'}
+                                        </td>
+                                        <td className="px-6 py-4">
+                                            {p.status === 'failed' && config.mode !== 'razorpay' && (
+                                                <button
+                                                    onClick={() => handleRetry(p.id)}
+                                                    disabled={retrying === p.id}
+                                                    className="text-xs bg-gray-100 hover:bg-gray-200 text-text-main px-3 py-1 rounded font-mono font-bold transition-colors disabled:opacity-50 flex items-center"
+                                                >
+                                                    {retrying === p.id ? <Loader className="animate-spin mr-1" size={12} /> : 'Simulate Capture'}
+                                                </button>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
                         </tbody>
                     </table>
-                )}
+                </div>
             </div>
         </div>
     );

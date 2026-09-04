@@ -35,7 +35,7 @@ export const simulatePayment = async (payload: any) => {
 
 export const fetchMockPayments = async () => {
     try {
-        const res = await fetch(`${GATEWAY_BASE}/v1/payments`);
+        const res = await fetch(`${API_BASE}/api/payments`);
         if (!res.ok) return [];
         const data = await res.json();
         return data.items || [];
