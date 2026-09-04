@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.main import app
 from backend.app.config import settings
-from backend.app.db.session import get_session_factory
+from backend.app.db.session import get_session_factory, init_db
 from backend.app.db.models import RecoveryCase as DBRecoveryCase, Payment as DBPayment
 from backend.app.services.db_service import DBService
 from backend.app.services.llm import gemini_classify
@@ -83,8 +83,16 @@ def test_neon_persistence_crud():
 # -------------------------------------------------------------
 # 2. GEMINI AI TRIAGE & MULTI-MODEL FALLBACK TESTS
 # -------------------------------------------------------------
-def test_gemini_triage_ambiguous_case():
+@patch("backend.app.services.triage.gemini_classify")
+def test_gemini_triage_ambiguous_case(mock_classify):
     """Verifies that ambiguous network_authorization_anomaly triggers AI classification."""
+    mock_classify.return_value = {
+        "action": "ESCALATE",
+        "reason": "Mocked ambiguous network anomaly",
+        "template": None,
+        "delay_hours": None
+    }
+    
     ctx = RecoveryCase(
         case_id="pay_ambiguous_test_001",
         amount_at_risk=8500.0,
