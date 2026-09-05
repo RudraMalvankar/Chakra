@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { API_BASE, fetchMetrics } from '../services/api';
+import { API_BASE } from '../services/api';
 import { formatCurrency } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
 import { Loader } from 'lucide-react';

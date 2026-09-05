@@ -2,7 +2,6 @@ import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ShieldCheck, ShieldAlert, Shield, Lock, AlertTriangle } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
-import { formatCurrency } from '../lib/format';
 
 export const Safety = ({ cases }: any) => {
     const navigate = useNavigate();

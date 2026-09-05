@@ -1,13 +1,12 @@
 import { API_BASE } from '../services/api';
 import React, { useEffect, useState } from 'react';
-import { PhoneCall, Mic, MicOff, Phone, Loader2 } from 'lucide-react';
+import { PhoneCall, Mic, Phone, Loader2 } from 'lucide-react';
 import { formatCurrency } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
 
 
 export const VoiceRecovery = () => {
     const [status, setStatus] = useState<'IDLE'|'CONNECTING'|'RINGING'|'IN_PROGRESS'|'COMPLETED'|'FAILED'>('IDLE');
-    const [loading, setLoading] = useState(false);
     const [transcript, setTranscript] = useState<{speaker: string, text: string}[]>([]);
     const [intent, setIntent] = useState<any>(null);
     const [error, setError] = useState<string | null>(null);
@@ -51,7 +50,6 @@ export const VoiceRecovery = () => {
     };
 
     const startCall = async () => {
-        setLoading(true);
         setStatus('CONNECTING');
         setTranscript([]);
         setIntent(null);
@@ -59,13 +57,11 @@ export const VoiceRecovery = () => {
         if (!selected) {
             setStatus('FAILED');
             setError('Select an ingested receivable before starting a call.');
-            setLoading(false);
             return;
         }
         if (!phoneNumber.trim()) {
             setStatus('FAILED');
             setError('Enter the customer phone number before starting a call.');
-            setLoading(false);
             return;
         }
         
@@ -91,7 +87,6 @@ export const VoiceRecovery = () => {
             console.error(e);
             setStatus('FAILED');
         } finally {
-            setLoading(false);
         }
     };
 

@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { fetchCaseDetail } from '../services/api';
-import { formatCurrency, formatPercent, formatExact } from '../lib/format';
+import { formatCurrency, formatExact } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
-import { AlertCircle, BrainCircuit, ShieldCheck, Zap, Activity } from 'lucide-react';
+import { BrainCircuit, ShieldCheck, Zap, Activity } from 'lucide-react';
 
 export const CaseDetail = ({ cases, data }: any) => {
     const { id } = useParams();

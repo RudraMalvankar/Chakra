@@ -13,12 +13,6 @@ export const Analytics = ({ metrics }: any) => {
         recovered: data.revenue_recovered || 0
     }));
 
-    const byIntervention = Object.entries(m.by_intervention || {}).map(([name, data]: any) => ({
-        name: name.replace(/_/g, ' '),
-        recovered: data.recovered_inr || 0,
-        count: data.attempted || 0
-    })).filter(x => x.count > 0);
-
     const outcomesData = [
         { name: 'Recovered', value: m.payments_recovered, color: '#00BA88' },
         { name: 'Blocked', value: m.payments_blocked, color: '#E42C66' },

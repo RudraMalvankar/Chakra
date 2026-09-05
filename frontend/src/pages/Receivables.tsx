@@ -2,7 +2,7 @@ import { API_BASE } from '../services/api';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatCurrency, formatExact } from '../lib/format';
-import { FileText, Calendar, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 
 
