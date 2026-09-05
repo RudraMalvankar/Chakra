@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { fetchCaseDetail } from '../services/api';
 import { formatCurrency, formatExact } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
 import { BrainCircuit, ShieldCheck, Zap, Activity } from 'lucide-react';
 
-export const CaseDetail = ({ cases, data }: any) => {
+export const CaseDetail = ({ cases }: any) => {
     const { id } = useParams();
-    const navigate = useNavigate();
     const summary = cases.find((x: any) => x.id === id);
     const [detail, setDetail] = useState<any>(null);
     const [loadError, setLoadError] = useState<string | null>(null);

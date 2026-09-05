@@ -10,21 +10,18 @@ export const CheckoutRecovery = ({ refresh }: any) => {
     const [status, setStatus] = useState<'IDLE'|'CREATING'|'OPENED'|'SCRIPT_ERROR'|'ABANDONED'|'RECOVERING'|'RECOVERED'>('IDLE');
     const [paymentLink, setPaymentLink] = useState<string | null>(null);
     const [caseId, setCaseId] = useState<string | null>(null);
-    const [scriptLoaded, setScriptLoaded] = useState(false);
     const [scriptError, setScriptError] = useState(false);
     const scriptRef = useRef<HTMLScriptElement | null>(null);
 
     useEffect(() => {
         const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
         if (existing) {
-            setScriptLoaded(true);
             return;
         }
 
         const script = document.createElement('script');
         script.src = 'https://checkout.razorpay.com/v1/checkout.js';
         script.async = true;
-        script.onload = () => setScriptLoaded(true);
         script.onerror = () => setScriptError(true);
         document.body.appendChild(script);
         scriptRef.current = script;
@@ -172,7 +169,7 @@ export const CheckoutRecovery = ({ refresh }: any) => {
                         setPaymentLink(linkEv.metadata.recovery_url);
                     }
                 }
-            } catch (_err) {
+            } catch {
                 // Ignore link retrieval failure
             }
         } catch (e) {

@@ -72,11 +72,11 @@ export const Batch = () => {
                             setResults(statusData);
                         }
                     }
-                } catch (_pollErr) {
+                } catch {
                     // Continue polling
                 }
             }, 1000);
-        } catch (_err) {
+        } catch {
             setRunning(false);
             setBatchStatus('ERROR');
         }

@@ -19,7 +19,7 @@ export const fetchAuditLog = async (limit = 2000) => {
   try {
       const valid = AuditLogSchema.parse(data);
       return valid.events;
-  } catch (_err) {
+  } catch {
       console.warn("Zod validation failed on audit log, falling back to raw data");
       return data.events || [];
   }
@@ -41,7 +41,7 @@ export const fetchMockPayments = async () => {
         if (!res.ok) return [];
         const data = await res.json();
         return data.items || [];
-    } catch (_err) {
+    } catch {
         return [];
     }
 };
@@ -51,7 +51,7 @@ export const fetchConfig = async () => {
         const res = await fetch(`${API_BASE}/api/config`);
         if (!res.ok) return { mode: 'unavailable', provider: 'unavailable' };
         return res.json();
-    } catch (_err) {
+    } catch {
         return { mode: 'unavailable', provider: 'unavailable' };
     }
 };

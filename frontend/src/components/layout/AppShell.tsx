@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { Badge } from '../ui/Badge';
 
-export const AppShell = ({ children, data }: any) => {
+export const AppShell = ({ children }: any) => {
     const location = useLocation();
     const navigate = useNavigate();
     
