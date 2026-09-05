@@ -249,7 +249,7 @@ async def twilio_gather(
                     existing = session.execute(
                         select(PromiseToPay).where(
                             PromiseToPay.receivable_id == case_id,
-                            PromiseToPay.status.in_(("UPCOMING", "DUE_TODAY")),
+                            PromiseToPay.status.in_(("PROMISE_CREATED", "UPCOMING", "DUE_TODAY")),
                         )
                     ).scalar_one_or_none()
                     if not existing:
@@ -289,7 +289,7 @@ async def twilio_gather(
     if intent.intent == "promise_to_pay" and promise_recorded:
         DBService.record_audit_event(
             promise_id,
-            "promise_created",
+            "PROMISE_CREATED",
             {
                 "receivable_id": case_id,
                 "amount_inr": float(amount),

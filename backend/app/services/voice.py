@@ -3,14 +3,34 @@ Voice Recovery Service - Twilio Provider Architecture.
 
 Provides VoiceProvider, TwilioVoiceProvider, MockVoiceProvider abstractions.
 Also maintains generate_hinglish_voice_note for backward compat with RecoveryExecutor.
-AI intent extraction uses the dedicated Gemini voice-intent schema with bounded fallback.
+AI intent extraction uses the dedicated Gemini voice-intent schema with bounded fallback
+(never the payment-triage classifier).
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
 import httpx
 import json
+import re
 
 from pydantic import BaseModel, Field
 from backend.app.config import settings
+
+# Contact identifiers only. Spoken payment language (amounts, dates, intent
+# phrases) must remain in the transcript for gemini_voice_intent to work.
+_EMAIL_RE = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+_PHONE_RE = re.compile(r"(?:\+?\d[\d\s\-()]{8,}\d)")
+
+
+def redact_transcript_contact_pii(transcript: str) -> Tuple[str, bool]:
+    """Mask phone/email in a voice transcript before sending to Gemini.
+
+    Returns (redacted_transcript, did_redact). The rest of the utterance is
+    preserved intentionally — intent extraction needs the customer's words.
+    """
+    if not isinstance(transcript, str) or not transcript:
+        return transcript or "", False
+    redacted = _EMAIL_RE.sub("[EMAIL]", transcript)
+    redacted = _PHONE_RE.sub("[PHONE]", redacted)
+    return redacted, redacted != transcript
 
 
 class VoiceProvider:
@@ -93,9 +113,14 @@ class VoiceIntent(BaseModel):
 
 
 async def extract_voice_intent(transcript: str) -> VoiceIntent:
-    """Use dedicated Gemini interpretation; fallback is explicit and zero-confidence."""
+    """Use dedicated Gemini voice-intent path; fallback is explicit and zero-confidence.
+
+    Does not call payment triage (gemini_classify). Light-redacts phone/email
+    before the model call; keeps speech content required for intent.
+    """
     from backend.app.services.llm import gemini_voice_intent
-    result = gemini_voice_intent(transcript)
+    safe_transcript, _ = redact_transcript_contact_pii(transcript or "")
+    result = gemini_voice_intent(safe_transcript)
     if result.ai_used:
         return VoiceIntent(
             intent=result.intent, amount=result.promised_amount,
@@ -103,7 +128,7 @@ async def extract_voice_intent(transcript: str) -> VoiceIntent:
             language=result.language, reasoning=result.reasoning,
             model_used=result.model_used, ai_used=True,
         )
-    lower = (transcript or "").lower()
+    lower = safe_transcript.lower()
     fallback_intent = "unknown"
     if any(w in lower for w in ["galat", "wrong invoice", "dispute"]):
         fallback_intent = "dispute"
@@ -113,7 +138,7 @@ async def extract_voice_intent(transcript: str) -> VoiceIntent:
         fallback_intent = "promise_to_pay"
     elif any(w in lower for w in ["abhi", "now", "pay", "haan", "yes", "ok"]):
         fallback_intent = "pay_now"
-    if not (transcript or "").strip():
+    if not safe_transcript.strip():
         fallback_intent = "unclear"
     return VoiceIntent(intent=fallback_intent, confidence=0.0, ai_used=False,
                        fallback_used=True, reasoning=result.reasoning)

@@ -3,8 +3,28 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip,
 import { formatCurrency, formatPercent } from '../lib/format';
 import { TrendingUp } from 'lucide-react';
 
-export const Analytics = ({ metrics }: any) => {
-    if (!metrics) return null;
+export const Analytics = ({ metrics, loading, error, partialErrors }: any) => {
+    const metricsError = error || partialErrors?.metrics;
+
+    if (loading && !metrics) {
+        return (
+            <div className="max-w-7xl mx-auto bg-white border border-border shadow-sm p-8 text-center font-mono text-sm text-text-muted">
+                Loading analytics…
+            </div>
+        );
+    }
+
+    if (!metrics) {
+        return (
+            <div className="max-w-7xl mx-auto bg-white border border-border shadow-sm p-8 text-center space-y-2">
+                <div className="font-mono text-sm text-rzp-red">
+                    {metricsError ? `Unable to load metrics. Reason: ${metricsError}` : 'No metrics available.'}
+                </div>
+                <div className="font-mono text-xs text-text-muted">Analytics uses backend metrics only — nothing is fabricated client-side.</div>
+            </div>
+        );
+    }
+
     const m = metrics;
 
     const byWorkflow = Object.entries(m.by_case_type || {}).map(([name, data]: any) => ({
@@ -17,7 +37,7 @@ export const Analytics = ({ metrics }: any) => {
         { name: 'Recovered', value: m.payments_recovered, color: '#00BA88' },
         { name: 'Blocked', value: m.payments_blocked, color: '#E42C66' },
         { name: 'Escalated', value: m.payments_escalated, color: '#F4B740' },
-        { name: 'Failed', value: m.payments_processed - m.payments_recovered - m.payments_blocked - m.payments_escalated, color: '#6A7280' }
+        { name: 'Failed', value: Math.max(0, (m.payments_processed || 0) - (m.payments_recovered || 0) - (m.payments_blocked || 0) - (m.payments_escalated || 0)), color: '#6A7280' }
     ].filter(x => x.value > 0);
 
     return (
@@ -31,6 +51,12 @@ export const Analytics = ({ metrics }: any) => {
                     <p className="text-sm text-text-muted mt-1">Authoritative backend revenue metrics and recovery performance.</p>
                 </div>
             </div>
+
+            {metricsError && (
+                <div className="bg-amber-50 border border-amber-200 text-amber-900 text-xs font-mono px-4 py-2">
+                    Metrics warning: {metricsError}
+                </div>
+            )}
 
             <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
                 <div className="bg-white border border-border shadow-sm p-6">
@@ -64,42 +90,46 @@ export const Analytics = ({ metrics }: any) => {
                         <div><div className="text-[10px] text-text-muted uppercase">Live Gemini rate</div><div className="text-xl font-bold">{m.ai_live_rate_pct == null ? 'Not available' : `${m.ai_live_rate_pct}%`}</div></div>
                     </div>
                 </div>
-                <div className="bg-white border border-border shadow-sm p-6 h-[400px]">
+                <div className="bg-white border border-border shadow-sm p-6 min-h-[400px] overflow-hidden">
                     <h3 className="text-xs font-bold text-text-main uppercase tracking-wider mb-6">Recovery by Workflow</h3>
-                    {byWorkflow.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                            <BarChart data={byWorkflow} margin={{ top: 5, right: 30, left: 20, bottom: 25 }}>
-                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB"/>
-                                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#6A7280' }}/>
-                                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#6A7280' }} tickFormatter={(val) => `₹${val/1000}k`}/>
-                                <RechartsTooltip formatter={(val: number) => formatCurrency(val)} cursor={{ fill: '#F9FAFB' }}/>
-                                <Legend wrapperStyle={{ fontSize: '10px' }}/>
-                                <Bar dataKey="at_risk" name="At Risk" fill="#9CA3AF" radius={[2, 2, 0, 0]} />
-                                <Bar dataKey="recovered" name="Recovered" fill="#00BA88" radius={[2, 2, 0, 0]} />
-                            </BarChart>
-                        </ResponsiveContainer>
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-sm font-mono text-text-muted">No workflow data available.</div>
-                    )}
+                    <div className="h-[320px] w-full">
+                        {byWorkflow.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={byWorkflow} margin={{ top: 5, right: 30, left: 20, bottom: 25 }}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB"/>
+                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#6A7280' }}/>
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#6A7280' }} tickFormatter={(val) => `₹${val/1000}k`}/>
+                                    <RechartsTooltip formatter={(val: number) => formatCurrency(val)} cursor={{ fill: '#F9FAFB' }}/>
+                                    <Legend wrapperStyle={{ fontSize: '10px' }}/>
+                                    <Bar dataKey="at_risk" name="At Risk" fill="#9CA3AF" radius={[2, 2, 0, 0]} />
+                                    <Bar dataKey="recovered" name="Recovered" fill="#00BA88" radius={[2, 2, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-sm font-mono text-text-muted">No workflow data available.</div>
+                        )}
+                    </div>
                 </div>
 
-                <div className="bg-white border border-border shadow-sm p-6 h-[400px]">
+                <div className="bg-white border border-border shadow-sm p-6 min-h-[400px] overflow-hidden">
                     <h3 className="text-xs font-bold text-text-main uppercase tracking-wider mb-6">Execution Outcomes</h3>
-                    {outcomesData.length > 0 ? (
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie data={outcomesData} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={2} dataKey="value">
-                                    {outcomesData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={entry.color} />
-                                    ))}
-                                </Pie>
-                                <RechartsTooltip formatter={(val: number) => `${val} cases`} />
-                                <Legend wrapperStyle={{ fontSize: '10px' }}/>
-                            </PieChart>
-                        </ResponsiveContainer>
-                    ) : (
-                        <div className="flex items-center justify-center h-full text-sm font-mono text-text-muted">No outcome data available.</div>
-                    )}
+                    <div className="h-[320px] w-full">
+                        {outcomesData.length > 0 ? (
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie data={outcomesData} cx="50%" cy="50%" innerRadius={80} outerRadius={120} paddingAngle={2} dataKey="value">
+                                        {outcomesData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                        ))}
+                                    </Pie>
+                                    <RechartsTooltip formatter={(val: number) => `${val} cases`} />
+                                    <Legend wrapperStyle={{ fontSize: '10px' }}/>
+                                </PieChart>
+                            </ResponsiveContainer>
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-sm font-mono text-text-muted">No outcome data available.</div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

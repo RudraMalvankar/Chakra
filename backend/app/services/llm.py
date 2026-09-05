@@ -48,7 +48,12 @@ class VoiceIntent(BaseModel):
 
 
 def gemini_voice_intent(transcript: str) -> VoiceIntent:
-    """Extract conversational intent from Hinglish/Hindi/English speech."""
+    """Extract conversational intent from Hinglish/Hindi/English speech.
+
+    Dedicated voice-intent schema — not payment triage. Callers should
+    light-redact phone/email first; the spoken transcript content itself
+    must remain so amount/date/intent phrases can be interpreted.
+    """
     if not isinstance(transcript, str) or not transcript.strip():
         return VoiceIntent(intent="unknown", confidence=0.0, ai_used=False, fallback_used=True,
                            reasoning="empty_transcript")

@@ -9,7 +9,8 @@ export const AuditLog = ({ auditLog }: any) => {
     const [filterType, setFilterType] = useState('ALL');
 
     const filtered = auditLog.filter((ev: any) => {
-        const matchesSearch = search === '' || ev.payment_id?.toLowerCase().includes(search.toLowerCase()) || ev.event_type?.toLowerCase().includes(search.toLowerCase());
+        const hay = `${ev.case_id || ''} ${ev.payment_id || ''} ${ev.event_type || ''}`.toLowerCase();
+        const matchesSearch = search === '' || hay.includes(search.toLowerCase());
         const matchesType = filterType === 'ALL' || ev.event_type === filterType;
         return matchesSearch && matchesType;
     }).sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
@@ -65,10 +66,21 @@ export const AuditLog = ({ auditLog }: any) => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-border">
-                        {filtered.map((ev: any, i: number) => (
-                            <tr key={i} onClick={() => navigate(`/cases/${ev.payment_id}`)} className="hover:bg-gray-50 cursor-pointer">
+                        {filtered.map((ev: any, i: number) => {
+                            const caseId = ev.case_id || ev.details?.case_id;
+                            return (
+                            <tr
+                                key={i}
+                                onClick={() => caseId && navigate(`/cases/${caseId}`)}
+                                className={caseId ? 'hover:bg-gray-50 cursor-pointer' : ''}
+                            >
                                 <td className="px-6 py-3 font-mono text-xs text-text-muted">{new Date(ev.timestamp).toLocaleString()}</td>
-                                <td className="px-6 py-3 font-mono font-medium text-rzp-blue">{ev.payment_id?.substring(0,8)}</td>
+                                <td className="px-6 py-3 font-mono font-medium text-rzp-blue">
+                                    {caseId ? String(caseId).substring(0, 12) : '—'}
+                                    {!caseId && ev.payment_id && (
+                                        <div className="text-[10px] text-text-muted">pay:{String(ev.payment_id).substring(0, 10)}</div>
+                                    )}
+                                </td>
                                 <td className="px-6 py-3 text-text-main text-xs font-bold uppercase tracking-wider">{ev.event_type.replace(/_/g, ' ')}</td>
                                 <td className="px-6 py-3 font-mono text-xs text-text-muted max-w-xl truncate">
                                     {ev.event_type === 'revenue_risk_assessed' ? `Risk Assessed: ${formatCurrency(ev.details.revenue_at_risk_inr)}` : 
@@ -76,7 +88,8 @@ export const AuditLog = ({ auditLog }: any) => {
                                      (ev.details.decision || ev.details.effective_action || ev.details.status || JSON.stringify(ev.details).substring(0, 50) + '...')}
                                 </td>
                             </tr>
-                        ))}
+                            );
+                        })}
                         {filtered.length === 0 && (
                             <tr><td colSpan={4} className="px-6 py-8 text-center text-text-muted font-mono">No matching events found in audit log.</td></tr>
                         )}

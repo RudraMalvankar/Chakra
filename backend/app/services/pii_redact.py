@@ -1,3 +1,14 @@
+"""
+PII redaction for LLM-bound payloads (DPDP-oriented allowlist).
+
+Only these coarse signals may leave redact_for_llm():
+  amount_bucket, error_code, is_first_transaction, bank_hash, network,
+  alerts_ignored, pii_redacted, plus optional allowlisted keys when present:
+  churn_risk, fraud_risk, payment_method, retry_count, mandate_state, mandate_status.
+
+Never forwarded: names, customer/payment IDs, phones, emails, exact amounts,
+URLs, tokens, raw metadata blobs, or other identifiers/secrets.
+"""
 import hashlib
 from typing import Dict, Any, Union
 from pydantic import BaseModel

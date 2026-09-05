@@ -1,79 +1,155 @@
 import type { Metrics } from '../types';
 import { AuditLogSchema } from '../types/schemas';
 
-// Production deploys Chakra behind one origin.  Local development supplies this
-// value through VITE_API_BASE_URL; no backend address is baked into the bundle.
-export const API_BASE = (import.meta.env.VITE_API_BASE_URL || window.location.origin).replace(/\/$/, '');
+// Production deploys may set VITE_API_BASE_URL. Local Vite uses same-origin
+// paths so /api/* is proxied to FastAPI (see vite.config.ts).
+export const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
+export class ApiError extends Error {
+  readonly kind: 'network' | 'http' | 'parse';
+  readonly status?: number;
+
+  constructor(message: string, kind: 'network' | 'http' | 'parse', status?: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.kind = kind;
+    this.status = status;
+  }
+}
+
+function apiUrl(path: string): string {
+  const normalized = path.startsWith('/') ? path : `/${path}`;
+  return `${API_BASE}${normalized}`;
+}
+
+async function request(path: string, init?: RequestInit): Promise<Response> {
+  let res: Response;
+  try {
+    res = await fetch(apiUrl(path), init);
+  } catch {
+    throw new ApiError(
+      'Unable to reach the Chakra backend. Is it running on port 8001?',
+      'network',
+    );
+  }
+  return res;
+}
+
+async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await request(path, init);
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const body = await res.json();
+      detail = typeof body?.detail === 'string' ? body.detail : JSON.stringify(body?.detail ?? body);
+    } catch {
+      detail = await res.text().catch(() => '');
+    }
+    throw new ApiError(
+      detail || `Request failed (${res.status})`,
+      'http',
+      res.status,
+    );
+  }
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new ApiError('Backend returned invalid JSON', 'parse', res.status);
+  }
+}
 
 export const fetchMetrics = async (): Promise<Metrics> => {
-  const res = await fetch(`${API_BASE}/api/metrics`);
-  if (!res.ok) throw new Error("Failed to fetch metrics");
-  const data = await res.json();
+  const data = await requestJson<any>('/api/metrics');
   return data.metrics || data;
 };
 
 export const fetchAuditLog = async (limit = 2000) => {
-  const res = await fetch(`${API_BASE}/api/audit?limit=${limit}`);
-  if (!res.ok) throw new Error("Failed to fetch audit log");
-  const data = await res.json();
+  const data = await requestJson<any>(`/api/audit?limit=${limit}`);
   try {
-      const valid = AuditLogSchema.parse(data);
-      return valid.events;
+    const valid = AuditLogSchema.parse(data);
+    return valid.events;
   } catch {
-      console.warn("Zod validation failed on audit log, falling back to raw data");
-      return data.events || [];
+    console.warn('Zod validation failed on audit log, falling back to raw data');
+    return data.events || [];
   }
 };
 
-export const simulatePayment = async (payload: any) => {
-  const res = await fetch(`${API_BASE}/api/demo/simulate`, {
+export const simulatePayment = async (payload: unknown) => {
+  return requestJson<any>('/api/demo/simulate', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Failed to simulate payment");
-  return res.json();
 };
 
-export const fetchMockPayments = async () => {
-    try {
-        const res = await fetch(`${API_BASE}/api/payments`);
-        if (!res.ok) return [];
-        const data = await res.json();
-        return data.items || [];
-    } catch {
-        return [];
-    }
+/** Provider payments — throws on network/HTTP failure; never pretends empty. */
+export const fetchProviderPayments = async (): Promise<any[]> => {
+  const data = await requestJson<any>('/api/payments');
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.items)) return data.items;
+  throw new ApiError('Payments response was invalid', 'parse');
 };
+
+/** @deprecated Use fetchProviderPayments — kept for import compatibility during migration */
+export const fetchMockPayments = fetchProviderPayments;
 
 export const fetchConfig = async () => {
-    try {
-        const res = await fetch(`${API_BASE}/api/config`);
-        if (!res.ok) return { mode: 'unavailable', provider: 'unavailable' };
-        return res.json();
-    } catch {
-        return { mode: 'unavailable', provider: 'unavailable' };
-    }
+  return requestJson<{ provider: string; mode: string; razorpay_key_id?: string }>('/api/config');
+};
+
+export const fetchHealth = async () => {
+  return requestJson<{
+    status: string;
+    database: string;
+    razorpay: string;
+    twilio: string;
+    gemini: string;
+  }>('/health');
 };
 
 export const fetchCases = async (limit = 200) => {
-  const res = await fetch(`${API_BASE}/api/cases?limit=${limit}`);
-  if (!res.ok) throw new Error(`Unable to load cases (${res.status})`);
-  return res.json();
+  return requestJson<any[]>(`/api/cases?limit=${limit}`);
 };
 
 export const fetchCaseDetail = async (caseId: string) => {
-  const res = await fetch(`${API_BASE}/api/cases/${encodeURIComponent(caseId)}`);
-  if (!res.ok) throw new Error(`Unable to load case (${res.status})`);
-  return res.json();
+  return requestJson<any>(`/api/cases/${encodeURIComponent(caseId)}`);
 };
 
-export const createOrder = async (payload: any) => {
-    const res = await fetch(`${API_BASE}/api/payments/create_order`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-    if (!res.ok) throw new Error("Failed to create order");
-    return res.json();
+export const createOrder = async (payload: { amount_inr: number; customer_id: string }) => {
+  return requestJson<any>('/api/payments/create_order', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
 };
+
+export const verifyPayment = async (payload: {
+  razorpay_payment_id: string;
+  razorpay_order_id: string;
+  razorpay_signature: string;
+  customer_id?: string;
+}) => {
+  return requestJson<any>('/api/payments/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+};
+
+export const abandonCheckout = async (payload: {
+  order_id: string;
+  amount_inr?: number;
+  customer_id: string;
+}) => {
+  return requestJson<any>('/api/payments/abandon', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+};
+
+export const fetchPolicy = async () => {
+  return requestJson<any>('/api/policy');
+};
+
+export { request, requestJson, apiUrl };

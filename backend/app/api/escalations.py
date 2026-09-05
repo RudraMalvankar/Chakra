@@ -1,4 +1,5 @@
 """Human queue for recovery cases that deterministic automation stopped."""
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException
@@ -25,11 +26,29 @@ def list_escalations(limit: int = 200):
 @router.get("/summary")
 def escalation_summary():
     rows = DBService.list_escalations(limit=1000)
-    active = [row for row in rows if row["status"] not in {"RESOLVED", "CLOSED"}]
+    active = [row for row in rows if row["status"] not in {"RESOLVED", "CLOSED", "UNRECOVERABLE"}]
     high = [row for row in active if row["priority"] == "HIGH"]
+    unassigned = [row for row in active if not row.get("assigned_to")]
+    now = datetime.now(timezone.utc)
+    sla_risk = []
+    for row in active:
+        deadline = row.get("sla_deadline")
+        if not deadline:
+            continue
+        try:
+            deadline_dt = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if deadline_dt.tzinfo is None:
+            deadline_dt = deadline_dt.replace(tzinfo=timezone.utc)
+        hours_left = (deadline_dt - now).total_seconds() / 3600.0
+        if hours_left <= 4:
+            sla_risk.append(row)
     return {
         "open_count": len(active),
         "high_priority_count": len(high),
+        "unassigned_count": len(unassigned),
+        "sla_risk_count": len(sla_risk),
         "unresolved_count": len(active),
         "revenue_escalated_inr": sum(
             (DBService.get_case_detail(row["case_id"]) or {}).get("amount_at_risk", 0.0)

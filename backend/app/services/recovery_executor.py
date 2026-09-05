@@ -14,8 +14,14 @@ from backend.app.services.mandate_router import MandateRouter
 from backend.app.services.safety_gate import SafetyGate
 from backend.app.services.razorpay_client import razorpay_client
 from backend.app.services.outcome_evaluator import OutcomeEvaluator
-from backend.app.lib.audit import log_audit_event
+from backend.app.lib.audit import log_audit_event as _log_audit_event
 from backend.app.services.voice import generate_hinglish_voice_note
+
+
+def log_audit_event(payment_id, event_type, details, case_id=None, **kwargs):
+    """Prefer explicit recovery case_id so audit UI can navigate correctly."""
+    resolved = case_id or (details.get("case_id") if isinstance(details, dict) else None)
+    return _log_audit_event(payment_id, event_type, details, case_id=resolved, **kwargs)
 
 class RecoveryExecutor:
     @staticmethod
@@ -207,10 +213,10 @@ async def execute_recovery_pipeline(
 
     # 0. Triage (AI/Diagnostic classification)
     from backend.app.services.triage import TriageEngine
-    from backend.app.lib.audit import log_audit_event
     triage_result = TriageEngine.triage(ctx)
+    case_key = ctx.case_id or ctx.payment_id
     if triage_result.is_ambiguous:
-        log_audit_event(ctx.payment_id, "ai_triage_requested", {"error_code": ctx.error_code})
+        log_audit_event(ctx.payment_id, "ai_triage_requested", {"error_code": ctx.error_code, "case_id": case_key}, case_id=case_key)
         action_val = triage_result.diagnosis
         
         log_audit_event(ctx.payment_id, "ai_triage_completed", {
@@ -220,8 +226,9 @@ async def execute_recovery_pipeline(
             "ai_used": getattr(triage_result, "ai_used", True),
             "model_used": getattr(triage_result, "model_used", None),
             "fallback_used": getattr(triage_result, "fallback_used", False),
-            "reason": triage_result.reason
-        })
+            "reason": triage_result.reason,
+            "case_id": case_key,
+        }, case_id=case_key)
         
         # Persist AI triage in DB
         DBService.upsert_recovery_case(
@@ -240,7 +247,7 @@ async def execute_recovery_pipeline(
 
     # 1. Detect & Assess Revenue Risk
     risk_assessment = RevenueRiskEngine.assess(ctx)
-    log_audit_event(ctx.payment_id, "revenue_risk_assessed", risk_assessment.model_dump())
+    log_audit_event(ctx.payment_id, "revenue_risk_assessed", {**risk_assessment.model_dump(), "case_id": case_key}, case_id=case_key)
     DBService.record_recovery_event(
         case_id=ctx.case_id or ctx.payment_id,
         event_type="revenue_risk_assessed",
@@ -261,7 +268,8 @@ async def execute_recovery_pipeline(
     log_data = agent_decision.model_dump()
     log_data["amount_inr"] = ctx.amount_inr
     log_data["case_type"] = case_type_str
-    log_audit_event(ctx.payment_id, "agent_decision_proposed", log_data)
+    log_data["case_id"] = case_key
+    log_audit_event(ctx.payment_id, "agent_decision_proposed", log_data, case_id=case_key)
     
     # Persist decision in DB
     selected_act = agent_decision.selected_action
@@ -290,7 +298,7 @@ async def execute_recovery_pipeline(
     # 3. Safety Check
     ctx.current_state = PaymentState.SAFETY_CHECK
     approved_decision = SafetyGate.evaluate(ctx, proposed_decision, today)
-    log_audit_event(ctx.payment_id, "safety_check_completed", approved_decision.model_dump())
+    log_audit_event(ctx.payment_id, "safety_check_completed", {**approved_decision.model_dump(), "case_id": case_key}, case_id=case_key)
     DBService.record_recovery_event(
         case_id=ctx.case_id or ctx.payment_id,
         event_type="safety_check_completed",

@@ -18,6 +18,7 @@ def log_audit_event(
     details: Dict[str, Any],
     pii_redacted: bool = True,
     filepath: str = AUDIT_FILE,
+    case_id: Optional[str] = None,
 ) -> None:
     """
     Appends a structured event to the JSONL audit trail.
@@ -30,9 +31,14 @@ def log_audit_event(
     for cot_field in ["chain_of_thought", "thought", "reasoning_steps", "raw_prompt", "system_prompt"]:
         clean_details.pop(cot_field, None)
 
+    resolved_case_id = case_id or clean_details.get("case_id")
+    if resolved_case_id:
+        clean_details.setdefault("case_id", resolved_case_id)
+
     event = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "payment_id": str(payment_id),
+        "case_id": resolved_case_id,
         "event_type": str(event_type),
         "pii_redacted": pii_redacted,
         "details": clean_details,
@@ -47,6 +53,7 @@ def log_audit_event(
             payment_id=str(payment_id),
             event_type=str(event_type),
             details=clean_details,
+            recovery_case_id=resolved_case_id,
         )
     except Exception:
         pass

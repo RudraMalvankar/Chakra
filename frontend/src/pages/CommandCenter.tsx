@@ -4,14 +4,36 @@ import { formatCurrency, formatPercent, formatExact } from '../lib/format';
 import { ArrowRight, Activity, AlertTriangle, ShieldCheck, CheckCircle2 } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 
-export const CommandCenter = ({ metrics, auditLog, cases }: any) => {
+export const CommandCenter = ({ metrics, auditLog, cases, loading, error, partialErrors }: any) => {
     const navigate = useNavigate();
-    if (!metrics) return null;
-    
-    const sortedEvents = [...auditLog].sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 30);
+    const metricsError = error || partialErrors?.metrics;
+
+    if (loading && !metrics) {
+        return (
+            <div className="max-w-7xl mx-auto bg-white border border-border shadow-sm p-8 text-center font-mono text-sm text-text-muted">
+                Loading command center metrics…
+            </div>
+        );
+    }
+
+    if (!metrics) {
+        return (
+            <div className="max-w-7xl mx-auto bg-white border border-border shadow-sm p-8 text-center space-y-2">
+                <div className="font-mono text-sm text-rzp-red">
+                    {metricsError ? `Unable to load metrics. Reason: ${metricsError}` : 'No metrics available from backend.'}
+                </div>
+            </div>
+        );
+    }
+
+    const sortedEvents = [...(auditLog || [])].sort((a,b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()).slice(0, 30);
     const m = metrics;
-    
-    const activeMissions = cases.filter((c: any) => c.status === 'PENDING' || c.status === 'RECOVERY_PENDING').slice(0, 10);
+    const caseList = Array.isArray(cases) ? cases : [];
+    const activeMissions = caseList.filter((c: any) => c.status === 'PENDING' || c.status === 'RECOVERY_PENDING').slice(0, 10);
+
+    const pendingCount = m.payments_pending ?? m.pending_count;
+    const blockedCount = m.payments_blocked;
+    const escalatedCount = m.payments_escalated;
 
     return (
         <div className="space-y-6 max-w-7xl mx-auto">
@@ -25,7 +47,7 @@ export const CommandCenter = ({ metrics, auditLog, cases }: any) => {
                         <Badge status="INFO">LIVE OPERATIONS</Badge>
                     </div>
                 </div>
-                
+
                 <div className="p-8 grid grid-cols-1 md:grid-cols-4 gap-8">
                     <div>
                         <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Revenue at Risk</div>
@@ -46,23 +68,33 @@ export const CommandCenter = ({ metrics, auditLog, cases }: any) => {
                         <div className="text-3xl font-bold text-text-main font-mono">{formatCurrency(m.revenue_attempted_inr)}</div>
                     </div>
                 </div>
-                
-                <div className="grid grid-cols-4 border-t border-border bg-gray-50 text-sm">
+
+                <div className="grid grid-cols-2 md:grid-cols-4 border-t border-border bg-gray-50 text-sm">
                     <div className="p-4 border-r border-border text-center">
-                        <span className="text-text-muted mr-2">Recovery Attempted</span>
-                        <span className="font-mono font-medium">{formatCurrency(m.revenue_attempted_inr)}</span>
+                        <span className="text-text-muted mr-2">Pending</span>
+                        <span className="font-mono font-medium text-yellow-600">
+                            {pendingCount != null
+                                ? `${pendingCount} cases`
+                                : m.revenue_pending_inr != null
+                                    ? formatCurrency(m.revenue_pending_inr)
+                                    : '—'}
+                        </span>
                     </div>
                     <div className="p-4 border-r border-border text-center">
                         <span className="text-text-muted mr-2">Blocked</span>
-                        <span className="font-mono font-medium text-rzp-red">{formatCurrency(m.revenue_blocked_inr)}</span>
+                        <span className="font-mono font-medium text-rzp-red">
+                            {blockedCount != null ? `${blockedCount} · ` : ''}{formatCurrency(m.revenue_blocked_inr)}
+                        </span>
                     </div>
                     <div className="p-4 border-r border-border text-center">
                         <span className="text-text-muted mr-2">Escalated</span>
-                        <span className="font-mono font-medium text-orange-500">{formatCurrency(m.revenue_escalated_inr)}</span>
+                        <span className="font-mono font-medium text-orange-500">
+                            {escalatedCount != null ? `${escalatedCount} · ` : ''}{formatCurrency(m.revenue_escalated_inr)}
+                        </span>
                     </div>
                     <div className="p-4 text-center">
-                        <span className="text-text-muted mr-2">Interventions Succeeded</span>
-                        <span className="font-mono font-medium text-rzp-green">{m.payments_recovered}</span>
+                        <span className="text-text-muted mr-2">Attempted</span>
+                        <span className="font-mono font-medium">{formatCurrency(m.revenue_attempted_inr)}</span>
                     </div>
                 </div>
             </div>
@@ -78,7 +110,7 @@ export const CommandCenter = ({ metrics, auditLog, cases }: any) => {
                     <ArrowRight className="text-gray-300" size={16} />
                     <div className="text-center w-1/4">
                         <div className="flex justify-center mb-3"><ShieldCheck className="text-rzp-blue" size={24}/></div>
-                        <div className="text-xl font-bold text-rzp-blue font-mono">{formatCurrency(m.revenue_at_risk_inr - m.revenue_blocked_inr - m.revenue_escalated_inr)}</div>
+                        <div className="text-xl font-bold text-rzp-blue font-mono">{formatCurrency((m.revenue_at_risk_inr || 0) - (m.revenue_blocked_inr || 0) - (m.revenue_escalated_inr || 0))}</div>
                         <div className="text-[10px] text-text-muted mt-2 uppercase font-semibold">Eligible</div>
                     </div>
                     <ArrowRight className="text-gray-300" size={16} />
@@ -119,8 +151,8 @@ export const CommandCenter = ({ metrics, auditLog, cases }: any) => {
                                 )}
                                 {activeMissions.map((c: any) => (
                                     <tr key={c.id} onClick={() => navigate(`/cases/${c.id}`)} className="hover:bg-gray-50 cursor-pointer">
-                                        <td className="px-6 py-3 font-mono font-medium text-rzp-blue">{c.id.substring(0,8)}</td>
-                                        <td className="px-6 py-3 text-text-main text-xs uppercase font-mono">{c.type.replace(/_/g, ' ')}</td>
+                                        <td className="px-6 py-3 font-mono font-medium text-rzp-blue">{String(c.id).substring(0,8)}</td>
+                                        <td className="px-6 py-3 text-text-main text-xs uppercase font-mono">{String(c.type || '').replace(/_/g, ' ')}</td>
                                         <td className="px-6 py-3 text-right font-mono text-text-main font-medium">{formatExact(c.amount)}</td>
                                         <td className="px-6 py-3 font-mono text-xs text-text-muted">{c.agent?.selected_action || '-'}</td>
                                         <td className="px-6 py-3"><Badge status={c.status}>{c.status}</Badge></td>
@@ -136,21 +168,30 @@ export const CommandCenter = ({ metrics, auditLog, cases }: any) => {
                         <h3 className="text-xs font-bold text-text-main uppercase tracking-wider">Live Activity Feed</h3>
                     </div>
                     <div className="divide-y divide-border overflow-y-auto flex-1 p-2">
-                        {sortedEvents.map((ev: any, i: number) => (
-                            <div key={i} className="px-4 py-3 hover:bg-gray-50 cursor-pointer rounded transition-colors" onClick={() => navigate(`/cases/${ev.payment_id}`)}>
+                        {sortedEvents.map((ev: any, i: number) => {
+                            const caseId = ev.case_id || ev.details?.case_id;
+                            return (
+                            <div
+                                key={i}
+                                className={`px-4 py-3 rounded transition-colors ${caseId ? 'hover:bg-gray-50 cursor-pointer' : 'opacity-90'}`}
+                                onClick={() => caseId && navigate(`/cases/${caseId}`)}
+                            >
                                 <div className="flex justify-between items-start mb-1">
-                                    <span className="text-xs font-bold text-text-main uppercase">{ev.event_type.replace(/_/g, ' ')}</span>
+                                    <span className="text-xs font-bold text-text-main uppercase">{String(ev.event_type || '').replace(/_/g, ' ')}</span>
                                     <span className="text-[10px] text-text-light font-mono">{new Date(ev.timestamp).toLocaleTimeString()}</span>
                                 </div>
                                 <div className="text-xs font-mono text-text-muted mb-1 truncate">
-                                    {ev.event_type === 'revenue_risk_assessed' ? `At Risk: ${formatCurrency(ev.details.revenue_at_risk_inr)}` : 
-                                     ev.event_type === 'execution_outcome' ? `Result: ${ev.details.status}` : 
-                                     ev.event_type === 'safety_check_completed' ? `Safety: ${ev.details.decision}` :
-                                     (ev.details.decision || ev.details.effective_action || ev.details.status || "-")}
+                                    {ev.event_type === 'revenue_risk_assessed' ? `At Risk: ${formatCurrency(ev.details?.revenue_at_risk_inr)}` :
+                                     ev.event_type === 'execution_outcome' ? `Result: ${ev.details?.status}` :
+                                     ev.event_type === 'safety_check_completed' ? `Safety: ${ev.details?.decision}` :
+                                     (ev.details?.decision || ev.details?.effective_action || ev.details?.status || "-")}
                                 </div>
-                                <div className="text-[10px] text-rzp-blue font-mono font-medium">Mission: {ev.payment_id.substring(0,8)}</div>
+                                <div className="text-[10px] text-rzp-blue font-mono font-medium">
+                                    {caseId ? `Case: ${String(caseId).substring(0, 12)}` : `Payment: ${String(ev.payment_id || '').substring(0, 12)} (no case)`}
+                                </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
             </div>

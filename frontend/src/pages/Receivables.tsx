@@ -15,7 +15,7 @@ function receivableLoadReducer(state: ReceivableLoadState, action: ReceivableLoa
 
 export const Receivables = () => {
     const navigate = useNavigate();
-    const [{ receivables, loading, actionError }, dispatchLoad] = useReducer(receivableLoadReducer, {
+    const [{ receivables, loading, error, actionError }, dispatchLoad] = useReducer(receivableLoadReducer, {
         receivables: [], loading: true, error: null, actionError: null,
     });
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -95,24 +95,32 @@ export const Receivables = () => {
                 </div>
             </div>
 
+            {error && (
+                <div className="bg-red-50 border border-red-200 text-rzp-red p-4 text-sm font-mono flex justify-between items-center gap-4">
+                    <span>Unable to load receivables. Reason: {error}</span>
+                    <button onClick={fetchReceivables} className="underline font-bold uppercase text-xs tracking-wider whitespace-nowrap">
+                        Retry
+                    </button>
+                </div>
+            )}
             {actionError && <div className="bg-red-50 border border-red-200 text-rzp-red p-3 text-sm">{actionError}</div>}
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="bg-white border border-border shadow-sm p-6">
                     <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Total Outstanding</div>
-                    <div className="text-2xl font-bold text-text-main font-mono">{formatCurrency(totalOutstanding)}</div>
+                    <div className="text-2xl font-bold text-text-main font-mono">{error ? '—' : formatCurrency(totalOutstanding)}</div>
                 </div>
                 <div className="bg-white border border-border shadow-sm p-6">
                     <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Overdue</div>
-                    <div className="text-2xl font-bold text-orange-500 font-mono">{formatCurrency(totalOverdue)}</div>
+                    <div className="text-2xl font-bold text-orange-500 font-mono">{error ? '—' : formatCurrency(totalOverdue)}</div>
                 </div>
                 <div className="bg-white border border-border shadow-sm p-6">
                     <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">At Risk</div>
-                    <div className="text-2xl font-bold text-rzp-red font-mono">{formatCurrency(atRisk)}</div>
+                    <div className="text-2xl font-bold text-rzp-red font-mono">{error ? '—' : formatCurrency(atRisk)}</div>
                 </div>
                 <div className="bg-white border border-border shadow-sm p-6">
                     <div className="text-xs font-semibold text-text-muted uppercase tracking-wider mb-2">Promises Due</div>
-                    <div className="text-2xl font-bold text-rzp-blue font-mono">{formatCurrency(totalPromises)}</div>
+                    <div className="text-2xl font-bold text-rzp-blue font-mono">{error ? '—' : formatCurrency(totalPromises)}</div>
                 </div>
             </div>
 
@@ -134,8 +142,13 @@ export const Receivables = () => {
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border">
-                                {loading && <tr><td colSpan={6} className="px-6 py-8 text-center text-text-muted">Loading...</td></tr>}
-                                {!loading && receivables.map((r: any) => (
+                                {loading && <tr><td colSpan={6} className="px-6 py-8 text-center text-text-muted">Receivables loading...</td></tr>}
+                                {!loading && error && (
+                                    <tr><td colSpan={6} className="px-6 py-12 text-center text-rzp-red font-mono">
+                                        Unable to load receivables.
+                                    </td></tr>
+                                )}
+                                {!loading && !error && receivables.map((r: any) => (
                                     <tr 
                                         key={r.id} 
                                         onClick={() => setSelectedId(r.id)} 
@@ -152,7 +165,7 @@ export const Receivables = () => {
                                         <td className="px-6 py-3"><Badge status={r.status}>{r.status}</Badge></td>
                                     </tr>
                                 ))}
-                                {!loading && receivables.length === 0 && (
+                                {!loading && !error && receivables.length === 0 && (
                                     <tr><td colSpan={6} className="px-6 py-12 text-center text-text-muted font-mono">
                                         No receivables have been ingested.
                                     </td></tr>

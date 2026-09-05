@@ -8,7 +8,7 @@ import logging
 import json
 
 from sqlalchemy import select, func, desc, update
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from backend.app.config import settings
 from backend.app.db.session import get_session_factory
@@ -307,6 +307,34 @@ class DBService:
             session.close()
 
     @staticmethod
+    def get_payment_by_order_id(order_id: str) -> Optional[Dict[str, Any]]:
+        session = get_db_session()
+        if not session:
+            return None
+        try:
+            stmt = select(Payment).where(
+                (Payment.id == order_id) | (Payment.external_order_id == order_id)
+            )
+            payment = session.execute(stmt).scalars().first()
+            if not payment:
+                return None
+            return {
+                "id": payment.id,
+                "external_payment_id": payment.external_payment_id,
+                "external_order_id": payment.external_order_id,
+                "customer_id": payment.customer_id,
+                "amount": payment.amount,
+                "currency": payment.currency,
+                "status": payment.status,
+                "provider": payment.provider,
+            }
+        except Exception as e:
+            logger.error(f"Error looking up payment by order: {e}")
+            return None
+        finally:
+            session.close()
+
+    @staticmethod
     def upsert_payment(
         payment_id: str,
         amount_inr: float,
@@ -550,15 +578,116 @@ class DBService:
             session.close()
 
     @staticmethod
+    def _case_summary_ops(c: RecoveryCase) -> Dict[str, Any]:
+        """Build nested risk/agent/safety/outcome for list views without N+1 detail calls."""
+        decisions = sorted(c.decisions or [], key=lambda d: d.created_at or datetime.min.replace(tzinfo=timezone.utc))
+        events = sorted(c.events or [], key=lambda e: e.created_at or datetime.min.replace(tzinfo=timezone.utc))
+        latest_by_type: Dict[str, Any] = {}
+        for event in events:
+            latest_by_type[event.event_type] = event
+
+        latest_decision = decisions[-1] if decisions else None
+        risk_event = latest_by_type.get("revenue_risk_assessed") or latest_by_type.get("risk_scored")
+        risk_meta = (risk_event.metadata_json if risk_event else {}) or {}
+        safety_event = (
+            latest_by_type.get("safety_check_completed")
+            or latest_by_type.get("safety_gate_evaluated")
+            or latest_by_type.get("safety_blocked")
+        )
+        safety_meta = (safety_event.metadata_json if safety_event else {}) or {}
+        outcome_event = latest_by_type.get("execution_outcome") or latest_by_type.get("outcome_recorded")
+        outcome_meta = (outcome_event.metadata_json if outcome_event else {}) or {}
+
+        priority = risk_meta.get("priority")
+        if not priority and c.risk_probability is not None:
+            if c.risk_probability >= 0.85:
+                priority = "CRITICAL"
+            elif c.risk_probability >= 0.65:
+                priority = "HIGH"
+            elif c.risk_probability >= 0.4:
+                priority = "MEDIUM"
+            else:
+                priority = "LOW"
+
+        eligibility = (
+            safety_meta.get("eligibility")
+            or safety_meta.get("decision")
+            or (safety_event.status if safety_event else None)
+        )
+
+        return {
+            "risk": {
+                "probability": c.risk_probability,
+                "priority": priority,
+                "fraud_risk": risk_meta.get("fraud_risk") or risk_meta.get("fraud_signal"),
+                "churn_risk": risk_meta.get("churn_risk"),
+                "eligibility": risk_meta.get("recovery_eligible", c.recovery_eligible),
+                "amount_at_risk": c.amount_at_risk,
+            },
+            "agent": {
+                "selected_action": (latest_decision.selected_action if latest_decision else None) or c.current_action,
+                "confidence": latest_decision.confidence if latest_decision else None,
+                "expected_recovery": latest_decision.expected_recovery if latest_decision else None,
+                "score": latest_decision.score if latest_decision else None,
+                "candidates": [
+                    {
+                        "action": d.selected_action,
+                        "base_probability": d.base_probability,
+                        "probability_modifier": d.probability_modifier,
+                        "effective_probability": d.effective_probability,
+                        "expected_recovery": d.expected_recovery,
+                        "expected_recovery_inr": d.expected_recovery,
+                        "score": d.score,
+                        "confidence": d.confidence,
+                    }
+                    for d in decisions
+                ],
+            },
+            "safety": {
+                "eligibility": eligibility,
+                "decision": eligibility,
+                "reason_code": safety_meta.get("reason_code") or safety_meta.get("reason"),
+                "policy_id": safety_meta.get("policy_id"),
+                "status": safety_event.status if safety_event else None,
+            },
+            "outcome": {
+                "status": (outcome_event.status if outcome_event else None) or outcome_meta.get("status") or c.status,
+                "amount_recovered_inr": outcome_meta.get("amount_recovered_inr")
+                or outcome_meta.get("amount_recovered")
+                or (c.amount_at_risk if c.status == "RECOVERED" else 0.0),
+                "recovered": c.status == "RECOVERED" or bool(outcome_meta.get("recovered")),
+                "provider_result": outcome_meta.get("provider_result") or outcome_meta.get("raw_response"),
+                "raw_response": outcome_meta.get("raw_response") or outcome_meta,
+            },
+            "ai": {
+                "used": bool(c.ai_used),
+                "ai_used": bool(c.ai_used),
+                "classification": c.ai_classification,
+                "confidence": c.ai_confidence,
+                "reasoning": c.ai_reasoning,
+                "fallback_used": bool(c.ai_fallback_used),
+            },
+        }
+
+    @staticmethod
     def get_all_cases(limit: int = 200) -> List[Dict[str, Any]]:
         session = get_db_session()
         if not session:
             return []
         try:
-            stmt = select(RecoveryCase).order_by(desc(RecoveryCase.created_at)).limit(limit)
+            stmt = (
+                select(RecoveryCase)
+                .options(
+                    selectinload(RecoveryCase.decisions),
+                    selectinload(RecoveryCase.events),
+                )
+                .order_by(desc(RecoveryCase.created_at))
+                .limit(limit)
+            )
             cases = session.execute(stmt).scalars().all()
             results = []
             for c in cases:
+                ops = DBService._case_summary_ops(c)
                 results.append({
                     "id": c.id,
                     "case_id": c.id,
@@ -575,6 +704,11 @@ class DBService:
                     "ai_fallback_used": c.ai_fallback_used,
                     "created_at": c.created_at.isoformat() if c.created_at else None,
                     "last_updated": c.updated_at.isoformat() if c.updated_at else None,
+                    "risk": ops["risk"],
+                    "agent": ops["agent"],
+                    "safety": ops["safety"],
+                    "outcome": ops["outcome"],
+                    "ai": ops["ai"],
                 })
             return results
         except Exception as e:
@@ -687,7 +821,36 @@ class DBService:
                 "reasoning": latest_decision.get("reasoning"),
                 "expected_recovery": latest_decision.get("expected_recovery"),
                 "candidates": decisions,
+                "candidate_actions": [
+                    {**d, "expected_recovery_inr": d.get("expected_recovery")}
+                    for d in decisions
+                ],
             }
+
+            safety_event = latest_by_type.get("safety_check_completed") or latest_by_type.get("safety_gate_evaluated") or latest_by_type.get("safety_blocked")
+            safety_meta = (safety_event or {}).get("metadata") or (safety_event or {}).get("details") or {}
+            safety = {
+                **(safety_event or {}),
+                "eligibility": safety_meta.get("eligibility") or safety_meta.get("decision") or (safety_event or {}).get("status"),
+                "decision": safety_meta.get("decision") or safety_meta.get("eligibility") or (safety_event or {}).get("status"),
+                "reason_code": safety_meta.get("reason_code") or safety_meta.get("reason"),
+                "policy_id": safety_meta.get("policy_id"),
+            }
+
+            outcome_event = latest_by_type.get("execution_outcome") or latest_by_type.get("outcome_recorded")
+            outcome_meta = (outcome_event or {}).get("metadata") or (outcome_event or {}).get("details") or {}
+            outcome = {
+                **(outcome_event or {}),
+                "status": (outcome_event or {}).get("status") or outcome_meta.get("status") or c.status,
+                "amount_recovered_inr": outcome_meta.get("amount_recovered_inr")
+                or outcome_meta.get("amount_recovered")
+                or (c.amount_at_risk if c.status == "RECOVERED" else 0.0),
+                "recovered": c.status == "RECOVERED" or bool(outcome_meta.get("recovered")),
+                "raw_response": outcome_meta.get("raw_response") or outcome_meta,
+            }
+
+            risk_event = latest_by_type.get("revenue_risk_assessed") or latest_by_type.get("risk_scored")
+            risk_meta = (risk_event or {}).get("metadata") or (risk_event or {}).get("details") or {}
 
             return {
                 "id": c.id,
@@ -719,18 +882,26 @@ class DBService:
                     "created_at": c.created_at.isoformat() if c.created_at else None,
                 },
                 "payment": payment,
+                "customer": {
+                    "id": payment.get("customer_id") if payment else None,
+                },
                 "triage": triage,
                 "ai": triage,
                 "risk": {
                     "probability": c.risk_probability,
                     "amount_at_risk": c.amount_at_risk,
-                    "event": latest_by_type.get("revenue_risk_assessed") or latest_by_type.get("risk_scored"),
+                    "priority": risk_meta.get("priority"),
+                    "fraud_risk": risk_meta.get("fraud_risk") or risk_meta.get("fraud_signal"),
+                    "churn_risk": risk_meta.get("churn_risk"),
+                    "eligibility": risk_meta.get("recovery_eligible", c.recovery_eligible),
+                    "event": risk_event,
                 },
                 "agent": agent,
-                "safety": latest_by_type.get("safety_check_completed") or latest_by_type.get("safety_gate_evaluated") or latest_by_type.get("safety_blocked"),
+                "safety": safety,
                 "execution": latest_by_type.get("execution_completed") or latest_by_type.get("execution_started"),
-                "outcome": latest_by_type.get("execution_outcome") or latest_by_type.get("outcome_recorded"),
+                "outcome": outcome,
                 "created_at": c.created_at.isoformat() if c.created_at else None,
+                "last_updated": c.updated_at.isoformat() if c.updated_at else None,
             }
         except Exception as e:
             logger.error(f"Error fetching case detail: {e}")
@@ -750,6 +921,17 @@ class DBService:
                 {
                     "timestamp": e.created_at.isoformat() if e.created_at else None,
                     "payment_id": e.payment_id,
+                    "case_id": e.recovery_case_id
+                    or (e.metadata_json or {}).get("case_id")
+                    or (
+                        e.payment_id
+                        if e.payment_id
+                        and (
+                            str(e.payment_id).startswith("case_")
+                            or str(e.payment_id).startswith("demo_")
+                        )
+                        else None
+                    ),
                     "event_type": e.event_type,
                     "actor": e.actor,
                     "action": e.action,

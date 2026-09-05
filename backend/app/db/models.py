@@ -182,7 +182,7 @@ class BatchCase(Base):
 
     id = Column(String(64), primary_key=True, default=gen_uuid)
     batch_id = Column(String(64), ForeignKey("batch_runs.id"), nullable=False, index=True)
-    recovery_case_id = Column(String(64), nullable=True, index=True)
+    recovery_case_id = Column(String(64), ForeignKey("recovery_cases.id"), nullable=True, index=True)
     sequence = Column(Integer, nullable=False)
     status = Column(String(64), default="PROCESSED")
     error_message = Column(Text, nullable=True)

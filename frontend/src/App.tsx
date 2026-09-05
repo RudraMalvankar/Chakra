@@ -28,13 +28,26 @@ export default function App() {
           <div className="text-red-500 mb-4">Error</div>
           <h2 className="text-xl font-bold text-text-main mb-2 font-mono uppercase tracking-wider">Backend unavailable</h2>
           <p className="text-text-muted mb-4 font-mono text-sm">{data.error}</p>
-          <button onClick={() => window.location.reload()} className="px-6 py-2 bg-text-main text-white text-xs font-bold uppercase tracking-widest hover:bg-black transition-colors">Retry Connection</button>
+          <button onClick={() => data.refresh()} className="px-6 py-2 bg-text-main text-white text-xs font-bold uppercase tracking-widest hover:bg-black transition-colors">Retry Connection</button>
       </div>
   );
 
   return (
     <BrowserRouter>
       <AppShell data={data}>
+        {data.partialErrors && Object.keys(data.partialErrors).length > 0 && (
+          <div className="mx-4 mt-2 bg-amber-50 border border-amber-200 text-amber-900 text-xs font-mono px-4 py-2 flex justify-between items-center gap-4">
+            <span>
+              Partial data load:{' '}
+              {Object.entries(data.partialErrors)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join(' · ')}
+            </span>
+            <button onClick={() => data.refresh()} className="underline font-bold uppercase tracking-wider whitespace-nowrap">
+              Retry
+            </button>
+          </div>
+        )}
         <Routes>
           <Route path="/" element={<CommandCenter {...data} />} />
           <Route path="/opportunities" element={<Opportunities {...data} />} />

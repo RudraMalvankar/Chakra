@@ -99,26 +99,34 @@ def _load_safety_state_from_db():
         _safety_state_loaded = True
 
 
-def _persist_idempotency_key(key: str, day: str) -> bool:
-    """Persists an idempotency key to DB. Returns True if persisted (or DB unavailable)."""
+def _persist_idempotency_key(key: str, day: str) -> str:
+    """Persist idempotency key.
+
+    Returns: 'ok' | 'duplicate' | 'persist_failed'
+    Fail-closed on DB errors when database is configured.
+    Unit tests set _skip_db_state to use in-memory caches only.
+    """
+    if _skip_db_state:
+        return "ok"
+
     session = _get_db_session()
     if not session:
-        return True  # Accept if DB unavailable
+        if settings.is_database_configured:
+            return "persist_failed"
+        return "ok"
 
     try:
-        from backend.app.db.models import SafetyState, utcnow
+        from backend.app.db.models import SafetyState
         from sqlalchemy import select
 
-        # Check if already exists
         stmt = select(SafetyState).where(
             SafetyState.state_type == "idempotency",
             SafetyState.state_key == key
         )
         existing = session.execute(stmt).scalar_one_or_none()
         if existing:
-            return False  # Duplicate
+            return "duplicate"
 
-        # Expire idempotency keys after 7 days
         from datetime import timedelta
         expires = datetime.now(timezone.utc) + timedelta(days=7)
 
@@ -130,19 +138,24 @@ def _persist_idempotency_key(key: str, day: str) -> bool:
         )
         session.add(state)
         session.commit()
-        return True
+        return "ok"
     except Exception as e:
         session.rollback()
         logger.warning(f"Could not persist idempotency key: {e}")
-        return True  # Accept if DB fails
+        return "persist_failed"
     finally:
         session.close()
 
 
 def _persist_intervention_budget(budget_key: str, count: int) -> bool:
-    """Persists intervention count to DB. Returns True if persisted."""
+    """Persists intervention count to DB. Returns False on persistence failure when DB configured."""
+    if _skip_db_state:
+        return True
+
     session = _get_db_session()
     if not session:
+        if settings.is_database_configured:
+            return False
         return True
 
     try:
@@ -169,7 +182,7 @@ def _persist_intervention_budget(budget_key: str, count: int) -> bool:
     except Exception as e:
         session.rollback()
         logger.warning(f"Could not persist intervention budget: {e}")
-        return True
+        return False
     finally:
         session.close()
 
@@ -289,12 +302,26 @@ class SafetyGate:
                 final_dec.reason_code = "CUSTOMER_BUDGET_EXCEEDED"
                 return final_dec
 
-            # Persist to DB and update cache
-            _persist_idempotency_key(idem_key, day)
+            # Persist to DB and update cache — fail closed on persistence errors
+            persist_status = _persist_idempotency_key(idem_key, day)
+            if persist_status == "duplicate":
+                final_dec.decision = InterventionType.ESCALATE
+                final_dec.eligibility = "BLOCKED"
+                final_dec.reason_code = "IDEMPOTENCY_DUPLICATE"
+                return final_dec
+            if persist_status == "persist_failed":
+                final_dec.decision = InterventionType.ESCALATE
+                final_dec.eligibility = "BLOCKED"
+                final_dec.reason_code = "SAFETY_STATE_PERSISTENCE_FAILED"
+                return final_dec
             IDEMPOTENCY_CACHE.add(idem_key)
 
             new_count = current_count + 1
-            _persist_intervention_budget(budget_key, new_count)
+            if not _persist_intervention_budget(budget_key, new_count):
+                final_dec.decision = InterventionType.ESCALATE
+                final_dec.eligibility = "BLOCKED"
+                final_dec.reason_code = "SAFETY_BUDGET_PERSISTENCE_FAILED"
+                return final_dec
             CUSTOMER_INTERVENTION_CACHE[budget_key] = new_count
 
         final_dec.eligibility = "ALLOWED"

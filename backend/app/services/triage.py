@@ -90,7 +90,7 @@ class TriageEngine:
                 requires_human=False,
             )
 
-        if error_code == "fraud_flag" or ctx.fraud_flag:
+        if error_code == "fraud_flag" or error_code == "fraud_suspected" or ctx.fraud_flag:
             return TriageResult(
                 error_code="fraud_flag",
                 diagnosis="FRAUD_SIGNAL",
@@ -112,24 +112,36 @@ class TriageEngine:
                 requires_human=False,
             )
 
-        # Fast path for non-payment cases to avoid LLM latency
+        # Explicitly ambiguous / unknown provider states → Gemini (diagnostic only).
+        AMBIGUOUS_CODES = {
+            "bank_server_error",
+            "processor_route_mismatch",
+            "unknown_gateway_state",
+            "risk_review_pending",
+            "network_authorization_anomaly",
+            "unknown",
+            "unknown_gateway_failure",
+        }
+
+        # Fast path for non-payment cases to avoid LLM latency (unless explicitly ambiguous)
         from backend.app.models.case import CaseType
-        if ctx.case_type != CaseType.PAYMENT_FAILURE:
+        if ctx.case_type != CaseType.PAYMENT_FAILURE and error_code not in AMBIGUOUS_CODES:
             return TriageResult(
                 error_code=ctx.error_code or "unknown",
                 diagnosis=f"{ctx.case_type.value}_DIAGNOSIS",
                 is_ambiguous=False,
-                recommended_action=InterventionType.ESCALATE, # MandateRouter handles actual logic
+                recommended_action=InterventionType.ESCALATE,  # compatibility hint only; RecoveryAgent decides
                 reason=f"{ctx.case_type.value}_triage",
                 confidence=1.0,
                 requires_human=False,
             )
 
         # 2. Ambiguous Fallback via Gemini (PII-Redacted)
+        # Triage answers WHAT HAPPENED — recommended_action is a legacy hint only.
         redacted = redact_for_llm(ctx)
         llm_decision: TriageDecision = gemini_classify(redacted)
 
-        # Map action string to InterventionType
+        # Map action string to InterventionType (compatibility for callers that still read it)
         action_str = (llm_decision.action or "").strip().lower()
         if action_str == "retry":
             decision_type = InterventionType.RETRY_LATER
@@ -148,9 +160,13 @@ class TriageEngine:
             requires_human = True
             decision_type = InterventionType.ESCALATE
 
+        diagnosis = (llm_decision.reason or "").upper().replace(" ", "_")[:64] if llm_decision.reason else "AMBIGUOUS_PROVIDER_FAILURE"
+        if error_code in AMBIGUOUS_CODES:
+            diagnosis = error_code.upper()
+
         return TriageResult(
             error_code=ctx.error_code,
-            diagnosis="AMBIGUOUS_PROVIDER_FAILURE",
+            diagnosis=diagnosis or "AMBIGUOUS_PROVIDER_FAILURE",
             is_ambiguous=True,
             recommended_action=decision_type,
             reason=llm_decision.reason or "llm_classified",
