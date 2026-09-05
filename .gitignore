@@ -71,4 +71,9 @@ htmlcov/
 Thumbs.db
 
 # Agents & Scratch
-.agents/ 
+.agents/
+scratch/
+scratch*.py
+patch*.py
+*.tmp
+*.temp 
