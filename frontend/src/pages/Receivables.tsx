@@ -5,22 +5,21 @@ import { formatCurrency, formatExact } from '../lib/format';
 import { FileText } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 
-type ReceivableLoadState = { receivables: any[]; loading: boolean; error: string | null };
-type ReceivableLoadAction = { type: 'loaded'; receivables: any[] } | { type: 'failed'; error: string };
+type ReceivableLoadState = { receivables: any[]; loading: boolean; error: string | null; actionError: string | null };
+type ReceivableLoadAction = { type: 'loaded'; receivables: any[] } | { type: 'failed'; error: string } | { type: 'action_error'; error: string | null };
 function receivableLoadReducer(state: ReceivableLoadState, action: ReceivableLoadAction): ReceivableLoadState {
-    return action.type === 'loaded'
-        ? { receivables: action.receivables, loading: false, error: null }
-        : { receivables: [], loading: false, error: action.error };
+    if (action.type === 'loaded') return { ...state, receivables: action.receivables, loading: false, error: null, actionError: null };
+    if (action.type === 'action_error') return { ...state, actionError: action.error };
+    return { ...state, receivables: [], loading: false, error: action.error };
 }
 
 export const Receivables = () => {
     const navigate = useNavigate();
-    const [{ receivables, loading }, dispatchLoad] = useReducer(receivableLoadReducer, {
-        receivables: [], loading: true, error: null,
+    const [{ receivables, loading, actionError }, dispatchLoad] = useReducer(receivableLoadReducer, {
+        receivables: [], loading: true, error: null, actionError: null,
     });
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [promiseDate, setPromiseDate] = useState('');
-    const [actionError, setActionError] = useState<string | null>(null);
 
     const fetchReceivables = async () => {
         try {
@@ -29,7 +28,7 @@ export const Receivables = () => {
             const data = await res.json();
             if (!Array.isArray(data)) throw new Error('Receivables response was invalid');
             dispatchLoad({ type: 'loaded', receivables: data });
-            setActionError(null);
+            dispatchLoad({ type: 'action_error', error: null });
         } catch (e) {
             console.error(e);
             dispatchLoad({ type: 'failed', error: e instanceof Error ? e.message : 'Unable to load receivables' });
@@ -41,7 +40,7 @@ export const Receivables = () => {
     }, []);
 
     const handleCreatePromise = async (id: string, amount: number, customer: string) => {
-        if (!promiseDate) { setActionError('Choose a promised date first.'); return; }
+        if (!promiseDate) { dispatchLoad({ type: 'action_error', error: 'Choose a promised date first.' }); return; }
         
         try {
             const res = await fetch(`${API_BASE}/api/receivables/promises`, {
@@ -55,11 +54,11 @@ export const Receivables = () => {
                 })
             });
             if (!res.ok) throw new Error('Unable to record promise');
-            setActionError(null);
+            dispatchLoad({ type: 'action_error', error: null });
             setPromiseDate('');
             fetchReceivables();
         } catch (e) {
-            setActionError(e instanceof Error ? e.message : 'Unable to record promise');
+            dispatchLoad({ type: 'action_error', error: e instanceof Error ? e.message : 'Unable to record promise' });
         }
     };
 
@@ -73,7 +72,7 @@ export const Receivables = () => {
             if (!res.ok) throw new Error('Unable to mark promise broken');
             fetchReceivables();
         } catch (e) {
-            setActionError(e instanceof Error ? e.message : 'Unable to update promise');
+            dispatchLoad({ type: 'action_error', error: e instanceof Error ? e.message : 'Unable to update promise' });
         }
     };
 
