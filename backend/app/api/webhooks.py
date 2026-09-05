@@ -320,6 +320,51 @@ async def twilio_gather(
         
     elif intent.intent == "pay_now":
         twiml += '<Say language="hi-IN">Dhanyavaad. Payment link process kiya jayega.</Say>'
+    elif intent.intent == "dispute":
+        # A dispute is a hard stop for automated collection. Only create the
+        # FK-backed escalation when this voice session is tied to a case.
+        escalation = None
+        if case_id and DBService.get_case_detail(case_id):
+            escalation = DBService.create_escalation(
+                case_id=case_id,
+                reason="CUSTOMER_DISPUTE",
+                priority="HIGH",
+                severity="HIGH",
+                actor="customer",
+                notes=speech[:1000],
+            )
+        DBService.record_audit_event(
+            case_id or call_sid,
+            "automated_collection_stopped",
+            {
+                "reason": "CUSTOMER_DISPUTE",
+                "source": "voice",
+                "escalation_created": bool(escalation),
+                "transcript": speech[:1000],
+            },
+        )
+        twiml += '<Say language="hi-IN">Aapka dispute record kar liya gaya hai. Automated recovery rok di gayi hai aur hamari team review karegi.</Say>'
+    elif intent.intent == "unwilling":
+        DBService.record_audit_event(
+            case_id or call_sid,
+            "recovery_reassessment_required",
+            {"reason": "CUSTOMER_UNWILLING", "source": "voice", "transcript": speech[:1000]},
+        )
+        twiml += '<Say language="hi-IN">Theek hai. Automated reminders filhaal rok diye gaye hain. Hamari team zaroorat ke mutabik review karegi.</Say>'
+    elif intent.intent == "needs_more_time":
+        DBService.record_audit_event(
+            case_id or call_sid,
+            "promise_not_created",
+            {"reason": "EXPLICIT_DATE_REQUIRED", "source": "voice", "transcript": speech[:1000]},
+        )
+        twiml += '<Say language="hi-IN">Samajh gaya. Promise record karne ke liye kripya payment date batayein. Hamari team aapse follow up karegi.</Say>'
+    elif intent.intent in {"unknown", "unclear"}:
+        DBService.record_audit_event(
+            case_id or call_sid,
+            "voice_intent_manual_review",
+            {"reason": "UNKNOWN_INTENT", "source": "voice", "transcript": speech[:1000]},
+        )
+        twiml += '<Say language="hi-IN">Aapki baat clear nahi ho paayi. Hamari team review karke aapse sampark karegi.</Say>'
     else:
         twiml += '<Say language="hi-IN">Theek hai. Hum baad me sampark karenge.</Say>'
         
