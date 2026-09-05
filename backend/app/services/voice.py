@@ -3,7 +3,7 @@ Voice Recovery Service - Twilio Provider Architecture.
 
 Provides VoiceProvider, TwilioVoiceProvider, MockVoiceProvider abstractions.
 Also maintains generate_hinglish_voice_note for backward compat with RecoveryExecutor.
-AI intent extraction uses Gemini via gemini_classify with keyword-override fallback.
+AI intent extraction uses the dedicated Gemini voice-intent schema with bounded fallback.
 """
 from typing import Dict, Any, Optional
 import httpx
@@ -81,41 +81,42 @@ def get_voice_provider() -> VoiceProvider:
 
 
 class VoiceIntent(BaseModel):
-    intent: str = Field(..., description="One of: pay_now, promise_to_pay, unwilling, wrong_number, unclear")
+    intent: str = Field(..., description="One of: pay_now, promise_to_pay, unwilling, needs_more_time, dispute, wrong_person, unknown")
     amount: Optional[float] = None
     promised_date: Optional[str] = Field(None, description="ISO date YYYY-MM-DD if promised")
     confidence: float = 0.0
+    language: Optional[str] = None
+    reasoning: Optional[str] = None
+    model_used: Optional[str] = None
+    ai_used: bool = False
+    fallback_used: bool = False
 
 
 async def extract_voice_intent(transcript: str) -> VoiceIntent:
-    """Uses Gemini + keyword overrides to extract structured intent from a voice transcript."""
-    from backend.app.services.llm import gemini_classify
-
-    try:
-        fake_ctx = {
-            "pii_redacted": True,
-            "transcript": transcript,
-            "task": "voice_intent_extraction"
-        }
-        result = gemini_classify(fake_ctx)
-        intent_map = {
-            "retry": "pay_now",
-            "send_payment_link": "pay_now",
-            "escalate": "unwilling",
-            "block": "unwilling",
-        }
-        intent_str = intent_map.get(result.action, "unclear")
-        lower = transcript.lower()
-        if any(w in lower for w in ["kal", "tomorrow", "baad", "next week", "agle", "promise"]):
-            intent_str = "promise_to_pay"
-        elif any(w in lower for w in ["abhi", "now", "pay", "haan", "yes", "ok"]):
-            intent_str = "pay_now"
-        elif any(w in lower for w in ["nahi", "no", "mat", "wrong", "galat"]):
-            intent_str = "unwilling"
-
-        return VoiceIntent(intent=intent_str, confidence=result.confidence)
-    except Exception:
-        return VoiceIntent(intent="unclear", confidence=0.0)
+    """Use dedicated Gemini interpretation; fallback is explicit and zero-confidence."""
+    from backend.app.services.llm import gemini_voice_intent
+    result = gemini_voice_intent(transcript)
+    if result.ai_used:
+        return VoiceIntent(
+            intent=result.intent, amount=result.promised_amount,
+            promised_date=result.promised_date, confidence=result.confidence,
+            language=result.language, reasoning=result.reasoning,
+            model_used=result.model_used, ai_used=True,
+        )
+    lower = (transcript or "").lower()
+    fallback_intent = "unknown"
+    if any(w in lower for w in ["galat", "wrong invoice", "dispute"]):
+        fallback_intent = "dispute"
+    elif any(w in lower for w in ["nahi", "no", "mat", "not paying"]):
+        fallback_intent = "unwilling"
+    elif any(w in lower for w in ["kal", "tomorrow", "baad", "next week", "agle", "promise"]):
+        fallback_intent = "promise_to_pay"
+    elif any(w in lower for w in ["abhi", "now", "pay", "haan", "yes", "ok"]):
+        fallback_intent = "pay_now"
+    if not (transcript or "").strip():
+        fallback_intent = "unclear"
+    return VoiceIntent(intent=fallback_intent, confidence=0.0, ai_used=False,
+                       fallback_used=True, reasoning=result.reasoning)
 
 
 def generate_hinglish_voice_note(customer_name: str, amount_inr: float, payment_link: str = "") -> Optional[str]:

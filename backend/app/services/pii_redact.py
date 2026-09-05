@@ -24,6 +24,10 @@ def redact_for_llm(payment: Union[Dict[str, Any], RecoveryCase]) -> Dict[str, An
     Accepts both RecoveryCase Pydantic instances and raw/seed dictionaries seamlessly.
     Guarantees DPDP Act compliance by returning `pii_redacted: True`.
     """
+    # Explicit allowlist: only coarse, non-identifying decision signals leave
+    # this function. Names, IDs, contact details, exact amounts, URLs, tokens,
+    # and arbitrary metadata are never forwarded to the model.
+    safe_context: Dict[str, Any] = {}
     if isinstance(payment, BaseModel):
         amt_inr_raw = getattr(payment, "amount_inr", 0.0)
         try:
@@ -36,6 +40,10 @@ def redact_for_llm(payment: Union[Dict[str, Any], RecoveryCase]) -> Dict[str, An
         network = getattr(payment, "network", "unknown") or "unknown"
         raw_alerts = getattr(payment, "alerts_ignored", 0)
         alerts_ignored = _safe_int(raw_alerts, 0)
+        safe_context = {
+            key: getattr(payment, key, None)
+            for key in ("churn_risk", "fraud_risk", "payment_method", "retry_count", "mandate_state", "mandate_status")
+        }
     elif isinstance(payment, dict):
         if "amount_inr" in payment and payment["amount_inr"] is not None:
             try:
@@ -73,6 +81,12 @@ def redact_for_llm(payment: Union[Dict[str, Any], RecoveryCase]) -> Dict[str, An
             raw_alerts = payment.get("alerts_ignored", 0)
 
         alerts_ignored = _safe_int(raw_alerts, 0)
+        # Read safe signals from the top level or metadata only; metadata is
+        # not copied wholesale because it may contain identifiers/secrets.
+        safe_context = {
+            key: payment.get(key, metadata.get(key))
+            for key in ("churn_risk", "fraud_risk", "payment_method", "retry_count", "mandate_state", "mandate_status")
+        }
     else:
         raise TypeError(f"Expected dict or RecoveryCase, got {type(payment)}")
 
@@ -91,7 +105,7 @@ def redact_for_llm(payment: Union[Dict[str, Any], RecoveryCase]) -> Dict[str, An
     bank_hash = hashlib.sha256(bank_str.encode("utf-8")).hexdigest()[:8]
 
     # 3. Build Safe Output Dictionary
-    return {
+    result = {
         "amount_bucket": amt_bucket,
         "error_code": str(error_code) if error_code is not None else "unknown",
         "is_first_transaction": is_first_transaction,
@@ -100,3 +114,19 @@ def redact_for_llm(payment: Union[Dict[str, Any], RecoveryCase]) -> Dict[str, An
         "alerts_ignored": alerts_ignored,
         "pii_redacted": True,
     }
+    for key, value in safe_context.items():
+        if value is not None and value != "":
+            if key == "retry_count":
+                value = _safe_int(value)
+                if value == 0:
+                    continue
+            elif key in {"mandate_state", "mandate_status"}:
+                value = str(value).upper()
+                if value.endswith("UNKNOWN"):
+                    continue
+            elif key in {"churn_risk", "fraud_risk"}:
+                value = str(value).upper()
+            else:
+                value = str(value)
+            result[key] = value
+    return result

@@ -14,6 +14,8 @@ export const VoiceRecovery = () => {
     const [receivables, setReceivables] = useState<any[]>([]);
     const [selectedId, setSelectedId] = useState('');
     const [phoneNumber, setPhoneNumber] = useState('');
+    const [transcriptInput, setTranscriptInput] = useState('');
+    const [analyzing, setAnalyzing] = useState(false);
 
     useEffect(() => {
         fetch(`${API_BASE}/api/receivables`)
@@ -23,6 +25,30 @@ export const VoiceRecovery = () => {
     }, []);
 
     const selected = receivables.find((item) => item.id === selectedId);
+
+    const analyzeTranscript = async () => {
+        if (!transcriptInput.trim()) return;
+        setAnalyzing(true);
+        setError(null);
+        try {
+            const res = await fetch(`${API_BASE}/api/receivables/voice/intent`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ transcript: transcriptInput.trim(), session_id: selectedId || undefined }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.detail || `Intent analysis failed (${res.status})`);
+            setTranscript((current) => [...current, { speaker: 'CUSTOMER', text: transcriptInput.trim() }]);
+            setIntent(data);
+            setTranscriptInput('');
+            setStatus('COMPLETED');
+        } catch (e) {
+            setError(e instanceof Error ? e.message : 'Intent analysis failed');
+            setStatus('FAILED');
+        } finally {
+            setAnalyzing(false);
+        }
+    };
 
     const startCall = async () => {
         setLoading(true);
@@ -150,6 +176,11 @@ export const VoiceRecovery = () => {
                                 </div>
                             </div>
                         ))}
+                        <div className="mt-auto border border-dashed border-border bg-white p-4">
+                            <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-2">Browser voice simulation — enter an actual transcript</div>
+                            <textarea value={transcriptInput} onChange={(e) => setTranscriptInput(e.target.value)} placeholder="Paste customer speech in Hindi, Hinglish, or English" className="w-full border border-border rounded p-2 font-mono text-sm min-h-20" />
+                            <button onClick={analyzeTranscript} disabled={analyzing || !transcriptInput.trim()} className="mt-2 px-4 py-2 bg-purple-600 text-white rounded text-xs font-bold uppercase disabled:opacity-50">{analyzing ? 'Analyzing…' : 'Analyze voice intent'}</button>
+                        </div>
                     </div>
 
                     {intent && (
@@ -158,7 +189,7 @@ export const VoiceRecovery = () => {
                                 <Mic className="text-purple-500 mr-2" size={18} />
                                 <h4 className="text-xs font-bold text-text-main uppercase tracking-wider">AI Intent Detected</h4>
                             </div>
-                            <div className="grid grid-cols-4 gap-4 p-4 bg-purple-50 border border-purple-100 rounded font-mono text-sm">
+                            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 p-4 bg-purple-50 border border-purple-100 rounded font-mono text-sm">
                                 <div>
                                     <div className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-1">Intent</div>
                                     <div className="font-bold text-purple-700">{intent.intent.replace(/_/g, ' ')}</div>
@@ -175,10 +206,12 @@ export const VoiceRecovery = () => {
                                     <div className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-1">Confidence</div>
                                     <div className="font-bold text-purple-700">{Math.round(intent.confidence * 100)}%</div>
                                 </div>
+                                <div>
+                                    <div className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-1">AI provenance</div>
+                                    <div className="font-bold text-purple-700">{intent.ai_used ? (intent.model_used || 'Gemini') : 'Fallback / unavailable'}</div>
+                                </div>
                             </div>
-                            <div className="mt-4 flex items-center justify-center">
-                                <Badge status="RECOVERED" className="text-sm px-4 py-1">PROMISE RECORDED IN RECEIVABLES</Badge>
-                            </div>
+                            <div className="mt-4 text-center text-xs font-mono text-text-muted">Interpretation only — recovery and promise persistence require backend validation.</div>
                         </div>
                     )}
                 </div>

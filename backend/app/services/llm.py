@@ -34,6 +34,62 @@ class TriageDecision(BaseModel):
     fallback_used: bool = Field(False, description="True if fallback heuristic had to be used")
 
 
+class VoiceIntent(BaseModel):
+    """Natural-language interpretation only; never a financial decision."""
+    intent: str = Field(description="One of: pay_now, promise_to_pay, unwilling, needs_more_time, dispute, wrong_person, unknown")
+    promised_amount: Optional[float] = None
+    promised_date: Optional[str] = None
+    language: Optional[str] = None
+    confidence: float = Field(description="Model confidence, or 0 when fallback is used")
+    reasoning: Optional[str] = None
+    model_used: Optional[str] = None
+    ai_used: bool = True
+    fallback_used: bool = False
+
+
+def gemini_voice_intent(transcript: str) -> VoiceIntent:
+    """Extract conversational intent from Hinglish/Hindi/English speech."""
+    if not isinstance(transcript, str) or not transcript.strip():
+        return VoiceIntent(intent="unknown", confidence=0.0, ai_used=False, fallback_used=True,
+                           reasoning="empty_transcript")
+    if not GEMINI_AVAILABLE or not settings.gemini_api_key:
+        return VoiceIntent(intent="unknown", confidence=0.0, ai_used=False, fallback_used=True,
+                           reasoning="gemini_unavailable")
+    prompt = f"""
+You are Chakra's conversational voice-intent interpreter. Interpret this customer
+speech in Hindi, Hinglish, or English. Extract only what the customer said:
+payment intent, promised amount, and promised date/time if explicitly stated.
+Do not choose a recovery action, authorize payment, or bypass policy.
+Return JSON matching the VoiceIntent schema exactly.
+Transcript: {transcript}
+"""
+    try:
+        client = genai.Client(api_key=settings.gemini_api_key)
+        for model_name in [settings.gemini_model, settings.gemini_fallback_model]:
+            try:
+                response = client.models.generate_content(
+                    model=model_name, contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json", response_schema=VoiceIntent,
+                        temperature=0.1,
+                    ),
+                )
+                parsed = response.parsed if isinstance(response.parsed, VoiceIntent) else None
+                if parsed is None and response.text:
+                    parsed = VoiceIntent(**json.loads(response.text))
+                if parsed:
+                    parsed.model_used = model_name
+                    parsed.ai_used = True
+                    parsed.fallback_used = False
+                    return parsed
+            except Exception as exc:
+                logger.warning("Gemini voice intent call to %s failed: %s", model_name, str(exc)[:120])
+    except Exception as exc:
+        logger.warning("Gemini voice intent initialization failed: %s", str(exc)[:120])
+    return VoiceIntent(intent="unknown", confidence=0.0, ai_used=False, fallback_used=True,
+                       reasoning="gemini_request_failed")
+
+
 def gemini_classify(redacted_payment: Dict[str, Any]) -> TriageDecision:
     """
     Calls Gemini using structured output to classify ambiguous failures.

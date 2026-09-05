@@ -55,6 +55,11 @@ class VoiceRecoveryRequest(BaseModel):
     phone_number: str
 
 
+class VoiceIntentRequest(BaseModel):
+    transcript: str
+    session_id: Optional[str] = None
+
+
 class ReceivablePaymentRequest(BaseModel):
     amount: float
     provider: str
@@ -556,6 +561,23 @@ async def start_voice_recovery(req: VoiceRecoveryRequest):
         logger.warning(f"Pipeline error after voice start: {e}")
 
     return res
+
+
+@router.post("/voice/intent")
+async def analyze_voice_intent(req: VoiceIntentRequest):
+    """Interpret a browser/operator transcript through the dedicated voice AI path."""
+    from backend.app.services.voice import extract_voice_intent
+    session_id = req.session_id or f"voice_{uuid.uuid4().hex[:10]}"
+    DBService.record_audit_event(
+        session_id,
+        "AI_VOICE_INTENT_REQUESTED",
+        {"request_type": "voice_intent", "session_id": session_id, "transcript_length": len(req.transcript)},
+    )
+    intent = await extract_voice_intent(req.transcript)
+    result = intent.model_dump()
+    result["session_id"] = session_id
+    DBService.record_audit_event(session_id, "AI_VOICE_INTENT_COMPLETED", result)
+    return result
 
 
 @router.get("/{id}")

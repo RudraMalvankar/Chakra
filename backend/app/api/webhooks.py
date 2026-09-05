@@ -206,8 +206,26 @@ async def twilio_gather(
             raise HTTPException(status_code=403, detail="Invalid Twilio signature")
 
     speech = form.get("SpeechResult", "")
-    intent = await extract_voice_intent(speech)
     call_sid = form.get("CallSid")
+    DBService.record_audit_event(
+        case_id or call_sid or "voice_session",
+        "AI_VOICE_INTENT_REQUESTED",
+        {"request_type": "voice_intent", "session_id": call_sid, "transcript_length": len(speech or "")},
+    )
+    intent = await extract_voice_intent(speech)
+    DBService.record_audit_event(
+        case_id or call_sid or "voice_session",
+        "AI_VOICE_INTENT_COMPLETED",
+        {
+            "request_type": "voice_intent",
+            "session_id": call_sid,
+            "intent": intent.intent,
+            "confidence": intent.confidence,
+            "model": intent.model_used,
+            "ai_used": intent.ai_used,
+            "fallback_used": intent.fallback_used,
+        },
+    )
 
     # A voice promise is only confirmed after it is persisted against a real
     # receivable.  The TwiML response must never claim a promise was recorded

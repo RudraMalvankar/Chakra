@@ -11,6 +11,29 @@ from backend.app.services.voice import (
     extract_voice_intent,
     generate_hinglish_voice_note
 )
+from backend.app.services.pii_redact import redact_for_llm
+
+
+def test_redaction_preserves_safe_diagnostic_context_without_pii():
+    data = redact_for_llm({
+        "amount_inr": 85000,
+        "error_code": "unknown_gateway_state",
+        "customer_id": "cust_secret",
+        "metadata": {
+            "churn_risk": "HIGH",
+            "fraud_risk": "LOW",
+            "payment_method": "UPI",
+            "retry_count": 2,
+            "mandate_state": "ACTIVE",
+            "phone": "9999999999",
+        },
+    })
+    assert data["churn_risk"] == "HIGH"
+    assert data["fraud_risk"] == "LOW"
+    assert data["payment_method"] == "UPI"
+    assert data["retry_count"] == 2
+    assert data["mandate_state"] == "ACTIVE"
+    assert "customer_id" not in data and "phone" not in data
 
 
 class TestMockVoiceProvider:
