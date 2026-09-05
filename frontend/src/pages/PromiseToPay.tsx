@@ -117,7 +117,34 @@ export const PromiseToPay = () => {
                                         <td className="px-6 py-3">{getStatusBadge(p.status)}</td>
                                         <td className="px-6 py-3 text-text-muted uppercase">{p.source}</td>
                                         <td className="px-6 py-3 text-text-muted">{p.created_at ? new Date(p.created_at).toLocaleDateString() : '-'}</td>
-                                        <td className="px-6 py-3">{['UPCOMING', 'DUE_TODAY'].includes(p.status) && <span className="text-[10px] text-text-muted uppercase" title="Requires a provider confirmation reference">Awaiting provider confirmation</span>}</td>
+                                        <td className="px-6 py-3">{['UPCOMING', 'DUE_TODAY'].includes(p.status) && (
+                                            <div className="flex gap-2">
+                                                <button 
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        try {
+                                                            await fetch(`${API_BASE}/api/receivables/promises/${p.id}/fulfill`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ actual_amount: p.promised_amount }) });
+                                                            loadPromises();
+                                                        } catch (e) { alert('Failed to fulfill'); }
+                                                    }}
+                                                    className="px-2 py-1 bg-gray-100 border text-[10px] font-bold text-rzp-blue uppercase hover:bg-gray-200"
+                                                >
+                                                    Fulfill
+                                                </button>
+                                                <button 
+                                                    onClick={async (e) => {
+                                                        e.stopPropagation();
+                                                        try {
+                                                            await fetch(`${API_BASE}/api/receivables/promises/${p.id}/break`, { method: 'POST' });
+                                                            loadPromises();
+                                                        } catch (e) { alert('Failed to break'); }
+                                                    }}
+                                                    className="px-2 py-1 bg-gray-100 border text-[10px] font-bold text-rzp-red uppercase hover:bg-gray-200"
+                                                >
+                                                    Break
+                                                </button>
+                                            </div>
+                                        )}</td>
                                     </tr>
                                 ))}
                             </tbody>

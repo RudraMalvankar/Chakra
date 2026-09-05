@@ -723,6 +723,26 @@ async def analyze_voice_intent(req: VoiceIntentRequest):
     result = intent.model_dump()
     result["session_id"] = session_id
     DBService.record_audit_event(session_id, "AI_VOICE_INTENT_COMPLETED", result)
+
+    # Automatically persist a Promise to Pay if a case_id is provided and the intent is promise_to_pay
+    if intent.intent == "promise_to_pay" and req.case_id:
+        try:
+            promise_id = DBService.create_promise(
+                receivable_id=req.case_id,
+                amount_inr=float(intent.amount) if intent.amount else 0.0,
+                promise_date=intent.promised_date,
+                source="voice",
+                notes=f"Created via browser voice simulation. Transcript: '{req.transcript[:50]}...'"
+            )
+            result["promise_id"] = promise_id
+            DBService.record_audit_event(
+                promise_id,
+                "PROMISE_CREATED",
+                {"receivable_id": req.case_id, "amount_inr": intent.amount, "source": "voice"}
+            )
+        except Exception as e:
+            result["promise_creation_error"] = str(e)
+
     return result
 
 
