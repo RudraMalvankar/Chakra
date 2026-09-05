@@ -148,6 +148,43 @@ async def extract_voice_intent(transcript: str) -> VoiceIntent:
                        fallback_used=True, reasoning=result.reasoning)
 
 
+async def transcribe_user_audio(audio_bytes: bytes, mime_type: str = "audio/webm") -> str:
+    """Transcribe user audio recorded from laptop microphone using Gemini 2.5 Flash.
+
+    Accepts browser-recorded audio (audio/webm, audio/wav, audio/ogg, etc.) and uses
+    Gemini 2.5 Flash multimodal audio understanding to accurately transcribe Hindi,
+    Hinglish, and English spoken utterances.
+    """
+    logger = logging.getLogger("chakra.voice_transcription")
+    if not audio_bytes:
+        return ""
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=settings.gemini_api_key)
+        normalized_mime = mime_type.split(";")[0].strip() or "audio/webm"
+        audio_part = types.Part.from_bytes(data=audio_bytes, mime_type=normalized_mime)
+
+        prompt = (
+            "You are a speech-to-text transcriber for a customer phone conversation in India. "
+            "Transcribe exactly what the user said in the audio. "
+            "Preserve Hindi/Hinglish/English words as spoken (e.g. 'Kal pakka pay kar dunga', 'Abhi link bhej do', 'Dispute raise karna hai'). "
+            "Output ONLY the plain transcribed text with no quotation marks, no preamble, and no extra commentary."
+        )
+
+        resp = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=[audio_part, prompt],
+        )
+        text = (resp.text or "").strip().strip('"\'')
+        logger.info("Gemini transcribed audio (%d bytes, %s): %s", len(audio_bytes), normalized_mime, text)
+        return text
+    except Exception as exc:
+        logger.warning("Gemini audio transcription failed: %s", exc)
+        return ""
+
+
 def generate_hinglish_voice_note(customer_name: str, amount_inr: float, payment_link: str = "") -> Optional[str]:
     """
     Backward-compatible stub for RecoveryExecutor.

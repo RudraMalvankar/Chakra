@@ -21,6 +21,7 @@ import {
   Copy,
   Check,
   Headphones,
+  Square,
 } from "lucide-react";
 import {
   startVoiceRecovery,
@@ -83,16 +84,29 @@ export const VoiceRecovery: React.FC = () => {
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [selectedVoice, setSelectedVoice] = useState<string>("hi-IN-SwaraNeural");
   const [activeVoiceMeta, setActiveVoiceMeta] = useState<{ engine?: string; voice?: string } | null>(null);
+  const [audioLevel, setAudioLevel] = useState<number>(0);
 
-  // Sync refs to avoid stale closures in audio callbacks
+  // Sync refs to avoid stale closures in audio & mic callbacks
   const isHandsFreeRef = useRef<boolean>(true);
   const isCallActiveRef = useRef<boolean>(false);
   const isMutedRef = useRef<boolean>(false);
+  const isAiThinkingRef = useRef<boolean>(false);
+  const isSpeakingRef = useRef<boolean>(false);
   const timerRef = useRef<any>(null);
   const durationTimerRef = useRef<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
-  const recognitionRef = useRef<any>(null);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Live microphone recording refs (MediaRecorder + AudioContext VAD)
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+  const silenceTimerRef = useRef<any>(null);
+  const vadIntervalRef = useRef<any>(null);
+  const speechDetectedRef = useRef<boolean>(false);
+  const isRecordingRef = useRef<boolean>(false);
 
   useEffect(() => {
     isHandsFreeRef.current = isHandsFree;
@@ -101,6 +115,14 @@ export const VoiceRecovery: React.FC = () => {
   useEffect(() => {
     isMutedRef.current = isMuted;
   }, [isMuted]);
+
+  useEffect(() => {
+    isAiThinkingRef.current = isAiThinking;
+  }, [isAiThinking]);
+
+  useEffect(() => {
+    isSpeakingRef.current = isSpeaking;
+  }, [isSpeaking]);
 
   useEffect(() => {
     getCases()
@@ -136,6 +158,7 @@ export const VoiceRecovery: React.FC = () => {
         clearInterval(durationTimerRef.current);
         durationTimerRef.current = null;
       }
+      cleanupMicrophone();
     }
     return () => {
       if (durationTimerRef.current) clearInterval(durationTimerRef.current);
@@ -161,10 +184,14 @@ export const VoiceRecovery: React.FC = () => {
       } catch (e) {}
     }
     setIsSpeaking(false);
+    isSpeakingRef.current = false;
   };
 
   const speakTextFallback = (text: string) => {
     if (!audioEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) {
+      if (isHandsFreeRef.current && isCallActiveRef.current && !isMutedRef.current) {
+        setTimeout(() => startLaptopMicRecording(), 500);
+      }
       return;
     }
     try {
@@ -172,49 +199,65 @@ export const VoiceRecovery: React.FC = () => {
       const utterance = new SpeechSynthesisUtterance(text);
       utterance.lang = "hi-IN";
       utterance.rate = 1.0;
-      utterance.onstart = () => setIsSpeaking(true);
+      utterance.onstart = () => {
+        setIsSpeaking(true);
+        isSpeakingRef.current = true;
+      };
       utterance.onend = () => {
         setIsSpeaking(false);
+        isSpeakingRef.current = false;
         if (isHandsFreeRef.current && isCallActiveRef.current && !isMutedRef.current) {
-          setTimeout(() => startListeningMic(), 300);
+          setTimeout(() => startLaptopMicRecording(), 400);
         }
       };
-      utterance.onerror = () => setIsSpeaking(false);
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        if (isHandsFreeRef.current && isCallActiveRef.current && !isMutedRef.current) {
+          setTimeout(() => startLaptopMicRecording(), 400);
+        }
+      };
       window.speechSynthesis.speak(utterance);
     } catch (e) {
       console.warn("Speech synthesis fallback error", e);
       setIsSpeaking(false);
+      isSpeakingRef.current = false;
     }
   };
 
   const playAudioStream = (audioBase64?: string, audioFormat?: string, fallbackText?: string) => {
+    stopAudioPlayback();
+    stopLaptopMicRecording();
+
     if (!audioEnabled) {
       if (isHandsFreeRef.current && isCallActiveRef.current && !isMutedRef.current) {
-        setTimeout(() => startListeningMic(), 500);
+        setTimeout(() => startLaptopMicRecording(), 500);
       }
       return;
     }
-
-    stopAudioPlayback();
-    stopListeningMic();
 
     if (audioBase64) {
       try {
         const mime = audioFormat || "audio/mp3";
         const audio = new Audio(`data:${mime};base64,${audioBase64}`);
         currentAudioRef.current = audio;
-        audio.onplay = () => setIsSpeaking(true);
+        audio.onplay = () => {
+          setIsSpeaking(true);
+          isSpeakingRef.current = true;
+        };
         audio.onended = () => {
           setIsSpeaking(false);
+          isSpeakingRef.current = false;
           currentAudioRef.current = null;
-          // Auto-resume microphone for hands-free conversation
+          // Auto-resume microphone for seamless hands-free conversational turn
           if (isHandsFreeRef.current && isCallActiveRef.current && !isMutedRef.current) {
-            setTimeout(() => startListeningMic(), 300);
+            setTimeout(() => startLaptopMicRecording(), 350);
           }
         };
         audio.onerror = (err) => {
-          console.warn("Audio element error, falling back to speech synthesis", err);
+          console.warn("Audio element playback error, falling back to speech synthesis", err);
           setIsSpeaking(false);
+          isSpeakingRef.current = false;
           currentAudioRef.current = null;
           if (fallbackText) speakTextFallback(fallbackText);
         };
@@ -233,79 +276,202 @@ export const VoiceRecovery: React.FC = () => {
     }
   };
 
-  // Setup Web Speech Recognition
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const SpeechRecognition =
-        (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      if (SpeechRecognition) {
-        const recognition = new SpeechRecognition();
-        recognition.continuous = false;
-        recognition.interimResults = false;
-        recognition.lang = "hi-IN";
+  // ─── Real Laptop Microphone Recording with MediaRecorder & AudioContext VAD ───
 
-        recognition.onresult = (event: any) => {
-          const spoken = event.results[0][0].transcript;
-          setIsListening(false);
-          if (spoken && spoken.trim()) {
-            handleSendUtterance(spoken);
-          }
-        };
-
-        recognition.onerror = () => {
-          setIsListening(false);
-        };
-
-        recognition.onend = () => {
-          setIsListening(false);
-        };
-
-        recognitionRef.current = recognition;
-      }
+  const initMicrophoneStream = async (): Promise<MediaStream | null> => {
+    if (mediaStreamRef.current && mediaStreamRef.current.active) {
+      return mediaStreamRef.current;
     }
-  }, []);
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        mediaStreamRef.current = stream;
 
-  const startListeningMic = () => {
-    if (!recognitionRef.current || isMutedRef.current || !isCallActiveRef.current) return;
-    try {
-      recognitionRef.current.abort();
-    } catch (e) {}
-    try {
-      recognitionRef.current.start();
-      setIsListening(true);
+        // Setup Web Audio Analyser for VAD (Voice Activity Detection)
+        try {
+          const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+          if (AudioContextClass) {
+            const ctx = new AudioContextClass();
+            audioContextRef.current = ctx;
+            const source = ctx.createMediaStreamSource(stream);
+            const analyser = ctx.createAnalyser();
+            analyser.fftSize = 512;
+            analyser.smoothingTimeConstant = 0.2;
+            source.connect(analyser);
+            analyserRef.current = analyser;
+          }
+        } catch (e) {
+          console.warn("Failed to setup audio analyser node", e);
+        }
+
+        return stream;
+      }
     } catch (e) {
+      console.warn("Microphone access permission error:", e);
+      setError("Please allow microphone access in your browser to speak with Priya.");
+    }
+    return null;
+  };
+
+  const startLaptopMicRecording = async () => {
+    if (isMutedRef.current || !isCallActiveRef.current || isAiThinkingRef.current || isSpeakingRef.current) {
+      return;
+    }
+
+    const stream = await initMicrophoneStream();
+    if (!stream) return;
+
+    try {
+      // Choose supported mimeType
+      let mimeType = "audio/webm";
+      if (typeof MediaRecorder !== "undefined") {
+        if (MediaRecorder.isTypeSupported("audio/webm;codecs=opus")) {
+          mimeType = "audio/webm;codecs=opus";
+        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+          mimeType = "audio/webm";
+        } else if (MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")) {
+          mimeType = "audio/ogg;codecs=opus";
+        } else if (MediaRecorder.isTypeSupported("audio/mp4")) {
+          mimeType = "audio/mp4";
+        }
+      }
+
+      audioChunksRef.current = [];
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (event: BlobEvent) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        setIsListening(false);
+        isRecordingRef.current = false;
+        if (vadIntervalRef.current) {
+          clearInterval(vadIntervalRef.current);
+          vadIntervalRef.current = null;
+        }
+        if (silenceTimerRef.current) {
+          clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = null;
+        }
+        setAudioLevel(0);
+
+        // Convert audio chunks to Base64 and dispatch to Gemini Speech-to-Text
+        const chunks = audioChunksRef.current;
+        if (chunks.length > 0 && speechDetectedRef.current && isCallActiveRef.current) {
+          const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
+          if (blob.size > 1500) {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64Data = (reader.result as string).split(",")[1];
+              if (base64Data) {
+                dispatchAudioToGemini(base64Data, recorder.mimeType || "audio/webm");
+              }
+            };
+            reader.readAsDataURL(blob);
+          }
+        }
+      };
+
+      speechDetectedRef.current = false;
+      recorder.start(100); // 100ms chunk slices
+      isRecordingRef.current = true;
+      setIsListening(true);
+
+      // Start VAD volume check to detect when user starts and stops speaking
+      startVadVolumeMonitor();
+    } catch (err) {
+      console.warn("MediaRecorder start error:", err);
       setIsListening(false);
+      isRecordingRef.current = false;
     }
   };
 
-  const stopListeningMic = () => {
-    if (recognitionRef.current) {
+  const startVadVolumeMonitor = () => {
+    if (vadIntervalRef.current) clearInterval(vadIntervalRef.current);
+    if (!analyserRef.current) return;
+
+    const analyser = analyserRef.current;
+    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+    let consecutiveSilenceCount = 0;
+    const SPEECH_THRESHOLD = 15; // Volume threshold for speech
+    const SILENCE_FRAMES_NEEDED = 14; // ~1.4 seconds of silence to finalize turn
+
+    vadIntervalRef.current = setInterval(() => {
+      if (!isRecordingRef.current) return;
+      analyser.getByteFrequencyData(dataArray);
+
+      // Compute average volume level
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i];
+      }
+      const avg = sum / dataArray.length;
+      setAudioLevel(Math.min(100, Math.round(avg * 2.5)));
+
+      if (avg > SPEECH_THRESHOLD) {
+        speechDetectedRef.current = true;
+        consecutiveSilenceCount = 0;
+      } else if (speechDetectedRef.current) {
+        consecutiveSilenceCount++;
+        // If user spoke and has now been silent for ~1.4s, finish and send turn to Gemini
+        if (consecutiveSilenceCount >= SILENCE_FRAMES_NEEDED) {
+          stopLaptopMicRecording();
+        }
+      }
+    }, 100);
+  };
+
+  const stopLaptopMicRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
       try {
-        recognitionRef.current.abort();
+        mediaRecorderRef.current.stop();
       } catch (e) {}
     }
+    if (vadIntervalRef.current) {
+      clearInterval(vadIntervalRef.current);
+      vadIntervalRef.current = null;
+    }
+    if (silenceTimerRef.current) {
+      clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+    isRecordingRef.current = false;
     setIsListening(false);
+    setAudioLevel(0);
+  };
+
+  const cleanupMicrophone = () => {
+    stopLaptopMicRecording();
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((track) => track.stop());
+      mediaStreamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      try {
+        audioContextRef.current.close();
+      } catch (e) {}
+      audioContextRef.current = null;
+    }
   };
 
   const toggleMuteMic = () => {
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
     if (nextMuted) {
-      stopListeningMic();
+      stopLaptopMicRecording();
     } else if (isCallActive && !isSpeaking && isHandsFree) {
-      startListeningMic();
-    }
-  };
-
-  // Request browser microphone permission
-  const requestMicPermission = async () => {
-    try {
-      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        stream.getTracks().forEach((t) => t.stop());
-      }
-    } catch (e) {
-      console.warn("Microphone permission requested:", e);
+      startLaptopMicRecording();
     }
   };
 
@@ -343,7 +509,8 @@ export const VoiceRecovery: React.FC = () => {
     setDialedDigits("");
     setIsMuted(false);
 
-    await requestMicPermission();
+    // Prompt microphone permission immediately on call initiation
+    await initMicrophoneStream();
 
     if (callMethod === "browser_gemini") {
       setStatus("CALLING");
@@ -367,7 +534,7 @@ export const VoiceRecovery: React.FC = () => {
 
         const greeting =
           res.greeting ||
-          `Namaste ${selectedCase?.customer_name || "Customer"} ji! Main Chakra se Priya bol rahi hoon. Aapke overdue payment ke silsile mein call kiya tha.`;
+          `Namaste ${selectedCase?.customer_name || "Customer"} ji! Main Chakra se Priya bol rahi hoon. Aapke overdue payment ke silsile mein call kiya tha. Aap bataiye, payment kab tak arrange ho payega?`;
 
         setTranscript([
           {
@@ -409,13 +576,97 @@ export const VoiceRecovery: React.FC = () => {
     }
   };
 
-  const handleSendUtterance = async (utteranceText?: string) => {
-    const textToSend = utteranceText || userInput;
+  // Dispatch recorded user voice audio directly to Gemini 2.5 Flash STT + Recovery Engine
+  const dispatchAudioToGemini = async (audioBase64: string, mimeType: string) => {
+    if (!isCallActiveRef.current || isAiThinkingRef.current) return;
+
+    setIsAiThinking(true);
+    stopLaptopMicRecording();
+
+    // Show optimistic analyzing placeholder in transcript
+    const pendingMsgId = Date.now();
+    setTranscript((prev) => [
+      ...prev,
+      {
+        id: pendingMsgId,
+        speaker: "CUSTOMER",
+        text: "🎤 [Listening to your microphone voice...]",
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+
+    try {
+      const res = await sendSimulatedVoiceTurn({
+        case_id: selectedCaseId,
+        call_sid: callSid,
+        audio_base64: audioBase64,
+        audio_mime: mimeType,
+        amount: selectedCase?.amount_inr ?? 0,
+        customer_name: selectedCase?.customer_name,
+        voice_preference: selectedVoice,
+      });
+
+      setIsAiThinking(false);
+      if (res.voice_engine) {
+        setActiveVoiceMeta({ engine: res.voice_engine, voice: res.voice_name });
+      }
+
+      // Replace placeholder with Gemini-transcribed text
+      const transcribedSpeech = res.user_speech || "Voice utterance received";
+      setTranscript((prev) =>
+        prev.map((msg) =>
+          msg.id === pendingMsgId
+            ? { ...msg, text: transcribedSpeech }
+            : msg
+        )
+      );
+
+      // Append Priya's reply
+      const aiMessage = {
+        speaker: "CHAKRA",
+        text: res.ai_response,
+        timestamp: new Date().toISOString(),
+      };
+      setTranscript((prev) => [...prev, aiMessage]);
+
+      if (res.intent) {
+        setIntents((prev) => [
+          ...prev,
+          {
+            intent: res.intent,
+            confidence: res.confidence,
+            language: "hi-IN (Hinglish)",
+            model_used: res.voice_engine || "gemini-2.5-flash",
+          },
+        ]);
+      }
+
+      if (res.promise) setPromise(res.promise);
+      if (res.payment_link) setGeneratedLink(res.payment_link);
+
+      // Speak Priya's response aloud through speaker, and re-arm laptop mic
+      playAudioStream(res.audio_base64, res.audio_format, res.ai_response);
+    } catch (err: any) {
+      setIsAiThinking(false);
+      const fallbackAi = "Ji shukriya! Maine aapki baat note kar li hai aur team ko update kar diya hai.";
+      setTranscript((prev) => [
+        ...prev,
+        {
+          speaker: "CHAKRA",
+          text: fallbackAi,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      playAudioStream(undefined, undefined, fallbackAi);
+    }
+  };
+
+  const handleSendUtteranceText = async (textToSend: string) => {
     if (!textToSend.trim() || !isCallActive || isAiThinking) return;
 
     setUserInput("");
     setIsAiThinking(true);
-    stopListeningMic();
+    stopLaptopMicRecording();
 
     const userMessage = {
       speaker: "CUSTOMER",
@@ -479,7 +730,7 @@ export const VoiceRecovery: React.FC = () => {
 
   const handleEndCall = () => {
     stopAudioPlayback();
-    stopListeningMic();
+    stopLaptopMicRecording();
     setStatus("completed");
     setIsAiThinking(false);
     setShowKeypad(false);
@@ -529,9 +780,9 @@ export const VoiceRecovery: React.FC = () => {
             <span>Chakra AI Voice Recovery</span>
           </h1>
           <p className="text-xs text-text-muted mt-0.5 font-mono flex items-center gap-2">
-            <span>Conversational Audio Dialog</span>
+            <span>Conversational Phone Dialog</span>
             <span className="text-border">•</span>
-            <span>Priya (AI Voice Specialist) • Hands-Free Laptop Mic</span>
+            <span>Live Laptop Mic (Gemini 2.5 Flash STT) + Priya Female Voice</span>
           </p>
         </div>
 
@@ -818,38 +1069,53 @@ export const VoiceRecovery: React.FC = () => {
                 /* Active Call Concentric Orb */
                 <div className="flex flex-col items-center justify-center space-y-4">
                   <div className="relative flex items-center justify-center">
-                    {/* Ring 3 */}
+                    {/* Ring 3 (Reacts to audio volume / level) */}
                     <div
-                      className={`absolute w-40 h-40 rounded-full transition-all duration-500 ${
+                      style={{
+                        transform: isListening ? `scale(${1 + audioLevel / 150})` : undefined,
+                      }}
+                      className={`absolute w-40 h-40 rounded-full transition-all duration-300 ${
                         isSpeaking
                           ? "bg-purple-100 animate-ping scale-110"
                           : isListening
-                          ? "bg-emerald-100 animate-ping scale-110"
+                          ? "bg-emerald-100 animate-pulse"
                           : "bg-gray-100"
                       }`}
                     />
                     {/* Ring 2 */}
                     <div
-                      className={`absolute w-32 h-32 rounded-full transition-all duration-300 ${
+                      style={{
+                        transform: isListening ? `scale(${1 + audioLevel / 200})` : undefined,
+                      }}
+                      className={`absolute w-32 h-32 rounded-full transition-all duration-200 ${
                         isSpeaking
                           ? "bg-purple-200/60 animate-pulse"
                           : isListening
-                          ? "bg-emerald-200/60 animate-pulse"
+                          ? "bg-emerald-200/60"
                           : isAiThinking
                           ? "bg-amber-100 animate-spin"
                           : "bg-gray-200/60"
                       }`}
                     />
                     {/* Core Orb */}
-                    <div
-                      className={`w-24 h-24 rounded-full shadow-md flex items-center justify-center z-10 transition-all duration-300 border-2 ${
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isListening) {
+                          stopLaptopMicRecording();
+                        } else if (!isSpeaking && !isAiThinking) {
+                          startLaptopMicRecording();
+                        }
+                      }}
+                      title={isListening ? "Click to finish speaking now" : "Click to speak"}
+                      className={`w-24 h-24 rounded-full shadow-md flex items-center justify-center z-10 transition-all duration-300 border-2 cursor-pointer focus:outline-none ${
                         isSpeaking
                           ? "bg-gradient-to-tr from-purple-600 to-indigo-600 border-purple-300 text-white scale-105"
                           : isListening
-                          ? "bg-gradient-to-tr from-emerald-600 to-teal-600 border-emerald-300 text-white scale-105"
+                          ? "bg-gradient-to-tr from-emerald-600 to-teal-600 border-emerald-300 text-white scale-105 shadow-emerald-500/30 shadow-lg"
                           : isAiThinking
                           ? "bg-gradient-to-tr from-amber-500 to-orange-500 border-amber-300 text-white"
-                          : "bg-white border-border text-text-muted"
+                          : "bg-white border-border text-text-muted hover:border-purple-300"
                       }`}
                     >
                       {isSpeaking ? (
@@ -860,13 +1126,18 @@ export const VoiceRecovery: React.FC = () => {
                           <span className="w-1.5 h-4 bg-white rounded-full animate-bounce delay-75" />
                         </div>
                       ) : isListening ? (
-                        <Mic size={32} className="text-white animate-pulse" />
+                        <div className="flex flex-col items-center">
+                          <Mic size={30} className="text-white animate-pulse mb-0.5" />
+                          <span className="text-[8px] font-mono uppercase font-bold tracking-widest text-emerald-100">
+                            {audioLevel > 15 ? "Speaking" : "Listening"}
+                          </span>
+                        </div>
                       ) : isAiThinking ? (
                         <Sparkles size={32} className="text-white animate-spin" />
                       ) : (
                         <Phone size={32} className="text-text-muted" />
                       )}
-                    </div>
+                    </button>
                   </div>
 
                   {/* Status Banner */}
@@ -885,10 +1156,14 @@ export const VoiceRecovery: React.FC = () => {
                       }`}
                     >
                       {isSpeaking && <span>🔊 Priya speaking...</span>}
-                      {isListening && <span>🎤 Listening to your mic... (Speak now)</span>}
-                      {isAiThinking && <span>✨ Priya thinking...</span>}
+                      {isListening && (
+                        <span>
+                          🎤 {audioLevel > 15 ? "Detecting speech from mic..." : "Listening to your mic... (Speak now)"}
+                        </span>
+                      )}
+                      {isAiThinking && <span>✨ Gemini 2.5 STT & reasoning...</span>}
                       {!isSpeaking && !isListening && !isAiThinking && (
-                        <span>{isMuted ? "🔇 Mic Muted" : "● Connected"}</span>
+                        <span>{isMuted ? "🔇 Mic Muted" : "● Connected (Tap orb or speak)"}</span>
                       )}
                     </span>
                   </div>
@@ -922,7 +1197,7 @@ export const VoiceRecovery: React.FC = () => {
                       </span>
                     ) : (
                       <span className="text-emerald-700 flex items-center gap-1">
-                        <User size={10} /> You (Customer)
+                        <User size={10} /> You (Spoken into Mic)
                       </span>
                     )}
                   </span>
@@ -947,7 +1222,28 @@ export const VoiceRecovery: React.FC = () => {
                 </button>
               ) : (
                 <div className="space-y-3">
-                  <div className="grid grid-cols-3 gap-2 text-center font-mono text-[10px]">
+                  <div className="grid grid-cols-4 gap-1.5 text-center font-mono text-[10px]">
+                    {/* Manual Mic Push-to-Talk / Toggle */}
+                    <button
+                      onClick={() => {
+                        if (isListening) {
+                          stopLaptopMicRecording();
+                        } else {
+                          startLaptopMicRecording();
+                        }
+                      }}
+                      className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all ${
+                        isListening
+                          ? "bg-emerald-600 text-white shadow-sm"
+                          : "bg-gray-100 hover:bg-gray-200 text-text-main"
+                      }`}
+                    >
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center mb-0.5">
+                        {isListening ? <Square size={16} /> : <Mic size={16} />}
+                      </div>
+                      <span>{isListening ? "Done" : "Mic"}</span>
+                    </button>
+
                     {/* Mute Mic */}
                     <button
                       onClick={toggleMuteMic}
@@ -1047,7 +1343,7 @@ export const VoiceRecovery: React.FC = () => {
           ) : (
             <div className="p-3 bg-gray-50 border border-border rounded-lg text-center py-4 font-mono text-text-muted text-xs">
               <Sparkles size={16} className="mx-auto mb-1 text-purple-500" />
-              <span>Awaiting customer utterance for real-time intent classification</span>
+              <span>Speak into your laptop mic to converse naturally with Priya</span>
             </div>
           )}
 
@@ -1115,7 +1411,7 @@ export const VoiceRecovery: React.FC = () => {
                 {SUGGESTED_RESPONSES.map((chip, idx) => (
                   <button
                     key={idx}
-                    onClick={() => handleSendUtterance(chip.label)}
+                    onClick={() => handleSendUtteranceText(chip.label)}
                     disabled={isAiThinking}
                     className="text-[10px] font-mono py-1 px-2 bg-gray-50 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300 border border-border rounded-md transition-all text-left flex items-center gap-1 text-text-main disabled:opacity-40"
                   >
@@ -1155,7 +1451,7 @@ export const VoiceRecovery: React.FC = () => {
                   >
                     <div className="text-[9px] font-mono font-bold text-text-muted mb-0.5 flex justify-between">
                       <span className={t.speaker === "CHAKRA" ? "text-purple-700" : "text-emerald-700"}>
-                        {t.speaker === "CHAKRA" ? "PRIYA (AI)" : "CUSTOMER"}
+                        {t.speaker === "CHAKRA" ? "PRIYA (AI)" : "YOU (MIC)"}
                       </span>
                       {t.timestamp && <span>{new Date(t.timestamp).toLocaleTimeString()}</span>}
                     </div>

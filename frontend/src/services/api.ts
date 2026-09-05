@@ -191,7 +191,9 @@ export const startSimulatedVoiceCall = async (payload: {
 export const sendSimulatedVoiceTurn = async (payload: {
   case_id: string;
   call_sid: string;
-  user_speech: string;
+  user_speech?: string;
+  audio_base64?: string;
+  audio_mime?: string;
   amount: number;
   customer_name?: string;
   voice_preference?: string;

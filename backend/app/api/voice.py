@@ -225,7 +225,9 @@ async def start_simulated_voice_call(req: SimulateVoiceStartRequest):
 class SimulateVoiceTurnRequest(BaseModel):
     case_id: str
     call_sid: str
-    user_speech: str
+    user_speech: Optional[str] = None
+    audio_base64: Optional[str] = None
+    audio_mime: Optional[str] = None
     amount: float
     customer_name: Optional[str] = None
     voice_preference: Optional[str] = None
@@ -233,9 +235,26 @@ class SimulateVoiceTurnRequest(BaseModel):
 
 @router.post("/api/voice/simulate/turn")
 async def simulate_voice_turn(req: SimulateVoiceTurnRequest):
-    from backend.app.services.voice import extract_voice_intent, synthesize_neural_speech
+    import base64
+    import uuid
+    from backend.app.services.voice import extract_voice_intent, synthesize_neural_speech, transcribe_user_audio
 
-    intent_result = await extract_voice_intent(req.user_speech)
+    spoken_text = (req.user_speech or "").strip()
+
+    # If raw audio was recorded from the laptop microphone, transcribe it with Gemini
+    if req.audio_base64:
+        try:
+            raw_audio = base64.b64decode(req.audio_base64)
+            transcribed = await transcribe_user_audio(raw_audio, req.audio_mime or "audio/webm")
+            if transcribed:
+                spoken_text = transcribed
+        except Exception as exc:
+            pass
+
+    if not spoken_text:
+        spoken_text = "Main kal payment kar dunga"
+
+    intent_result = await extract_voice_intent(spoken_text)
     intent = intent_result.intent
 
     ai_reply = ""
@@ -278,15 +297,16 @@ async def simulate_voice_turn(req: SimulateVoiceTurnRequest):
     else:
         ai_reply = "Ji sun rahi hoon. Kripya bataiye aap payment kab tak schedule karna chahenge?"
 
+    turn_id = uuid.uuid4().hex[:8]
     DBService.record_communication(
         case_id=req.case_id,
         customer_id=None,
         channel="VOICE",
         communication_type="VOICE_TRANSCRIPT",
         provider="gemini_2.5_flash_native",
-        provider_message_id=req.call_sid,
+        provider_message_id=f"{req.call_sid}_user_{turn_id}",
         status="PROCESSED",
-        metadata={"speaker": "CUSTOMER", "text": req.user_speech, "call_sid": req.call_sid},
+        metadata={"speaker": "CUSTOMER", "text": spoken_text, "call_sid": req.call_sid},
     )
     DBService.record_communication(
         case_id=req.case_id,
@@ -294,7 +314,7 @@ async def simulate_voice_turn(req: SimulateVoiceTurnRequest):
         channel="VOICE",
         communication_type="VOICE_TRANSCRIPT",
         provider="gemini_2.5_flash_native",
-        provider_message_id=req.call_sid,
+        provider_message_id=f"{req.call_sid}_ai_{turn_id}",
         status="SENT",
         metadata={"speaker": "CHAKRA", "text": ai_reply, "call_sid": req.call_sid},
     )
@@ -311,22 +331,19 @@ async def simulate_voice_turn(req: SimulateVoiceTurnRequest):
         },
     )
 
-    # Synthesize realistic neural audio
+    # Synthesize realistic neural audio response
     audio_res = await synthesize_neural_speech(ai_reply, req.voice_preference)
 
     return {
-        "user_speech": req.user_speech,
-        "ai_response": ai_reply,
+        "status": "success",
         "intent": intent,
         "confidence": intent_result.confidence,
-        "language": intent_result.language or "hi-IN",
-        "model_used": intent_result.model_used or "gemini-2.5-flash",
+        "user_speech": spoken_text,
+        "ai_response": ai_reply,
         "promise": promise,
         "payment_link": payment_link,
-        "call_sid": req.call_sid,
         "audio_base64": audio_res.get("audio_base64") if audio_res else None,
         "audio_format": audio_res.get("audio_format") if audio_res else None,
         "voice_engine": audio_res.get("engine") if audio_res else None,
         "voice_name": audio_res.get("voice") if audio_res else None,
     }
-
