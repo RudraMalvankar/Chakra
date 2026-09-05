@@ -13,7 +13,6 @@ export const CaseDetail = ({ cases }: any) => {
 
     useEffect(() => {
         if (!id) return;
-        setDetail(null);
         fetchCaseDetail(id)
             .then((response) => {
                 const events = (response.events || []).map((event: any) => ({
