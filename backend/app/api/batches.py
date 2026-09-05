@@ -46,12 +46,27 @@ async def process_batch_background(batch_id: str, count: int, scenario_type: str
     from backend.app.services.triage import TriageEngine
     from backend.app.services.revenue_risk_engine import RevenueRiskEngine
     from backend.app.services.recovery_agent import RecoveryAgent
-    from backend.app.services.safety_gate import SafetyGate
+    from backend.app.services.safety_gate import SafetyGate, reset_safety_state
     from backend.app.models.case import RecoveryDecision, InterventionType
     from backend.app.services.db_service import DBService
     from backend.app.models.payment import PaymentState
 
     factory = get_session_factory()
+
+    # Reset safety state so idempotency/budget caches don't carry over from previous runs
+    reset_safety_state()
+    
+    # Also clear stale DB safety state from previous batch runs
+    try:
+        from backend.app.db.models import SafetyState
+        from sqlalchemy import delete as sa_delete
+        sf = get_session_factory()
+        with sf() as s:
+            s.execute(sa_delete(SafetyState).where(SafetyState.state_type == "idempotency"))
+            s.execute(sa_delete(SafetyState).where(SafetyState.state_type == "intervention_budget"))
+            s.commit()
+    except Exception as e:
+        logger.warning(f"Could not clear safety state: {e}")
 
     # Update status to PROCESSING
     with factory() as session:
