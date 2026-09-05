@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { API_BASE, fetchMetrics } from '../services/api';
 import { formatCurrency } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
@@ -15,6 +15,8 @@ interface BatchResponse {
     revenue_recovered_inr: number;
     revenue_blocked_inr: number;
     revenue_escalated_inr: number;
+    pending_count: number;
+    revenue_pending_inr: number;
     recovery_rate_pct: number;
 }
 
@@ -25,8 +27,14 @@ export const Batch = () => {
     const [batchId, setBatchId] = useState<string | null>(null);
     const [batchStatus, setBatchStatus] = useState<string | null>(null);
     const [results, setResults] = useState<BatchResponse | null>(null);
+    const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+    useEffect(() => () => {
+        if (pollRef.current) clearInterval(pollRef.current);
+    }, []);
 
     const runBatch = async () => {
+        if (pollRef.current) clearInterval(pollRef.current);
         setRunning(true);
         setProgress(0);
         setResults(null);
@@ -46,7 +54,7 @@ export const Batch = () => {
             setBatchId(batch.batch_id);
             setBatchStatus(batch.status);
 
-            const pollInterval = setInterval(async () => {
+            pollRef.current = setInterval(async () => {
                 try {
                     const statusRes = await fetch(`${API_BASE}/api/batches/${batch.batch_id}`);
                     if (statusRes.ok) {
@@ -58,7 +66,8 @@ export const Batch = () => {
                         setProgress(pct);
 
                         if (statusData.status === 'COMPLETED' || statusData.status === 'FAILED') {
-                            clearInterval(pollInterval);
+                            if (pollRef.current) clearInterval(pollRef.current);
+                            pollRef.current = null;
                             setRunning(false);
                             setResults(statusData);
                         }
@@ -113,6 +122,10 @@ export const Batch = () => {
                         <div className="p-4 bg-gray-50 border border-border rounded">
                             <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider mb-1">Payments Processed</div>
                             <div className="text-xl font-bold font-mono text-text-main">{results.processed_count} / {results.requested_count}</div>
+                        </div>
+                        <div className="p-4 bg-gray-50 border border-border rounded">
+                            <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider mb-1">Pending Revenue</div>
+                            <div className="text-xl font-bold font-mono text-yellow-600">{formatCurrency(results.revenue_pending_inr)}</div>
                         </div>
                         <div className="p-4 bg-gray-50 border border-border rounded">
                             <div className="text-[10px] text-text-muted uppercase font-bold tracking-wider mb-1">Revenue at Risk</div>

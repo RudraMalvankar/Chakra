@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { fetchCaseDetail } from '../services/api';
 import { formatCurrency, formatPercent, formatExact } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
 import { AlertCircle, BrainCircuit, ShieldCheck, Zap, Activity } from 'lucide-react';
@@ -7,13 +8,51 @@ import { AlertCircle, BrainCircuit, ShieldCheck, Zap, Activity } from 'lucide-re
 export const CaseDetail = ({ cases, data }: any) => {
     const { id } = useParams();
     const navigate = useNavigate();
-    const c = cases.find((x: any) => x.id === id);
+    const summary = cases.find((x: any) => x.id === id);
+    const [detail, setDetail] = useState<any>(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
 
+    useEffect(() => {
+        if (!id) return;
+        setDetail(null);
+        fetchCaseDetail(id)
+            .then((response) => {
+                const events = (response.events || []).map((event: any) => ({
+                    ...event,
+                    details: event.details || event.metadata || {},
+                    timestamp: event.timestamp || event.created_at,
+                }));
+                const risk = response.risk || events.find((event: any) => event.event_type === 'revenue_risk_assessed')?.details || {};
+                const safety = response.safety || events.find((event: any) => event.event_type === 'safety_check_completed')?.details || {};
+                const latestDecision = response.decisions?.at(-1);
+                setDetail({
+                    ...response,
+                    type: response.case?.type || response.case_type,
+                    amount: response.case?.amount_at_risk ?? response.amount_at_risk,
+                    last_updated: response.case?.created_at || response.created_at,
+                    events,
+                    risk,
+                    safety,
+                    agent: response.agent || (latestDecision ? {
+                        selected_action: latestDecision.action,
+                        candidate_actions: [{ ...latestDecision, expected_recovery_inr: latestDecision.expected_recovery }],
+                    } : {}),
+                    outcome: response.outcome || {},
+                });
+                setLoadError(null);
+            })
+            .catch((error) => setLoadError(error.message));
+    }, [id]);
+    const c = detail || summary;
+
+    if (loadError) {
+        return <div className="p-8 text-center text-text-muted font-mono">Unable to load case: {loadError}</div>;
+    }
     if (!c) {
-        return <div className="p-8 text-center text-text-muted font-mono">Case not found</div>;
+        return <div className="p-8 text-center text-text-muted font-mono">Loading case…</div>;
     }
 
-    const triage = c.events.find((e: any) => e.event_type === 'ai_triage_completed')?.details || {};
+    const triage = c.triage || c.ai || c.events.find((e: any) => e.event_type === 'ai_triage_completed')?.details || {};
     const risk = c.risk || {};
     const agent = c.agent || {};
     const safety = c.safety || {};
@@ -60,7 +99,7 @@ export const CaseDetail = ({ cases, data }: any) => {
                             </div>
                             {(c.ai_used || triage.ai_used) && (
                                 <span className="px-2 py-0.5 text-[10px] font-bold bg-purple-100 text-purple-800 rounded font-mono">
-                                    {c.model_used || triage.model_used || "GEMINI"}
+                                    {c.model_used || triage.model_used || "Model not available"}
                                     {(c.fallback_used || triage.fallback_used) ? " (FALLBACK)" : ""}
                                 </span>
                             )}
@@ -74,7 +113,7 @@ export const CaseDetail = ({ cases, data }: any) => {
                                 <div className="p-4 bg-purple-50 border border-purple-100 rounded">
                                     <div className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-1">Confidence</div>
                                     <div className="font-bold text-purple-700">
-                                        {(c.ai_confidence || triage.confidence) ? `${Math.round((c.ai_confidence || triage.confidence) * 100)}%` : '-'}
+                                        {(c.ai_confidence || triage.confidence) ? `${Math.round((c.ai_confidence || triage.confidence) * 100)}%` : 'Not available'}
                                     </div>
                                 </div>
                             </div>
@@ -154,11 +193,11 @@ export const CaseDetail = ({ cases, data }: any) => {
                         <div className="p-6 font-mono text-sm">
                             <div className="flex justify-between items-center mb-4">
                                 <span className="text-text-muted">Agent Proposed Action:</span>
-                                <span className="font-bold">{agent.selected_action || '-'}</span>
+                                <span className="font-bold">{agent.selected_action || 'Not available'}</span>
                             </div>
                             <div className="flex justify-between items-center mb-4">
                                 <span className="text-text-muted">Safety Policy Decision:</span>
-                                <span className="font-bold">{safety.eligibility || '-'}</span>
+                                <span className="font-bold">{safety.eligibility || 'Not available'}</span>
                             </div>
                             {(safety.eligibility !== 'ALLOWED' && safety.reason_code) && (
                                 <div className="p-4 bg-red-50 border border-red-100 rounded text-red-800 text-xs">
@@ -196,7 +235,7 @@ export const CaseDetail = ({ cases, data }: any) => {
                                 <div className="space-y-4">
                                     <div>
                                         <div className="text-xs text-text-muted uppercase tracking-widest mb-1">Provider Outcome</div>
-                                        <div className="font-mono font-bold">{outcome.raw_response?.outcome || outcome.raw_response?.status || outcome.status || '-'}</div>
+                                        <div className="font-mono font-bold">{outcome.raw_response?.outcome || outcome.raw_response?.status || outcome.status || 'Not available'}</div>
                                     </div>
                                     <div className="pt-4 border-t border-border">
                                         <div className="text-xs text-text-muted uppercase tracking-widest mb-1">Amount Recovered</div>

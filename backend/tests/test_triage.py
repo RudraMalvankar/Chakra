@@ -174,7 +174,7 @@ def test_llm_graceful_degradation_on_api_error():
         res = gemini_classify({"error_code": "unknown_err", "pii_redacted": True})
         assert res.action == "escalate"
         assert res.reason == "llm_dependency_missing"
-        assert res.confidence == 1.0
+        assert res.confidence == 0.0
         return
 
     with patch("backend.app.services.llm.genai.Client") as mock_client:
@@ -186,7 +186,7 @@ def test_llm_graceful_degradation_on_api_error():
             res = gemini_classify({"error_code": "unknown_err", "pii_redacted": True})
             assert res.action == "escalate"
             assert res.reason == "llm_api_failure_fallback"
-            assert res.confidence == 1.0
+            assert res.confidence == 0.0
 
 
 def test_triage_convenience_functions():

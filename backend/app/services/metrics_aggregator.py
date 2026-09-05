@@ -38,7 +38,10 @@ def generate_metrics_report(audit_file: Optional[str] = None) -> Dict[str, Any]:
         try:
             from backend.app.services.db_service import DBService
             db_metrics = DBService.get_metrics()
-            if db_metrics and db_metrics.get("payments_processed", 0) > 0:
+            # When a database is configured it is the sole source of truth,
+            # including the valid empty state. Never fall back to a stale or
+            # audit-log-derived aggregate just because there are zero cases.
+            if db_metrics is not None and db_metrics != {}:
                 return {
                     "metrics": db_metrics,
                     "invariants": verify_invariants(db_metrics),

@@ -61,7 +61,7 @@ def gemini_classify(redacted_payment: Dict[str, Any]) -> TriageDecision:
         return TriageDecision(
             action="escalate",
             reason="llm_dependency_missing",
-            confidence=1.0,
+            confidence=0.0,
             ai_used=False,
             fallback_used=True,
         )
@@ -71,7 +71,7 @@ def gemini_classify(redacted_payment: Dict[str, Any]) -> TriageDecision:
         return TriageDecision(
             action="escalate",
             reason="llm_api_failure_fallback",
-            confidence=1.0,
+            confidence=0.0,
             ai_used=False,
             fallback_used=True,
         )
@@ -115,7 +115,7 @@ def gemini_classify(redacted_payment: Dict[str, Any]) -> TriageDecision:
     return TriageDecision(
         action="escalate",
         reason="llm_api_failure_fallback",
-        confidence=1.0,
+        confidence=0.0,
         ai_used=False,
         fallback_used=True,
     )

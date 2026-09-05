@@ -19,6 +19,7 @@ interface Promise {
 export const PromiseToPay = () => {
     const [promises, setPromises] = useState<Promise[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
 
     useEffect(() => {
         loadPromises();
@@ -30,9 +31,15 @@ export const PromiseToPay = () => {
             if (res.ok) {
                 const data = await res.json();
                 setPromises(data);
+                setLoadError(null);
+            } else {
+                setPromises([]);
+                setLoadError(`Unable to load promises (${res.status})`);
             }
         } catch (err) {
             console.error('Failed to load promises:', err);
+            setPromises([]);
+            setLoadError('Unable to load promises');
         } finally {
             setLoading(false);
         }
@@ -73,6 +80,7 @@ export const PromiseToPay = () => {
                     <Badge status="INFO">{promises.length} PROMISES</Badge>
                 </div>
             </div>
+            {loadError && <div className="bg-red-50 border border-red-200 text-rzp-red p-3 text-sm">{loadError}</div>}
 
             {promises.length === 0 ? (
                 <div className="bg-white border border-border shadow-sm p-12 text-center">
@@ -92,6 +100,7 @@ export const PromiseToPay = () => {
                                     <th className="px-6 py-3 font-semibold">Status</th>
                                     <th className="px-6 py-3 font-semibold">Source</th>
                                     <th className="px-6 py-3 font-semibold">Created</th>
+                                    <th className="px-6 py-3 font-semibold">Action</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border font-mono">
@@ -103,6 +112,7 @@ export const PromiseToPay = () => {
                                         <td className="px-6 py-3">{getStatusBadge(p.status)}</td>
                                         <td className="px-6 py-3 text-text-muted uppercase">{p.source}</td>
                                         <td className="px-6 py-3 text-text-muted">{p.created_at ? new Date(p.created_at).toLocaleDateString() : '-'}</td>
+                                        <td className="px-6 py-3">{['UPCOMING', 'DUE_TODAY'].includes(p.status) && <span className="text-[10px] text-text-muted uppercase" title="Requires a provider confirmation reference">Awaiting provider confirmation</span>}</td>
                                     </tr>
                                 ))}
                             </tbody>

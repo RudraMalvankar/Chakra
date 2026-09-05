@@ -52,6 +52,8 @@ class OutcomeEvaluator:
         elif status_raw in ["created", "pending"] and outcome_raw in ["captured", "success"]:
             is_recovered = True
             normalized_status = "captured"
+        elif status_raw in ["created", "pending", "queued"]:
+            normalized_status = status_raw
         elif status_raw:
             normalized_status = status_raw
         elif outcome_raw:
@@ -62,6 +64,9 @@ class OutcomeEvaluator:
         if is_recovered:
             ctx.current_state = PaymentState.RECOVERED
             amount_recovered = ctx.amount_inr
+        elif normalized_status in {"created", "pending", "queued"}:
+            ctx.current_state = PaymentState.RECOVERY_PENDING
+            amount_recovered = 0.0
         else:
             ctx.current_state = PaymentState.RECOVERY_FAILED
             amount_recovered = 0.0

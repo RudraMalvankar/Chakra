@@ -54,6 +54,9 @@ export interface Metrics {
   intervention_success_rate_pct: number;
   safety_block_rate_pct: number;
   escalation_rate_pct: number;
+  ai_triage_count?: number;
+  ai_fallback_count?: number;
+  ai_live_rate_pct?: number;
   by_case_type: Record<string, CaseTypeMetrics>;
   by_intervention: Record<string, InterventionMetrics>;
 }

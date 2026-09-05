@@ -25,6 +25,10 @@ from backend.app.db.models import (
     Receivable,
     PromiseToPay,
     VoiceInteraction,
+    Communication,
+    PaymentLink,
+    Escalation,
+    EscalationAction,
     utcnow,
 )
 
@@ -45,6 +49,213 @@ def get_db_session() -> Optional[Session]:
 class DBService:
 
     @staticmethod
+    def _escalation_dict(escalation: Escalation) -> Dict[str, Any]:
+        return {
+            "id": escalation.id,
+            "case_id": escalation.recovery_case_id,
+            "reason": escalation.reason,
+            "priority": escalation.priority,
+            "severity": escalation.severity,
+            "status": escalation.status,
+            "assigned_to": escalation.assigned_to,
+            "sla_deadline": escalation.sla_deadline.isoformat() if escalation.sla_deadline else None,
+            "created_at": escalation.created_at.isoformat() if escalation.created_at else None,
+            "updated_at": escalation.updated_at.isoformat() if escalation.updated_at else None,
+            "resolved_at": escalation.resolved_at.isoformat() if escalation.resolved_at else None,
+            "resolution": escalation.resolution,
+            "resolution_notes": escalation.resolution_notes,
+            "actions": [
+                {
+                    "id": action.id,
+                    "action": action.action,
+                    "actor": action.actor,
+                    "notes": action.notes,
+                    "metadata": action.metadata_json or {},
+                    "created_at": action.created_at.isoformat() if action.created_at else None,
+                }
+                for action in sorted(escalation.actions, key=lambda value: value.created_at)
+            ],
+        }
+
+    @staticmethod
+    def create_escalation(
+        case_id: str,
+        reason: str,
+        priority: str = "MEDIUM",
+        severity: str = "MEDIUM",
+        actor: str = "system",
+        notes: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Create one open escalation per case/reason and persist its first action."""
+        session = get_db_session()
+        if not session:
+            return None
+        try:
+            escalation = session.execute(
+                select(Escalation).where(
+                    Escalation.recovery_case_id == case_id,
+                    Escalation.reason == reason,
+                    Escalation.status.notin_(("RESOLVED", "CLOSED")),
+                )
+            ).scalar_one_or_none()
+            if not escalation:
+                escalation = Escalation(
+                    recovery_case_id=case_id,
+                    reason=reason,
+                    priority=priority,
+                    severity=severity,
+                    status="OPEN",
+                )
+                session.add(escalation)
+                session.flush()
+                session.add(EscalationAction(
+                    escalation_id=escalation.id,
+                    action="OPENED",
+                    actor=actor,
+                    notes=notes,
+                ))
+            session.commit()
+            session.refresh(escalation)
+            return DBService._escalation_dict(escalation)
+        except Exception as exc:
+            session.rollback()
+            logger.error("Error creating escalation: %s", exc)
+            return None
+        finally:
+            session.close()
+
+    @staticmethod
+    def list_escalations(limit: int = 200) -> List[Dict[str, Any]]:
+        session = get_db_session()
+        if not session:
+            return []
+        try:
+            rows = session.execute(
+                select(Escalation).order_by(desc(Escalation.created_at)).limit(limit)
+            ).scalars().all()
+            return [DBService._escalation_dict(row) for row in rows]
+        finally:
+            session.close()
+
+    @staticmethod
+    def get_escalation(escalation_id: str) -> Optional[Dict[str, Any]]:
+        session = get_db_session()
+        if not session:
+            return None
+        try:
+            escalation = session.get(Escalation, escalation_id)
+            return DBService._escalation_dict(escalation) if escalation else None
+        finally:
+            session.close()
+
+    @staticmethod
+    def transition_escalation(
+        escalation_id: str,
+        status: str,
+        actor: str,
+        notes: Optional[str] = None,
+        assigned_to: Optional[str] = None,
+        resolution: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        allowed = {
+            "OPEN": {"ASSIGNED", "IN_PROGRESS", "CLOSED"},
+            "ASSIGNED": {"IN_PROGRESS", "CUSTOMER_CONTACTED", "CLOSED"},
+            "IN_PROGRESS": {"CUSTOMER_CONTACTED", "ACTION_TAKEN", "PROMISE_RECEIVED", "RESOLVED", "UNRECOVERABLE", "CLOSED"},
+            "CUSTOMER_CONTACTED": {"ACTION_TAKEN", "PROMISE_RECEIVED", "RESOLVED", "UNRECOVERABLE", "CLOSED"},
+            "ACTION_TAKEN": {"RESOLVED", "UNRECOVERABLE", "CLOSED"},
+            "PROMISE_RECEIVED": {"RESOLVED", "UNRECOVERABLE", "CLOSED"},
+            "RESOLVED": {"CLOSED"},
+            "UNRECOVERABLE": {"CLOSED"},
+            "CLOSED": set(),
+        }
+        session = get_db_session()
+        if not session:
+            return None
+        try:
+            escalation = session.get(Escalation, escalation_id)
+            if not escalation:
+                return None
+            if status not in allowed.get(escalation.status, set()):
+                raise ValueError(f"Invalid escalation transition {escalation.status} -> {status}")
+            escalation.status = status
+            if assigned_to is not None:
+                escalation.assigned_to = assigned_to
+            if status in {"RESOLVED", "CLOSED", "UNRECOVERABLE"}:
+                escalation.resolved_at = utcnow()
+                escalation.resolution = resolution or status
+                escalation.resolution_notes = notes
+            escalation.updated_at = utcnow()
+            session.add(EscalationAction(
+                escalation_id=escalation.id,
+                action=status,
+                actor=actor,
+                notes=notes,
+                metadata_json={"assigned_to": assigned_to} if assigned_to else {},
+            ))
+            session.commit()
+            session.refresh(escalation)
+            return DBService._escalation_dict(escalation)
+        except Exception as exc:
+            session.rollback()
+            logger.error("Error transitioning escalation: %s", exc)
+            raise
+        finally:
+            session.close()
+
+    @staticmethod
+    def record_communication(
+        case_id: Optional[str], customer_id: Optional[str], channel: str,
+        status: str, provider: Optional[str] = None,
+        communication_type: Optional[str] = None,
+        provider_message_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[str]:
+        session = get_db_session()
+        if not session:
+            return None
+        try:
+            item = Communication(
+                recovery_case_id=case_id, customer_id=customer_id, channel=channel,
+                status=status, provider=provider, communication_type=communication_type,
+                provider_message_id=provider_message_id, body_metadata=metadata or {},
+                sent_at=utcnow() if status in {"SENT", "QUEUED"} else None,
+                failed_at=utcnow() if status == "FAILED" else None,
+            )
+            session.add(item)
+            session.commit()
+            return item.id
+        except Exception as exc:
+            session.rollback()
+            logger.error("Error persisting communication: %s", exc)
+            return None
+        finally:
+            session.close()
+
+    @staticmethod
+    def record_payment_link(
+        case_id: Optional[str], customer_id: Optional[str], provider: str,
+        amount: float, url: Optional[str], provider_link_id: Optional[str] = None,
+        status: str = "CREATED",
+    ) -> Optional[str]:
+        session = get_db_session()
+        if not session:
+            return None
+        try:
+            item = PaymentLink(
+                recovery_case_id=case_id, customer_id=customer_id, provider=provider,
+                amount=amount, url=url, provider_link_id=provider_link_id, status=status,
+            )
+            session.add(item)
+            session.commit()
+            return item.id
+        except Exception as exc:
+            session.rollback()
+            logger.error("Error persisting payment link: %s", exc)
+            return None
+        finally:
+            session.close()
+
+    @staticmethod
     def reset_database() -> None:
         """Truncates / deletes transactional benchmark data from Neon Postgres for fresh benchmark runs."""
         session = get_db_session()
@@ -52,6 +263,10 @@ class DBService:
             return
         try:
             # Delete in child-to-parent order
+            session.query(EscalationAction).delete()
+            session.query(Escalation).delete()
+            session.query(Communication).delete()
+            session.query(PaymentLink).delete()
             session.query(RecoveryEvent).delete()
             session.query(RecoveryDecision).delete()
             session.query(ProviderEvent).delete()
@@ -384,6 +599,9 @@ class DBService:
                     "action": d.selected_action,
                     "confidence": d.confidence,
                     "reasoning": d.reasoning_summary,
+                    "base_probability": d.base_probability,
+                    "probability_modifier": d.probability_modifier,
+                    "effective_probability": d.effective_probability,
                     "expected_recovery": d.expected_recovery,
                     "score": d.score,
                     "created_at": d.created_at.isoformat() if d.created_at else None,
@@ -398,10 +616,78 @@ class DBService:
                     "status": e.status,
                     "amount": e.amount,
                     "metadata": e.metadata_json,
+                    "details": e.metadata_json,
                     "created_at": e.created_at.isoformat() if e.created_at else None,
+                    "timestamp": e.created_at.isoformat() if e.created_at else None,
                 }
                 for e in c.events
             ]
+            ordered_events = sorted(events, key=lambda item: item.get("created_at") or "")
+            latest_by_type = {}
+            for event in ordered_events:
+                latest_by_type[event["event_type"]] = event
+
+            communications = [
+                {
+                    "id": item.id,
+                    "channel": item.channel,
+                    "type": item.communication_type,
+                    "provider": item.provider,
+                    "provider_message_id": item.provider_message_id,
+                    "status": item.status,
+                    "metadata": item.body_metadata or {},
+                    "sent_at": item.sent_at.isoformat() if item.sent_at else None,
+                    "delivered_at": item.delivered_at.isoformat() if item.delivered_at else None,
+                    "failed_at": item.failed_at.isoformat() if item.failed_at else None,
+                }
+                for item in c.communications
+            ]
+            payment_links = [
+                {
+                    "id": item.id,
+                    "provider_link_id": item.provider_link_id,
+                    "provider": item.provider,
+                    "url": item.url,
+                    "amount": item.amount,
+                    "currency": item.currency,
+                    "status": item.status,
+                    "created_at": item.created_at.isoformat() if item.created_at else None,
+                    "captured_at": item.captured_at.isoformat() if item.captured_at else None,
+                }
+                for item in c.payment_links
+            ]
+
+            payment = None
+            if c.payment:
+                payment = {
+                    "id": c.payment.id,
+                    "external_payment_id": c.payment.external_payment_id,
+                    "external_order_id": c.payment.external_order_id,
+                    "customer_id": c.payment.customer_id,
+                    "amount": c.payment.amount,
+                    "currency": c.payment.currency,
+                    "method": c.payment.payment_method,
+                    "status": c.payment.status,
+                    "failure_code": c.payment.failure_code,
+                    "provider": c.payment.provider,
+                    "source": c.payment.source,
+                    "created_at": c.payment.created_at.isoformat() if c.payment.created_at else None,
+                }
+            latest_decision = decisions[-1] if decisions else {}
+            triage = {
+                "classification": c.ai_classification,
+                "confidence": c.ai_confidence,
+                "reasoning": c.ai_reasoning,
+                "ai_used": bool(c.ai_used),
+                "fallback_used": bool(c.ai_fallback_used),
+            }
+            agent = {
+                "selected_action": latest_decision.get("action"),
+                "confidence": latest_decision.get("confidence"),
+                "reasoning": latest_decision.get("reasoning"),
+                "expected_recovery": latest_decision.get("expected_recovery"),
+                "candidates": decisions,
+            }
 
             return {
                 "id": c.id,
@@ -420,6 +706,30 @@ class DBService:
                 "ai_fallback_used": c.ai_fallback_used,
                 "decisions": decisions,
                 "events": events,
+                "communications": communications,
+                "payment_links": payment_links,
+                "escalations": [DBService._escalation_dict(item) for item in c.escalations],
+                # Canonical lifecycle contract. Flat fields above remain for existing clients.
+                "case": {
+                    "id": c.id,
+                    "type": c.case_type,
+                    "status": c.status,
+                    "amount_at_risk": c.amount_at_risk,
+                    "current_action": c.current_action,
+                    "created_at": c.created_at.isoformat() if c.created_at else None,
+                },
+                "payment": payment,
+                "triage": triage,
+                "ai": triage,
+                "risk": {
+                    "probability": c.risk_probability,
+                    "amount_at_risk": c.amount_at_risk,
+                    "event": latest_by_type.get("revenue_risk_assessed") or latest_by_type.get("risk_scored"),
+                },
+                "agent": agent,
+                "safety": latest_by_type.get("safety_check_completed") or latest_by_type.get("safety_gate_evaluated") or latest_by_type.get("safety_blocked"),
+                "execution": latest_by_type.get("execution_completed") or latest_by_type.get("execution_started"),
+                "outcome": latest_by_type.get("execution_outcome") or latest_by_type.get("outcome_recorded"),
                 "created_at": c.created_at.isoformat() if c.created_at else None,
             }
         except Exception as e:
@@ -531,6 +841,9 @@ class DBService:
                     by_intervention[act]["succeeded"] += 1
                     by_intervention[act]["recovered_inr"] += c.amount_at_risk
 
+            ai_triage_count = sum(1 for c in cases if c.ai_used)
+            ai_fallback_count = sum(1 for c in cases if c.ai_fallback_used)
+
             return {
                 "payments_processed": payments_processed,
                 "payments_recovery_eligible": payments_eligible,
@@ -552,6 +865,9 @@ class DBService:
                 "intervention_success_rate_pct": (payments_recovered / len(attempted_cases) * 100.0) if attempted_cases else 0.0,
                 "safety_block_rate_pct": (payments_blocked / payments_processed * 100.0) if payments_processed > 0 else 0.0,
                 "escalation_rate_pct": (payments_escalated / payments_processed * 100.0) if payments_processed > 0 else 0.0,
+                "ai_triage_count": ai_triage_count,
+                "ai_fallback_count": ai_fallback_count,
+                "ai_live_rate_pct": (sum(1 for c in cases if c.ai_used and not c.ai_fallback_used) / ai_triage_count * 100.0) if ai_triage_count else 0.0,
                 "by_case_type": by_case_type,
                 "by_intervention": by_intervention,
             }

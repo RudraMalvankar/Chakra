@@ -1,5 +1,5 @@
 import { API_BASE } from '../services/api';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { PhoneCall, Mic, MicOff, Phone, Loader2 } from 'lucide-react';
 import { formatCurrency } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
@@ -10,47 +10,57 @@ export const VoiceRecovery = () => {
     const [loading, setLoading] = useState(false);
     const [transcript, setTranscript] = useState<{speaker: string, text: string}[]>([]);
     const [intent, setIntent] = useState<any>(null);
+    const [error, setError] = useState<string | null>(null);
+    const [receivables, setReceivables] = useState<any[]>([]);
+    const [selectedId, setSelectedId] = useState('');
+    const [phoneNumber, setPhoneNumber] = useState('');
+
+    useEffect(() => {
+        fetch(`${API_BASE}/api/receivables`)
+            .then((res) => res.ok ? res.json() : [])
+            .then((items) => { setReceivables(items); if (items[0]) setSelectedId(items[0].id); })
+            .catch(() => setReceivables([]));
+    }, []);
+
+    const selected = receivables.find((item) => item.id === selectedId);
 
     const startCall = async () => {
         setLoading(true);
         setStatus('CONNECTING');
         setTranscript([]);
         setIntent(null);
+        setError(null);
+        if (!selected) {
+            setStatus('FAILED');
+            setError('Select an ingested receivable before starting a call.');
+            setLoading(false);
+            return;
+        }
+        if (!phoneNumber.trim()) {
+            setStatus('FAILED');
+            setError('Enter the customer phone number before starting a call.');
+            setLoading(false);
+            return;
+        }
         
         try {
             const res = await fetch(`${API_BASE}/api/receivables/voice/start`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    receivable_id: 'inv_1001',
-                    phone_number: '+919999999999'
+                    receivable_id: selected.id,
+                    phone_number: phoneNumber.trim()
                 })
             });
             const data = await res.json();
             
             if (data.status === 'error') {
                 setStatus('FAILED');
-                alert(data.message || 'Call failed');
+                setError(data.message || 'Call failed');
                 return;
             }
-            
-            // Mocking the call progression for the demo
-            setTimeout(() => setStatus('RINGING'), 1000);
-            setTimeout(() => {
-                setStatus('IN_PROGRESS');
-                setTranscript(t => [...t, { speaker: 'CHAKRA', text: 'Namaste. Chakra se call hai. Aapka ₹2,50,000 ka payment bacha hai. Kya aap abhi pay karenge ya kal?' }]);
-            }, 3000);
-            setTimeout(() => {
-                setTranscript(t => [...t, { speaker: 'CUSTOMER', text: 'Kal payment kar dunga.' }]);
-            }, 6000);
-            setTimeout(() => {
-                setIntent({ intent: 'promise_to_pay', amount: 250000, promised_date: 'Tomorrow', confidence: 0.94 });
-                setTranscript(t => [...t, { speaker: 'CHAKRA', text: 'Dhanyavaad. Humne aapka promise record kar liya hai. Kal reminder bhejenge.' }]);
-            }, 8000);
-            setTimeout(() => {
-                setStatus('COMPLETED');
-            }, 11000);
-            
+            setStatus(data.status === 'success' ? 'RINGING' : 'FAILED');
+            if (data.status !== 'success') setError(data.message || 'Provider did not accept the call');
         } catch (e) {
             console.error(e);
             setStatus('FAILED');
@@ -77,20 +87,27 @@ export const VoiceRecovery = () => {
                     
                     <div className="space-y-4 mb-8">
                         <div>
+                            <div className="text-[10px] text-text-muted uppercase tracking-widest mb-1">Receivable</div>
+                            <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className="w-full border border-border rounded px-2 py-2 font-mono text-xs" disabled={receivables.length === 0}>
+                                {receivables.length === 0 && <option value="">No ingested receivables</option>}
+                                {receivables.map((item) => <option key={item.id} value={item.id}>{item.invoice_id || item.id} — {item.customer}</option>)}
+                            </select>
+                        </div>
+                        <div>
                             <div className="text-[10px] text-text-muted uppercase tracking-widest mb-1">Customer</div>
-                            <div className="font-bold text-text-main">TechCorp India</div>
+                            <div className="font-bold text-text-main">{selected?.customer || 'No receivable selected'}</div>
                         </div>
                         <div>
                             <div className="text-[10px] text-text-muted uppercase tracking-widest mb-1">Phone</div>
-                            <div className="font-mono text-text-main">+91 XXXXXXXX42</div>
+                            <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="+91…" className="w-full border border-border rounded px-2 py-2 font-mono text-sm" />
                         </div>
                         <div>
                             <div className="text-[10px] text-text-muted uppercase tracking-widest mb-1">Amount</div>
-                            <div className="font-mono text-2xl font-bold text-text-main">{formatCurrency(250000)}</div>
+                            <div className="font-mono text-2xl font-bold text-text-main">{selected ? formatCurrency(selected.remaining_amount ?? selected.amount) : 'Not available'}</div>
                         </div>
                         <div>
                             <div className="text-[10px] text-text-muted uppercase tracking-widest mb-1">Reason</div>
-                            <div className="font-mono text-xs">Overdue Invoice (inv_1001)</div>
+                            <div className="font-mono text-xs">{selected ? `Overdue Invoice (${selected.id})` : 'No receivable selected'}</div>
                         </div>
                         <div>
                             <div className="text-[10px] text-text-muted uppercase tracking-widest mb-1">Language</div>
@@ -117,11 +134,13 @@ export const VoiceRecovery = () => {
                     </div>
                     
                     <div className="flex-1 p-6 overflow-y-auto flex flex-col space-y-4">
-                        {status === 'IDLE' && (
+                    {status === 'IDLE' && (
                             <div className="flex-1 flex items-center justify-center text-text-muted font-mono text-sm">
                                 Ready to initiate call
                             </div>
                         )}
+                        {status === 'RINGING' && <div className="flex-1 flex items-center justify-center text-text-muted font-mono text-sm">Twilio accepted the call. Conversation updates will appear from provider callbacks.</div>}
+                        {status === 'FAILED' && error && <div className="p-4 border border-red-200 bg-red-50 text-rzp-red font-mono text-sm">{error}</div>}
                         
                         {transcript.map((t, i) => (
                             <div key={i} className={`flex flex-col ${t.speaker === 'CUSTOMER' ? 'items-end' : 'items-start'}`}>

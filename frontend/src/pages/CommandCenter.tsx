@@ -100,7 +100,7 @@ export const CommandCenter = ({ metrics, auditLog, cases }: any) => {
                 <div className="lg:col-span-2 bg-white border border-border shadow-sm flex flex-col h-[500px]">
                     <div className="px-6 py-4 border-b border-border bg-gray-50 flex justify-between items-center shrink-0">
                         <h3 className="text-xs font-bold text-text-main uppercase tracking-wider">Active Recovery Missions</h3>
-                        <button onClick={() => navigate('/cases/missions')} className="text-xs font-bold text-rzp-blue uppercase tracking-wider hover:underline">View All</button>
+                        <button onClick={() => navigate('/cases')} className="text-xs font-bold text-rzp-blue uppercase tracking-wider hover:underline">View All</button>
                     </div>
                     <div className="overflow-auto flex-1">
                         <table className="w-full text-left text-sm whitespace-nowrap">

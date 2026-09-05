@@ -93,6 +93,8 @@ class SyntheticPaymentProvider(PaymentProvider):
         return hmac.compare_digest(expected_mac, signature.strip())
 
     async def retry_payment(self, payment_id: str, delay_hours: int) -> Dict[str, Any]:
+        if not self.base_url:
+            return {"status": "failed", "error": "synthetic_provider_not_configured"}
         async with httpx.AsyncClient(timeout=5.0) as client:
             try:
                 response = await client.post(f"{self.base_url}/v1/payments/{payment_id}/retry")
@@ -103,6 +105,8 @@ class SyntheticPaymentProvider(PaymentProvider):
                 return {"status": "failed", "error": "network_error", "message": str(e)}
 
     async def create_payment_link(self, customer_id: str, amount: int, template: str, payment_id: str) -> Dict[str, Any]:
+        if not self.base_url:
+            return {"status": "failed", "error": "synthetic_provider_not_configured"}
         payload = {"customer": {"id": customer_id}, "amount": amount, "notes": {"payment_id": payment_id, "template": template}}
         async with httpx.AsyncClient(timeout=5.0) as client:
             try:
@@ -114,6 +118,25 @@ class SyntheticPaymentProvider(PaymentProvider):
                 return {"status": "failed", "error": "network_error", "message": str(e)}
 
     async def get_payments(self) -> List[Dict[str, Any]]:
+        if not self.base_url:
+            return []
+
+
+class UnavailablePaymentProvider(PaymentProvider):
+    def create_order(self, amount_inr: float, currency: str, customer_id: str) -> Dict[str, Any]:
+        return {"status": "unavailable", "error": "razorpay_not_configured"}
+
+    def verify_webhook_signature(self, payload: bytes, signature: str, secret: str) -> bool:
+        return False
+
+    async def retry_payment(self, payment_id: str, delay_hours: int) -> Dict[str, Any]:
+        return {"status": "failed", "error": "razorpay_not_configured"}
+
+    async def create_payment_link(self, customer_id: str, amount: int, template: str, payment_id: str) -> Dict[str, Any]:
+        return {"status": "failed", "error": "razorpay_not_configured"}
+
+    async def get_payments(self) -> List[Dict[str, Any]]:
+        return []
         async with httpx.AsyncClient(timeout=5.0) as client:
             try:
                 response = await client.get(f"{self.base_url}/v1/payments")
@@ -127,7 +150,9 @@ class SyntheticPaymentProvider(PaymentProvider):
 def get_payment_provider() -> PaymentProvider:
     if settings.razorpay_key_id and settings.razorpay_key_secret:
         return RazorpayTestProvider(key_id=settings.razorpay_key_id, key_secret=settings.razorpay_key_secret)
-    return SyntheticPaymentProvider()
+    if settings.use_mock_razorpay:
+        return SyntheticPaymentProvider()
+    return UnavailablePaymentProvider()
 
 # For backwards compatibility with other files using razorpay_client
 razorpay_client = get_payment_provider()

@@ -54,6 +54,8 @@ async def process_batch_background(batch_id: str, count: int, scenario_type: str
     rev_recovered = 0.0
     rev_blocked = 0.0
     rev_escalated = 0.0
+    pending = 0
+    rev_pending = 0.0
 
     for i in range(count):
         if scenario_type == "mixed":
@@ -81,17 +83,21 @@ async def process_batch_background(batch_id: str, count: int, scenario_type: str
 
         case_status = "PROCESSED"
         err_msg = None
+        # Every accepted item is at risk, even when processing itself fails.
+        # Otherwise the batch can silently under-report exposure.
+        rev_at_risk += amount_inr
 
         try:
             res_case = await execute_recovery_pipeline(payload, dry_run=False)
             res_status = res_case.current_state.value
-            rev_at_risk += amount_inr
 
             if res_status == "RECOVERED":
                 recovered += 1
                 rev_recovered += amount_inr
                 rev_attempted += amount_inr
             elif res_status in ("RECOVERY_PENDING", "INTERVENTION_ATTEMPTED"):
+                pending += 1
+                rev_pending += amount_inr
                 rev_attempted += amount_inr
             elif res_status == "BLOCKED":
                 rev_blocked += amount_inr
@@ -128,6 +134,8 @@ async def process_batch_background(batch_id: str, count: int, scenario_type: str
                         run.revenue_recovered = rev_recovered
                         run.revenue_blocked = rev_blocked
                         run.revenue_escalated = rev_escalated
+                        run.pending_count = pending
+                        run.revenue_pending = rev_pending
                 session.commit()
             except Exception as commit_err:
                 logger.error(f"Error committing batch progress: {commit_err}")
@@ -150,6 +158,8 @@ async def process_batch_background(batch_id: str, count: int, scenario_type: str
                 run.revenue_recovered = rev_recovered
                 run.revenue_blocked = rev_blocked
                 run.revenue_escalated = rev_escalated
+                run.pending_count = pending
+                run.revenue_pending = rev_pending
                 session.commit()
         except Exception as e:
             logger.error(f"Error finalizing batch: {e}")
@@ -162,6 +172,11 @@ async def start_batch(req: BatchStartRequest, background_tasks: BackgroundTasks)
     Creates and initiates a backend-controlled batch run.
     Accepts count (e.g. 100) and scenario.
     """
+    if req.scenario != "mixed" and req.scenario not in SCENARIOS:
+        raise HTTPException(
+            status_code=422,
+            detail={"scenario": f"unsupported scenario; choose mixed or one of {SCENARIOS}"},
+        )
     batch_id = f"batch_{uuid.uuid4().hex[:8]}"
     factory = get_session_factory()
     
@@ -209,6 +224,8 @@ def list_batches():
                 "revenue_recovered_inr": r.revenue_recovered,
                 "revenue_blocked_inr": r.revenue_blocked,
                 "revenue_escalated_inr": r.revenue_escalated,
+                "pending_count": r.pending_count,
+                "revenue_pending_inr": r.revenue_pending,
                 "recovery_rate_pct": round((r.revenue_recovered / r.revenue_at_risk * 100.0) if r.revenue_at_risk > 0 else 0.0, 2),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
                 "completed_at": r.completed_at.isoformat() if r.completed_at else None,
@@ -240,6 +257,8 @@ def get_batch(batch_id: str):
             "revenue_recovered_inr": r.revenue_recovered,
             "revenue_blocked_inr": r.revenue_blocked,
             "revenue_escalated_inr": r.revenue_escalated,
+            "pending_count": r.pending_count,
+            "revenue_pending_inr": r.revenue_pending,
             "recovery_rate_pct": round(recovery_rate, 2),
             "created_at": r.created_at.isoformat() if r.created_at else None,
             "completed_at": r.completed_at.isoformat() if r.completed_at else None,

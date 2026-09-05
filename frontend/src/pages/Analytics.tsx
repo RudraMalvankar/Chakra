@@ -62,6 +62,14 @@ export const Analytics = ({ metrics }: any) => {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <div className="bg-white border border-border shadow-sm p-6 lg:col-span-2">
+                    <h3 className="text-xs font-bold text-text-main uppercase tracking-wider mb-4">AI Triage Provenance</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm font-mono">
+                        <div><div className="text-[10px] text-text-muted uppercase">Ambiguous cases triaged</div><div className="text-xl font-bold">{m.ai_triage_count ?? 'Not available'}</div></div>
+                        <div><div className="text-[10px] text-text-muted uppercase">Fallback decisions</div><div className="text-xl font-bold">{m.ai_fallback_count ?? 'Not available'}</div></div>
+                        <div><div className="text-[10px] text-text-muted uppercase">Live Gemini rate</div><div className="text-xl font-bold">{m.ai_live_rate_pct == null ? 'Not available' : `${m.ai_live_rate_pct}%`}</div></div>
+                    </div>
+                </div>
                 <div className="bg-white border border-border shadow-sm p-6 h-[400px]">
                     <h3 className="text-xs font-bold text-text-main uppercase tracking-wider mb-6">Recovery by Workflow</h3>
                     {byWorkflow.length > 0 ? (

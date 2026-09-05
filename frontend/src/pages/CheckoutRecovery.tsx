@@ -59,7 +59,9 @@ export const CheckoutRecovery = ({ refresh }: any) => {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ amount_inr: 5000, customer_id: 'cust_demo_001' })
                 });
+                if (!fbRes.ok) throw new Error(`Unable to create checkout order (${fbRes.status})`);
                 const fbData = await fbRes.json();
+                if (!fbData.order_id) throw new Error('Provider did not return an order id');
                 setOrderId(fbData.order_id);
                 initiateModal(fbData.order_id);
             } else {
@@ -154,7 +156,9 @@ export const CheckoutRecovery = ({ refresh }: any) => {
                     customer_id: 'cust_demo_001'
                 })
             });
+            if (!abandonRes.ok) throw new Error(`Unable to record abandonment (${abandonRes.status})`);
             const data = await abandonRes.json();
+            if (!data.case_id) throw new Error('Backend did not return a recovery case');
             setCaseId(data.case_id);
 
             if (refresh) refresh();

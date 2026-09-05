@@ -39,6 +39,14 @@ class RecoveryExecutor:
                 "policy_id": decision.policy_id,
                 "effective_action": decision.decision.value
             })
+            from backend.app.services.db_service import DBService
+            DBService.create_escalation(
+                ctx.case_id or ctx.payment_id,
+                reason=decision.reason_code or "COMPLIANCE_BLOCK",
+                priority="HIGH" if decision.reason_code == "HARD_COMPLIANCE_BLOCK" else "MEDIUM",
+                severity="HIGH" if decision.reason_code == "HARD_COMPLIANCE_BLOCK" else "MEDIUM",
+                notes="Automation stopped by the deterministic SafetyGate.",
+            )
             return ctx
 
         # 2. Handle Escalated Decisions
@@ -50,6 +58,13 @@ class RecoveryExecutor:
                 "requires_human": decision.requires_human,
                 "effective_action": decision.decision.value
             })
+            from backend.app.services.db_service import DBService
+            DBService.create_escalation(
+                ctx.case_id or ctx.payment_id,
+                reason=decision.reason_code or "MANUAL_REVIEW_REQUIRED",
+                priority="HIGH" if decision.requires_human else "MEDIUM",
+                notes="Automation requires a human recovery decision.",
+            )
             return ctx
 
         # 3. Attempting Intervention
@@ -101,6 +116,17 @@ class RecoveryExecutor:
                 outcome_data["effective_action"] = decision.decision.value
                 outcome_data["template_id"] = template
                 log_audit_event(ctx.payment_id, "execution_outcome", outcome_data)
+                from backend.app.services.db_service import DBService
+                provider_name = "razorpay_test" if settings.is_razorpay_configured else "synthetic"
+                DBService.record_payment_link(
+                    case_id=ctx.case_id or ctx.payment_id,
+                    customer_id=ctx.customer_id,
+                    provider=provider_name,
+                    amount=ctx.amount_inr,
+                    url=res.get("short_url") or res.get("recovery_url") or res.get("url"),
+                    provider_link_id=res.get("id") or res.get("link_id"),
+                    status="CAPTURED" if outcome.recovered else ("AWAITING_PAYMENT" if outcome.status in {"created", "pending", "queued"} else "FAILED"),
+                )
 
             elif decision.decision == InterventionType.VOICE_RECOVERY:
                 customer_name = f"customer_{ctx.customer_id[-4:]}" if ctx.customer_id and len(ctx.customer_id) >= 4 else "customer"
@@ -133,6 +159,13 @@ class RecoveryExecutor:
         except Exception as e:
             log_audit_event(ctx.payment_id, "execution_error", {"error": str(e), "effective_action": decision.decision.value})
             ctx.current_state = PaymentState.RECOVERY_FAILED
+            from backend.app.services.db_service import DBService
+            DBService.create_escalation(
+                ctx.case_id or ctx.payment_id,
+                reason="PROVIDER_UNAVAILABLE",
+                priority="HIGH",
+                notes="Provider execution failed; no recovery was claimed.",
+            )
 
         return ctx
 
@@ -276,6 +309,13 @@ async def execute_recovery_pipeline(
 
     # 4. Execution
     final_ctx = await RecoveryExecutor.execute(ctx, approved_decision, dry_run=dry_run)
+    DBService.record_recovery_event(
+        case_id=ctx.case_id or ctx.payment_id,
+        event_type="execution_completed",
+        action=approved_decision.decision.value,
+        status=final_ctx.current_state.value,
+        amount=ctx.amount_inr if final_ctx.current_state == PaymentState.RECOVERED else 0.0,
+    )
     
     # DB Persistence: Final Case & Payment State
     final_status = final_ctx.current_state.value

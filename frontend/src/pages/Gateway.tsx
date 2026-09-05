@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { fetchMockPayments, fetchConfig } from '../services/api';
+import { API_BASE, fetchMockPayments, fetchConfig } from '../services/api';
 import { formatExact } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
 import { Loader } from 'lucide-react';
@@ -8,7 +8,7 @@ export const Gateway = () => {
     const [payments, setPayments] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [retrying, setRetrying] = useState<string | null>(null);
-    const [config, setConfig] = useState<any>({ mode: 'synthetic' });
+    const [config, setConfig] = useState<any>({ mode: 'unavailable' });
 
     const load = async () => {
         setLoading(true);
@@ -26,7 +26,8 @@ export const Gateway = () => {
     const handleRetry = async (id: string) => {
         setRetrying(id);
         try {
-            await fetch(`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/payments/${id}/retry`, { method: 'POST' });
+            const res = await fetch(`${API_BASE}/api/payments/${id}/retry`, { method: 'POST' });
+            if (!res.ok) throw new Error(`Retry failed (${res.status})`);
             await load();
         } catch (e) {
             console.error(e);
@@ -45,8 +46,10 @@ export const Gateway = () => {
                 </div>
                 {config.mode === 'test' ? (
                     <Badge status="SUCCESS">RAZORPAY TEST MODE</Badge>
+                ) : config.mode === 'synthetic' ? (
+                    <Badge status="INFO">EXPLICIT SYNTHETIC MODE</Badge>
                 ) : (
-                    <Badge status="INFO">SYNTHETIC GATEWAY</Badge>
+                    <Badge status="FAILED">PROVIDER UNAVAILABLE</Badge>
                 )}
             </div>
 
@@ -105,13 +108,13 @@ export const Gateway = () => {
                                             {p.error_code || p.error_description || '-'}
                                         </td>
                                         <td className="px-6 py-4">
-                                            {p.status === 'failed' && config.mode !== 'test' && (
+                                            {p.status === 'failed' && config.mode !== 'unavailable' && (
                                                 <button
                                                     onClick={() => handleRetry(p.id)}
                                                     disabled={retrying === p.id}
                                                     className="text-xs bg-gray-100 hover:bg-gray-200 text-text-main px-3 py-1 rounded font-mono font-bold transition-colors disabled:opacity-50 flex items-center"
                                                 >
-                                                    {retrying === p.id ? <Loader className="animate-spin mr-1" size={12} /> : 'Simulate Capture'}
+                                                    {retrying === p.id ? <Loader className="animate-spin mr-1" size={12} /> : 'Request Provider Retry'}
                                                 </button>
                                             )}
                                         </td>

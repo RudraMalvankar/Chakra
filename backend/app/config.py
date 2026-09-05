@@ -25,10 +25,11 @@ class Settings(BaseSettings):
     twilio_auth_token: Optional[str] = None
     twilio_from_number: Optional[str] = None
     twilio_webhook_base_url: Optional[str] = None
+    use_mock_voice: bool = False
 
     # Toggle for using the Mock Server instead of real Razorpay
-    use_mock_razorpay: bool = True
-    mock_razorpay_url: str = "http://localhost:8002"
+    use_mock_razorpay: bool = False
+    mock_razorpay_url: Optional[str] = None
 
     # CORS
     cors_origins: str = "*"

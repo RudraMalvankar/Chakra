@@ -1,7 +1,9 @@
 import type { Metrics } from '../types';
 import { AuditLogSchema } from '../types/schemas';
 
-export const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001";
+// Production deploys Chakra behind one origin.  Local development supplies this
+// value through VITE_API_BASE_URL; no backend address is baked into the bundle.
+export const API_BASE = (import.meta.env.VITE_API_BASE_URL || window.location.origin).replace(/\/$/, '');
 
 export const fetchMetrics = async (): Promise<Metrics> => {
   const res = await fetch(`${API_BASE}/api/metrics`);
@@ -45,9 +47,25 @@ export const fetchMockPayments = async () => {
 };
 
 export const fetchConfig = async () => {
-    const res = await fetch(`${API_BASE}/api/config`);
-    if (!res.ok) return { mode: 'synthetic' };
-    return res.json();
+    try {
+        const res = await fetch(`${API_BASE}/api/config`);
+        if (!res.ok) return { mode: 'unavailable', provider: 'unavailable' };
+        return res.json();
+    } catch (_err) {
+        return { mode: 'unavailable', provider: 'unavailable' };
+    }
+};
+
+export const fetchCases = async (limit = 200) => {
+  const res = await fetch(`${API_BASE}/api/cases?limit=${limit}`);
+  if (!res.ok) throw new Error(`Unable to load cases (${res.status})`);
+  return res.json();
+};
+
+export const fetchCaseDetail = async (caseId: string) => {
+  const res = await fetch(`${API_BASE}/api/cases/${encodeURIComponent(caseId)}`);
+  if (!res.ok) throw new Error(`Unable to load case (${res.status})`);
+  return res.json();
 };
 
 export const createOrder = async (payload: any) => {

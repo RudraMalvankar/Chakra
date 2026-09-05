@@ -65,7 +65,9 @@ def test_outcome_evaluator_pending_status():
     assert res.recovered is False
     assert res.status == "created" or res.status == "pending"
     assert res.amount_recovered_inr == 0.0
-    assert ctx.current_state == PaymentState.RECOVERY_FAILED
+    # A provider-created payment link is awaiting customer payment, not a
+    # failed recovery. Only an explicit provider failure may enter FAILED.
+    assert ctx.current_state == PaymentState.RECOVERY_PENDING
 
 
 def test_outcome_evaluator_gateway_error():

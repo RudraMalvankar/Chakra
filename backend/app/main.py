@@ -11,6 +11,7 @@ from backend.app.config import settings
 from backend.app.api.webhooks import router as webhook_router
 from backend.app.api.receivables import router as receivables_router
 from backend.app.api.batches import router as batches_router
+from backend.app.api.escalations import router as escalations_router
 from backend.app.services.metrics_aggregator import generate_metrics_report
 from backend.app.lib.audit import AUDIT_FILE, log_audit_event
 from backend.app.models.case import RecoveryCase, CaseType
@@ -44,6 +45,7 @@ app.add_middleware(
 app.include_router(webhook_router, prefix="/webhooks")
 app.include_router(receivables_router, prefix="/api/receivables")
 app.include_router(batches_router, prefix="/api/batches")
+app.include_router(escalations_router, prefix="/api/escalations")
 
 @app.get("/health")
 def health_check():
@@ -51,7 +53,7 @@ def health_check():
         "status": "healthy",
         "database": "connected" if settings.is_database_configured else "not_configured",
         "razorpay": "test_mode" if settings.is_razorpay_configured else "synthetic",
-        "twilio": "configured" if settings.is_twilio_configured else "mock",
+        "twilio": "configured" if settings.is_twilio_configured else "not_configured",
         "gemini": "configured" if settings.is_gemini_configured else "fallback_only",
     }
 
@@ -86,7 +88,10 @@ def get_case(case_id: str):
     detail = DBService.get_case_detail(case_id)
     if detail:
         return detail
-    return get_case_trace(case_id)
+    # Case detail is an operational resource, so it must come from the
+    # database-backed case aggregate. Audit logs remain available through the
+    # explicit /trace endpoint and are not used to reconstruct UI state.
+    raise HTTPException(status_code=404, detail="Case not found in operational database")
 
 @app.get("/api/cases/{case_id}/trace")
 def get_case_trace(case_id: str):
@@ -154,10 +159,16 @@ def get_config():
             "mode": "test",
             "razorpay_key_id": settings.razorpay_key_id
         }
+    if settings.use_mock_razorpay:
+        return {
+            "provider": "synthetic",
+            "mode": "synthetic",
+            "razorpay_key_id": None,
+        }
     return {
-        "provider": "synthetic",
-        "mode": "synthetic",
-        "razorpay_key_id": None
+        "provider": "unavailable",
+        "mode": "unavailable",
+        "razorpay_key_id": None,
     }
 
 class CreateOrderRequest(BaseModel):
@@ -167,8 +178,12 @@ class CreateOrderRequest(BaseModel):
 @app.post("/api/payments/orders")
 @app.post("/api/payments/create_order")
 def create_order(req: CreateOrderRequest):
+    if req.amount_inr <= 0:
+        raise HTTPException(status_code=422, detail="amount_inr must be positive")
     provider = get_payment_provider()
     result = provider.create_order(req.amount_inr, "INR", req.customer_id)
+    if result.get("status") == "unavailable" or not result.get("order_id"):
+        raise HTTPException(status_code=503, detail="Razorpay is not configured; checkout order unavailable")
     
     # Pre-register order in DB
     DBService.upsert_payment(
@@ -200,6 +215,12 @@ def verify_payment(req: VerifyPaymentRequest):
     records audit and recovery events. Never marks recovered without signature verification.
     """
     provider = get_payment_provider()
+
+    if not settings.is_razorpay_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="Razorpay is not configured; payment capture cannot be verified in this environment.",
+        )
     
     # Signature verification
     is_valid = False
@@ -214,10 +235,6 @@ def verify_payment(req: VerifyPaymentRequest):
             is_valid = True
         except Exception as e:
             raise HTTPException(status_code=400, detail=f"Invalid payment signature: {e}")
-    else:
-        # Synthetic / simulation mode signature verification
-        is_valid = bool(req.razorpay_signature)
-
     if not is_valid:
         raise HTTPException(status_code=400, detail="Payment signature verification failed.")
 
@@ -268,6 +285,28 @@ def verify_payment(req: VerifyPaymentRequest):
         "payment_id": req.razorpay_payment_id,
         "order_id": req.razorpay_order_id,
     }
+
+
+@app.post("/api/payments/{payment_id}/retry")
+async def retry_payment(payment_id: str, delay_hours: int = 0):
+    """Request a provider-managed retry; never imply capture from acceptance."""
+    if delay_hours < 0:
+        raise HTTPException(status_code=422, detail="delay_hours cannot be negative")
+    provider = get_payment_provider()
+    result = await provider.retry_payment(payment_id, delay_hours)
+    status = str(result.get("status", "failed")).lower()
+    DBService.record_audit_event(
+        payment_id,
+        "provider_retry_requested",
+        {
+            "delay_hours": delay_hours,
+            "provider": "razorpay_test" if settings.is_razorpay_configured else "synthetic",
+            "provider_status": status,
+            "provider_error": result.get("error"),
+            "recovered": False,
+        },
+    )
+    return {"payment_id": payment_id, "status": status, "recovered": False, "provider_result": result}
 
 class AbandonPaymentRequest(BaseModel):
     order_id: str

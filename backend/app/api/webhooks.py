@@ -6,10 +6,15 @@ from fastapi import APIRouter, Request, HTTPException, Header
 import hmac
 import hashlib
 from typing import Dict, Any, Optional
+from datetime import datetime, timezone, timedelta
 
 from backend.app.config import settings
 from backend.app.services.context_builder import ContextBuilder
 from backend.app.services.recovery_executor import execute_recovery_pipeline
+from backend.app.services.db_service import DBService
+from backend.app.db.session import get_session_factory
+from backend.app.db.models import Receivable, PromiseToPay
+from sqlalchemy import select
 
 router = APIRouter()
 
@@ -202,10 +207,79 @@ async def twilio_gather(
 
     speech = form.get("SpeechResult", "")
     intent = await extract_voice_intent(speech)
+    call_sid = form.get("CallSid")
+
+    # A voice promise is only confirmed after it is persisted against a real
+    # receivable.  The TwiML response must never claim a promise was recorded
+    # when the invoice, amount, or database write is invalid.
+    promise_recorded = False
+    promise_id = None
+    receivable_customer = None
+    if intent.intent == "promise_to_pay" and case_id:
+        try:
+            promised_amount = float(amount)
+        except (TypeError, ValueError):
+            promised_amount = 0.0
+        factory = get_session_factory()
+        with factory() as session:
+            receivable = session.execute(
+                select(Receivable).where(Receivable.id == case_id)
+            ).scalar_one_or_none()
+            if receivable and promised_amount > 0:
+                remaining = max(0.0, receivable.amount - (receivable.recovered_amount or 0.0))
+                if promised_amount <= remaining:
+                    existing = session.execute(
+                        select(PromiseToPay).where(
+                            PromiseToPay.receivable_id == case_id,
+                            PromiseToPay.status.in_(("UPCOMING", "DUE_TODAY")),
+                        )
+                    ).scalar_one_or_none()
+                    if not existing:
+                        promise = PromiseToPay(
+                            receivable_id=case_id,
+                            customer_name=receivable.customer_name,
+                            promised_amount=promised_amount,
+                            promise_date=(datetime.now(timezone.utc) + timedelta(days=1)).date().isoformat(),
+                            status="UPCOMING",
+                            source="voice",
+                            notes=speech[:1000] if speech else None,
+                        )
+                        session.add(promise)
+                        receivable.status = "PROMISE_TO_PAY"
+                        receivable.previous_promises = (receivable.previous_promises or 0) + 1
+                        session.commit()
+                        promise_id = promise.id
+                        promise_recorded = True
+                    else:
+                        promise_id = existing.id
+                        promise_recorded = True
+                receivable_customer = receivable.customer_id
+
+    DBService.record_communication(
+        case_id=case_id or None,
+        customer_id=receivable_customer,
+        channel="VOICE",
+        communication_type="VOICE_RESPONSE",
+        provider="twilio" if settings.twilio_auth_token else "unavailable",
+        provider_message_id=call_sid,
+        status="RECEIVED",
+        metadata={"intent": intent.intent, "confidence": intent.confidence, "promise_id": promise_id},
+    )
     
     twiml = '<?xml version="1.0" encoding="UTF-8"?><Response>'
     
-    if intent.intent == "promise_to_pay":
+    if intent.intent == "promise_to_pay" and promise_recorded:
+        DBService.record_audit_event(
+            promise_id,
+            "promise_created",
+            {
+                "receivable_id": case_id,
+                "amount_inr": float(amount),
+                "source": "voice",
+                "call_sid": call_sid,
+                "transcript": speech,
+            },
+        )
         twiml += '<Say language="hi-IN">Dhanyavaad. Humne aapka promise record kar liya hai. Kal reminder bhejenge.</Say>'
         
         payload = {
@@ -215,15 +289,19 @@ async def twilio_gather(
             "case_type": "PROMISE_TO_PAY",
             "customer_id": "unknown",
             "context": {
-                "promise_status": "ACTIVE",
+                "promise_status": "UPCOMING",
                 "invoice_id": case_id,
-                "transcript": speech
+                "transcript": speech,
+                "promise_id": promise_id,
             }
         }
         await execute_recovery_pipeline(payload, dry_run=True)
+
+    elif intent.intent == "promise_to_pay":
+        twiml += '<Say language="hi-IN">Maaf kijiye, promise record nahi ho saka. Humari team aapse sampark karegi.</Say>'
         
     elif intent.intent == "pay_now":
-        twiml += '<Say language="hi-IN">Dhanyavaad. Aapko payment link SMS kar diya gaya hai.</Say>'
+        twiml += '<Say language="hi-IN">Dhanyavaad. Payment link process kiya jayega.</Say>'
     else:
         twiml += '<Say language="hi-IN">Theek hai. Hum baad me sampark karenge.</Say>'
         

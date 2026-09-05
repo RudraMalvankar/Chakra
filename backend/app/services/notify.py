@@ -7,6 +7,7 @@ import os
 import sys
 from typing import Dict, Any, Optional, List
 import yaml
+import asyncio
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..')))
 
@@ -113,3 +114,24 @@ def build_notification(
         "message": message,
         "variables_filled": variables,
     }
+
+
+async def send_sms(to_number: str, message: str) -> Dict[str, Any]:
+    """Send an SMS through Twilio or return an explicit unavailable result."""
+    if not settings.is_twilio_configured:
+        return {"status": "unavailable", "provider": "twilio", "message": "TWILIO NOT CONFIGURED"}
+    if not to_number or not message:
+        return {"status": "failed", "provider": "twilio", "message": "recipient and message are required"}
+    try:
+        from twilio.rest import Client
+        # The SDK call is synchronous; keep this service contract async for the
+        # FastAPI callers without claiming delivery before Twilio accepts it.
+        result = await asyncio.to_thread(
+            Client(settings.twilio_account_sid, settings.twilio_auth_token).messages.create,
+            body=message,
+            from_=settings.twilio_from_number,
+            to=to_number,
+        )
+        return {"status": "sent", "provider": "twilio", "provider_message_id": result.sid}
+    except Exception as exc:
+        return {"status": "failed", "provider": "twilio", "message": str(exc)[:240]}

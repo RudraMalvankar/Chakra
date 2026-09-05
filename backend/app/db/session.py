@@ -76,7 +76,8 @@ def ensure_schema():
         required = ['customers', 'payments', 'recovery_cases', 'recovery_decisions',
                      'recovery_events', 'provider_events', 'audit_events',
                      'batch_runs', 'batch_cases', 'receivables', 'promises_to_pay',
-                     'voice_interactions']
+                     'voice_interactions', 'communications', 'payment_links',
+                     'escalations', 'escalation_actions']
         missing = [t for t in required if t not in tables]
         if missing:
             raise RuntimeError(

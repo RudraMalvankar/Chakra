@@ -11,14 +11,21 @@ export const Receivables = () => {
     const [receivables, setReceivables] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedId, setSelectedId] = useState<string | null>(null);
+    const [promiseDate, setPromiseDate] = useState('');
+    const [actionError, setActionError] = useState<string | null>(null);
 
     const fetchReceivables = async () => {
         try {
             const res = await fetch(`${API_BASE}/api/receivables`);
+            if (!res.ok) throw new Error(`Unable to load receivables (${res.status})`);
             const data = await res.json();
+            if (!Array.isArray(data)) throw new Error('Receivables response was invalid');
             setReceivables(data);
+            setActionError(null);
         } catch (e) {
             console.error(e);
+            setReceivables([]);
+            setActionError(e instanceof Error ? e.message : 'Unable to load receivables');
         } finally {
             setLoading(false);
         }
@@ -26,50 +33,51 @@ export const Receivables = () => {
 
     useEffect(() => {
         fetchReceivables();
-        const interval = setInterval(fetchReceivables, 5000);
-        return () => clearInterval(interval);
     }, []);
 
     const handleCreatePromise = async (id: string, amount: number, customer: string) => {
-        const date = prompt("Enter promised date (YYYY-MM-DD):", new Date(Date.now() + 86400000*3).toISOString().split('T')[0]);
-        if (!date) return;
+        if (!promiseDate) { setActionError('Choose a promised date first.'); return; }
         
         try {
-            await fetch(`${API_BASE}/api/receivables/promises`, {
+            const res = await fetch(`${API_BASE}/api/receivables/promises`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     receivable_id: id,
                     customer: customer,
                     amount: amount,
-                    promised_date: date
+                    promised_date: promiseDate
                 })
             });
+            if (!res.ok) throw new Error('Unable to record promise');
+            setActionError(null);
+            setPromiseDate('');
             fetchReceivables();
         } catch (e) {
-            console.error(e);
+            setActionError(e instanceof Error ? e.message : 'Unable to record promise');
         }
     };
 
     const handleBreakPromise = async (recId: string, promiseId: string) => {
         try {
-            await fetch(`${API_BASE}/api/receivables/promises/${promiseId}/break`, {
+            const res = await fetch(`${API_BASE}/api/receivables/promises/${promiseId}/break`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ receivable_id: recId })
             });
+            if (!res.ok) throw new Error('Unable to mark promise broken');
             fetchReceivables();
         } catch (e) {
-            console.error(e);
+            setActionError(e instanceof Error ? e.message : 'Unable to update promise');
         }
     };
 
     const selected = receivables.find(r => r.id === selectedId);
 
-    const totalOutstanding = receivables.reduce((sum, r) => sum + r.amount, 0);
-    const totalOverdue = receivables.filter(r => r.days_overdue > 0).reduce((sum, r) => sum + r.amount, 0);
-    const totalPromises = receivables.filter(r => r.status === 'PROMISES_DUE').reduce((sum, r) => sum + r.amount, 0);
-    const atRisk = receivables.filter(r => r.risk === 'HIGH' || r.risk === 'CRITICAL').reduce((sum, r) => sum + r.amount, 0);
+    const totalOutstanding = receivables.reduce((sum, r) => sum + (r.remaining_amount ?? r.amount), 0);
+    const totalOverdue = receivables.filter(r => r.days_overdue > 0).reduce((sum, r) => sum + (r.remaining_amount ?? r.amount), 0);
+    const totalPromises = receivables.filter(r => r.status === 'PROMISE_TO_PAY').reduce((sum, r) => sum + (r.remaining_amount ?? r.amount), 0);
+    const atRisk = receivables.filter(r => r.risk === 'HIGH' || r.risk === 'CRITICAL').reduce((sum, r) => sum + (r.remaining_amount ?? r.amount), 0);
 
     return (
         <div className="max-w-7xl mx-auto space-y-6">
@@ -82,6 +90,8 @@ export const Receivables = () => {
                     <p className="text-sm text-text-muted mt-1">Manage outstanding invoices and track customer payment promises.</p>
                 </div>
             </div>
+
+            {actionError && <div className="bg-red-50 border border-red-200 text-rzp-red p-3 text-sm">{actionError}</div>}
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div className="bg-white border border-border shadow-sm p-6">
@@ -138,6 +148,11 @@ export const Receivables = () => {
                                         <td className="px-6 py-3"><Badge status={r.status}>{r.status}</Badge></td>
                                     </tr>
                                 ))}
+                                {!loading && receivables.length === 0 && (
+                                    <tr><td colSpan={6} className="px-6 py-12 text-center text-text-muted font-mono">
+                                        No receivables have been ingested.
+                                    </td></tr>
+                                )}
                             </tbody>
                         </table>
                     </div>
@@ -181,7 +196,7 @@ export const Receivables = () => {
                                                     <div className="flex justify-between items-center text-xs text-text-muted font-mono">
                                                         <span>Due: {p.promised_date}</span>
                                                     </div>
-                                                    {p.status === 'PROMISE_CREATED' && (
+                                                    {['UPCOMING', 'DUE_TODAY'].includes(p.status) && (
                                                         <div className="mt-3 pt-3 border-t border-border flex justify-end">
                                                             <button 
                                                                 onClick={(e) => { e.stopPropagation(); handleBreakPromise(selected.id, p.id); }}
@@ -201,11 +216,15 @@ export const Receivables = () => {
                                     <h4 className="text-[10px] text-text-muted uppercase tracking-widest mb-3 font-bold">Recovery Actions</h4>
                                     <div className="space-y-2">
                                         <button 
-                                            onClick={() => handleCreatePromise(selected.id, selected.amount, selected.customer)}
+                                            disabled={!promiseDate}
+                                            onClick={() => handleCreatePromise(selected.id, selected.remaining_amount ?? selected.amount, selected.customer)}
                                             className="w-full py-2 bg-rzp-blue text-white text-xs font-bold uppercase tracking-widest rounded hover:bg-blue-700 transition-colors"
                                         >
                                             Record Promise to Pay
                                         </button>
+                                        <label className="block text-[10px] font-bold uppercase tracking-widest text-text-muted">Promised date
+                                            <input type="date" value={promiseDate} onChange={e => setPromiseDate(e.target.value)} className="mt-1 w-full border border-border rounded px-2 py-2 font-mono text-xs" />
+                                        </label>
                                         <button 
                                             onClick={() => navigate('/voice-recovery')}
                                             className="w-full py-2 bg-white border border-rzp-blue text-rzp-blue text-xs font-bold uppercase tracking-widest rounded hover:bg-blue-50 transition-colors"

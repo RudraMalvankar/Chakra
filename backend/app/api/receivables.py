@@ -10,67 +10,23 @@ from datetime import datetime, timezone
 import uuid
 import logging
 
-from sqlalchemy import select, func, desc
+from sqlalchemy import select, desc
 from backend.app.config import settings
 from backend.app.db.session import get_session_factory
 from backend.app.db.models import Receivable, PromiseToPay, VoiceInteraction, Customer, utcnow
 from backend.app.services.recovery_executor import execute_recovery_pipeline
+from backend.app.services.db_service import DBService
+from backend.app.services.context_builder import ContextBuilder
+from backend.app.services.revenue_risk_engine import RevenueRiskEngine
+from backend.app.services.recovery_agent import RecoveryAgent
 
 logger = logging.getLogger("chakra.receivables")
 
 router = APIRouter()
 
-SEED_RECEIVABLES = [
-    {
-        "id": "inv_1001",
-        "customer_id": "cust_techcorp",
-        "customer_name": "TechCorp India",
-        "invoice_number": "INV-2026-001",
-        "amount": 250000.0,
-        "due_date": "2026-08-15",
-        "days_overdue": 20,
-        "risk_level": "HIGH",
-        "status": "OVERDUE",
-        "previous_promises": 1,
-        "payment_behavior": "SOMETIMES_LATE",
-    },
-    {
-        "id": "inv_1002",
-        "customer_id": "cust_alpharetail",
-        "customer_name": "Alpha Retail Co.",
-        "invoice_number": "INV-2026-002",
-        "amount": 85000.0,
-        "due_date": "2026-09-01",
-        "days_overdue": 3,
-        "risk_level": "MEDIUM",
-        "status": "OVERDUE",
-        "previous_promises": 0,
-        "payment_behavior": "USUALLY_ONTIME",
-    },
-    {
-        "id": "inv_1003",
-        "customer_id": "cust_betatech",
-        "customer_name": "BetaTech Solutions",
-        "invoice_number": "INV-2026-003",
-        "amount": 45000.0,
-        "due_date": "2026-09-10",
-        "days_overdue": 0,
-        "risk_level": "LOW",
-        "status": "UPCOMING",
-        "previous_promises": 0,
-        "payment_behavior": "ALWAYS_ONTIME",
-    },
-]
-
-
 def _ensure_seeded(session):
-    """Seed initial invoices if DB table is empty."""
-    existing = session.execute(select(func.count(Receivable.id))).scalar() or 0
-    if existing == 0:
-        for item in SEED_RECEIVABLES:
-            rec = Receivable(**item)
-            session.add(rec)
-        session.commit()
+    """Compatibility hook; operational receivables must come from ingestion."""
+    return None
 
 
 # ─── Models ───────────────────────────────────────────────────────────────────
@@ -82,12 +38,89 @@ class PromiseCreateRequest(BaseModel):
     promised_date: str  # ISO date YYYY-MM-DD
     notes: Optional[str] = None
 
+
+class ReceivableIngestRequest(BaseModel):
+    id: Optional[str] = None
+    customer_id: str
+    customer_name: str
+    invoice_number: str
+    amount: float
+    due_date: str
+    days_overdue: int = 0
+    risk_level: str = "MEDIUM"
+    payment_behavior: str = "UNKNOWN"
+
 class VoiceRecoveryRequest(BaseModel):
     receivable_id: str
     phone_number: str
 
 
+class ReceivablePaymentRequest(BaseModel):
+    amount: float
+    provider: str
+    reference: str
+
+
+class DisputeRequest(BaseModel):
+    reason: str
+    actor: str = "customer"
+
+
+class PromiseFulfillmentRequest(BaseModel):
+    amount: Optional[float] = None
+    provider: str
+    reference: str
+
+
+class SmsRequest(BaseModel):
+    phone_number: str
+    message: Optional[str] = None
+
+
 # ─── Receivables endpoints ─────────────────────────────────────────────────────
+
+@router.post("/")
+def ingest_receivable(req: ReceivableIngestRequest):
+    """Persist an invoice supplied by an upstream receivables system."""
+    if req.amount <= 0:
+        raise HTTPException(status_code=422, detail="amount must be positive")
+    if req.days_overdue < 0:
+        raise HTTPException(status_code=422, detail="days_overdue cannot be negative")
+    factory = get_session_factory()
+    with factory() as session:
+        existing = session.execute(
+            select(Receivable).where(Receivable.invoice_number == req.invoice_number)
+        ).scalar_one_or_none()
+        if existing:
+            raise HTTPException(status_code=409, detail="invoice already exists")
+        item = Receivable(
+            id=req.id or f"inv_{uuid.uuid4().hex[:12]}",
+            customer_id=req.customer_id,
+            customer_name=req.customer_name,
+            invoice_number=req.invoice_number,
+            amount=req.amount,
+            due_date=req.due_date,
+            days_overdue=req.days_overdue,
+            risk_level=req.risk_level,
+            status="OVERDUE" if req.days_overdue > 0 else "UPCOMING",
+            payment_behavior=req.payment_behavior,
+        )
+        session.add(item)
+        session.commit()
+        result = {"id": item.id, "invoice_number": item.invoice_number, "status": item.status}
+    DBService.record_audit_event(
+        item.id,
+        "receivable_ingested",
+        {
+            "invoice_number": item.invoice_number,
+            "customer_id": item.customer_id,
+            "amount_inr": item.amount,
+            "due_date": item.due_date,
+            "status": item.status,
+            "actor": "upstream_receivables",
+        },
+    )
+    return result
 
 @router.get("/")
 def list_receivables():
@@ -98,6 +131,16 @@ def list_receivables():
         items = session.execute(stmt).scalars().all()
         results = []
         for r in items:
+            recovery_context = ContextBuilder.build_context({
+                "payment_id": r.id,
+                "amount_inr": max(0.0, r.amount - (r.recovered_amount or 0.0)),
+                "case_type": "RECEIVABLE",
+                "customer_id": r.customer_id,
+                "error_code": "receivable_overdue",
+                "context": {"days_overdue": r.days_overdue, "risk": r.risk_level, "payment_behavior": r.payment_behavior},
+            })
+            risk_assessment = RevenueRiskEngine.assess(recovery_context)
+            agent_decision = RecoveryAgent.decide(recovery_context)
             latest_p = None
             if r.promises:
                 latest = sorted(r.promises, key=lambda p: p.created_at or datetime.min, reverse=True)[0]
@@ -107,6 +150,8 @@ def list_receivables():
                 "customer": r.customer_name,
                 "invoice_id": r.invoice_number,
                 "amount": r.amount,
+                "recovered_amount": r.recovered_amount or 0.0,
+                "remaining_amount": max(0.0, r.amount - (r.recovered_amount or 0.0)),
                 "due_date": r.due_date,
                 "days_overdue": r.days_overdue,
                 "risk": r.risk_level,
@@ -114,6 +159,10 @@ def list_receivables():
                 "previous_promises": r.previous_promises,
                 "payment_behavior": r.payment_behavior,
                 "promise": latest_p,
+                "risk_probability": risk_assessment.recovery_probability,
+                "recommended_action": agent_decision.selected_action,
+                "recommendation_reason": agent_decision.decision_factors[0] if agent_decision.decision_factors else "Not available",
+                "candidate_actions": [candidate.model_dump() for candidate in agent_decision.candidate_actions],
             })
         return results
 
@@ -138,6 +187,8 @@ def get_summary():
             "overdue_amount": sum(r.amount for r in overdue),
             "promises_due_count": len(promises_due),
             "promises_due_amount": sum(p.promised_amount for p in promises_due),
+            "recovered_amount": sum(r.recovered_amount or 0.0 for r in items),
+            "broken_promises_count": len([p for p in promises if p.status == "BROKEN"]),
         }
 
 
@@ -152,7 +203,9 @@ def list_promises():
                 "id": p.id,
                 "receivable_id": p.receivable_id,
                 "customer": p.customer_name,
+                "customer_name": p.customer_name,
                 "amount": p.promised_amount,
+                "promised_amount": p.promised_amount,
                 "promised_date": p.promise_date,
                 "status": p.status,
                 "source": p.source,
@@ -168,6 +221,16 @@ async def create_promise(req: PromiseCreateRequest):
     factory = get_session_factory()
     with factory() as session:
         _ensure_seeded(session)
+        rec = session.execute(
+            select(Receivable).where(Receivable.id == req.receivable_id)
+        ).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail="Receivable not found")
+        if req.amount <= 0:
+            raise HTTPException(status_code=422, detail="Promise amount must be positive")
+        remaining = max(0.0, rec.amount - (rec.recovered_amount or 0.0))
+        if req.amount > remaining:
+            raise HTTPException(status_code=422, detail="Promise exceeds remaining receivable balance")
         # Idempotency check: don't create duplicate active promise for same receivable
         stmt = select(PromiseToPay).where(
             PromiseToPay.receivable_id == req.receivable_id,
@@ -198,10 +261,8 @@ async def create_promise(req: PromiseCreateRequest):
         session.add(promise)
 
         # Update receivable
-        rec = session.execute(select(Receivable).where(Receivable.id == req.receivable_id)).scalar_one_or_none()
-        if rec:
-            rec.status = "PROMISE_TO_PAY"
-            rec.updated_at = utcnow()
+        rec.status = "PROMISE_TO_PAY"
+        rec.updated_at = utcnow()
         session.commit()
 
     # Feed into Chakra pipeline (dry-run)
@@ -221,6 +282,17 @@ async def create_promise(req: PromiseCreateRequest):
         await execute_recovery_pipeline(payload, dry_run=True)
     except Exception as e:
         logger.warning(f"Pipeline error after promise creation: {e}")
+
+    DBService.record_audit_event(
+        promise_id,
+        "promise_created",
+        {
+            "receivable_id": req.receivable_id,
+            "amount_inr": req.amount,
+            "promised_date": req.promised_date,
+            "source": "manual",
+        },
+    )
 
     return {
         "id": promise_id,
@@ -277,11 +349,54 @@ async def break_promise(promise_id: str):
     except Exception as e:
         logger.warning(f"Pipeline error after promise break: {e}")
 
+    DBService.record_audit_event(
+        promise_id,
+        "promise_broken",
+        {
+            "receivable_id": rec_id,
+            "amount_inr": amount,
+            "promised_date": p_date,
+            "automation_stopped": True,
+        },
+    )
+
     return {
         "id": promise_id,
         "status": "BROKEN",
         "receivable_id": rec_id,
     }
+
+
+@router.post("/promises/{promise_id}/fulfill")
+def fulfill_promise(promise_id: str, req: PromiseFulfillmentRequest):
+    """Apply a provider-confirmed promise payment and stop its recovery case."""
+    if req.provider.strip().lower() in {"synthetic", "mock", "unknown"} or not req.reference.strip():
+        raise HTTPException(status_code=422, detail="A real provider and confirmation reference are required")
+    factory = get_session_factory()
+    with factory() as session:
+        promise = session.execute(select(PromiseToPay).where(PromiseToPay.id == promise_id)).scalar_one_or_none()
+        if not promise:
+            raise HTTPException(status_code=404, detail="Promise not found")
+        if promise.status in ("FULFILLED", "BROKEN"):
+            raise HTTPException(status_code=409, detail=f"Promise is already {promise.status}")
+        rec = session.execute(select(Receivable).where(Receivable.id == promise.receivable_id)).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail="Receivable not found")
+        amount = req.amount if req.amount is not None else promise.promised_amount
+        if amount <= 0 or amount > promise.promised_amount:
+            raise HTTPException(status_code=422, detail="Fulfillment amount must be within the promise amount")
+        remaining = max(0.0, rec.amount - (rec.recovered_amount or 0.0))
+        if amount > remaining:
+            raise HTTPException(status_code=422, detail="Fulfillment exceeds remaining receivable balance")
+        rec.recovered_amount = (rec.recovered_amount or 0.0) + amount
+        promise.status = "FULFILLED"
+        promise.updated_at = utcnow()
+        rec.status = "PAID" if rec.recovered_amount >= rec.amount else "IN_RECOVERY"
+        rec.updated_at = utcnow()
+        session.commit()
+        result = {"id": promise.id, "receivable_id": rec.id, "status": "FULFILLED", "amount": amount, "remaining_amount": max(0.0, rec.amount - rec.recovered_amount), "recovery_stopped": True}
+    DBService.record_audit_event(promise_id, "promise_fulfilled", {**result, "provider": req.provider, "reference": req.reference})
+    return result
 
 
 @router.post("/{id}/recover")
@@ -317,6 +432,70 @@ async def recover_receivable(id: str, action: str = "PAYMENT_LINK"):
     return result
 
 
+@router.post("/{id}/payment")
+def record_receivable_payment(id: str, req: ReceivablePaymentRequest):
+    """Record a provider-confirmed partial or full receivable payment."""
+    if req.provider.strip().lower() in {"synthetic", "mock", "unknown"} or not req.reference.strip():
+        raise HTTPException(status_code=422, detail="A real provider and confirmation reference are required")
+    if req.amount <= 0:
+        raise HTTPException(status_code=422, detail="Payment amount must be positive")
+    factory = get_session_factory()
+    with factory() as session:
+        rec = session.execute(select(Receivable).where(Receivable.id == id)).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail="Receivable not found")
+        remaining = max(0.0, rec.amount - (rec.recovered_amount or 0.0))
+        if req.amount > remaining:
+            raise HTTPException(status_code=422, detail="Payment exceeds remaining balance")
+        rec.recovered_amount = (rec.recovered_amount or 0.0) + req.amount
+        rec.status = "PAID" if rec.recovered_amount >= rec.amount else "IN_RECOVERY"
+        rec.updated_at = utcnow()
+        session.commit()
+        result = {"id": rec.id, "original_amount": rec.amount, "recovered_amount": rec.recovered_amount, "remaining_amount": max(0.0, rec.amount - rec.recovered_amount), "status": rec.status}
+    DBService.record_audit_event(id, "receivable_payment_confirmed", {**result, "provider": req.provider, "reference": req.reference})
+    return result
+
+
+@router.post("/{id}/dispute")
+def dispute_receivable(id: str, req: DisputeRequest):
+    """Stop automated collection and create a human customer-dispute escalation."""
+    factory = get_session_factory()
+    with factory() as session:
+        rec = session.execute(select(Receivable).where(Receivable.id == id)).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail="Receivable not found")
+        rec.status = "DISPUTED"
+        rec.updated_at = utcnow()
+        session.commit()
+    escalation = DBService.create_escalation(case_id=id, reason="CUSTOMER_DISPUTE", priority="HIGH", severity="HIGH", actor=req.actor, notes=req.reason)
+    DBService.record_audit_event(id, "automated_collection_stopped", {"reason": "CUSTOMER_DISPUTE", "notes": req.reason})
+    return {"receivable_id": id, "status": "DISPUTED", "automation_stopped": True, "escalation": escalation}
+
+
+@router.post("/{id}/sms")
+async def send_receivable_sms(id: str, req: SmsRequest):
+    """Send and persist a real Twilio SMS attempt; never claim delivery locally."""
+    from backend.app.services.notify import build_notification, send_sms
+    factory = get_session_factory()
+    with factory() as session:
+        rec = session.execute(select(Receivable).where(Receivable.id == id)).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail="Receivable not found")
+        message = req.message
+        if not message:
+            notification = build_notification("send_payment_link", {"name": rec.customer_name, "merchant_name": "Chakra"}, {"amount": int(rec.amount * 100), "error_code": "receivable_overdue"})
+            message = notification.get("message")
+        result = await send_sms(req.phone_number, message or "")
+    DBService.record_communication(
+        case_id=id, customer_id=rec.customer_id, channel="SMS",
+        communication_type="RECEIVABLE_REMINDER", provider="twilio",
+        provider_message_id=result.get("provider_message_id"),
+        status="SENT" if result.get("status") == "sent" else "FAILED",
+        metadata={"provider_result": result},
+    )
+    return result
+
+
 @router.post("/voice/start")
 async def start_voice_recovery(req: VoiceRecoveryRequest):
     from backend.app.services.voice import get_voice_provider
@@ -334,7 +513,8 @@ async def start_voice_recovery(req: VoiceRecoveryRequest):
         context={"case_id": req.receivable_id, "amount": amount}
     )
 
-    call_sid = res.get("call_sid") or f"CA_mock_{uuid.uuid4().hex[:8]}"
+    call_sid = res.get("call_sid") or f"unavailable_{uuid.uuid4().hex[:8]}"
+    interaction_status = "INITIATED" if res.get("status") == "success" else "FAILED"
 
     # Persist voice interaction in DB
     with factory() as session:
@@ -343,10 +523,21 @@ async def start_voice_recovery(req: VoiceRecoveryRequest):
             customer_id=cust,
             receivable_id=req.receivable_id,
             call_sid=call_sid,
-            status="INITIATED",
+            status=interaction_status,
         )
         session.add(vi)
         session.commit()
+
+    DBService.record_communication(
+        case_id=req.receivable_id,
+        customer_id=cust,
+        channel="VOICE",
+        communication_type="RECEIVABLE_RECOVERY",
+        provider="twilio" if settings.is_twilio_configured else "unavailable",
+        provider_message_id=res.get("call_sid"),
+        status="SENT" if res.get("status") == "success" else "FAILED",
+        metadata={"provider_response": res},
+    )
 
     payload = {
         "payment_id": req.receivable_id,

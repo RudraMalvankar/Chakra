@@ -140,7 +140,7 @@ def test_razorpay_order_creation():
 
 
 def test_razorpay_checkout_verify_valid():
-    """Verifies server-side signature verification on successful payment with real HMAC."""
+    """Unconfigured environments must not treat a client signature as capture proof."""
     order_id = "order_test_998877"
     payment_id = "pay_test_998877"
     secret = (settings.razorpay_key_secret or "mock_secret").encode("utf-8")
@@ -153,16 +153,8 @@ def test_razorpay_checkout_verify_valid():
         "razorpay_signature": valid_sig,
         "amount_inr": 5000.0
     })
-    assert res.status_code == 200
-    data = res.json()
-    assert data["status"] == "captured"
-    assert data["recovered"] is True
-    assert data["payment_id"] == payment_id
-
-    # Verify updated in DB
-    detail = DBService.get_case_detail("case_rzp_st_998877")
-    if detail:
-        assert detail["status"] == "RECOVERED"
+    assert res.status_code == 503
+    assert "not configured" in res.json()["detail"].lower()
 
 
 def test_razorpay_checkout_abandon():
@@ -214,13 +206,13 @@ def test_twilio_twiml_endpoint():
 
 
 def test_twilio_gather_speech_promise():
-    """Verifies Twilio gather webhook extracts promise and generates Hinglish reply."""
+    """Unmatched invoices must not receive a false promise confirmation."""
     res = client.post(
         "/webhooks/twilio/gather?case_id=inv_001&amount=5000",
         data={"SpeechResult": "Haan mai kal tak payment kar dunga, pakka promise"}
     )
     assert res.status_code == 200
-    assert "promise record kar liya" in res.text
+    assert "promise record nahi ho saka" in res.text
 
 
 def test_twilio_signature_verification_rejection():

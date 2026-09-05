@@ -90,6 +90,9 @@ class RecoveryCase(Base):
     payment = relationship("Payment", back_populates="cases")
     decisions = relationship("RecoveryDecision", back_populates="recovery_case")
     events = relationship("RecoveryEvent", back_populates="recovery_case")
+    communications = relationship("Communication", back_populates="recovery_case")
+    payment_links = relationship("PaymentLink", back_populates="recovery_case")
+    escalations = relationship("Escalation", back_populates="recovery_case")
 
 
 class RecoveryDecision(Base):
@@ -166,6 +169,8 @@ class BatchRun(Base):
     revenue_recovered = Column(Float, default=0.0)
     revenue_blocked = Column(Float, default=0.0)
     revenue_escalated = Column(Float, default=0.0)
+    pending_count = Column(Integer, default=0)
+    revenue_pending = Column(Float, default=0.0)
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
     completed_at = Column(DateTime(timezone=True), nullable=True)
 
@@ -193,6 +198,7 @@ class Receivable(Base):
     customer_name = Column(String(255), nullable=False)
     invoice_number = Column(String(128), unique=True, index=True, nullable=False)
     amount = Column(Float, nullable=False, default=0.0)
+    recovered_amount = Column(Float, nullable=False, default=0.0)
     due_date = Column(String(32), nullable=False)
     days_overdue = Column(Integer, default=0)
     status = Column(String(64), default="OVERDUE", index=True)  # UPCOMING, OVERDUE, PROMISE_TO_PAY, PAID, IN_RECOVERY
@@ -235,6 +241,81 @@ class VoiceInteraction(Base):
     status = Column(String(64), default="INITIATED")  # INITIATED, RINGING, IN_PROGRESS, COMPLETED, FAILED
     created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
     updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+
+class Communication(Base):
+    """A provider-backed customer contact attempt; never a claimed delivery."""
+    __tablename__ = "communications"
+
+    id = Column(String(64), primary_key=True, default=gen_uuid)
+    customer_id = Column(String(128), nullable=True, index=True)
+    recovery_case_id = Column(String(64), ForeignKey("recovery_cases.id"), nullable=True, index=True)
+    channel = Column(String(32), nullable=False)  # SMS, EMAIL, VOICE
+    communication_type = Column(String(64), nullable=True)
+    body_metadata = Column(JSON, default=dict)
+    provider = Column(String(64), nullable=True)
+    provider_message_id = Column(String(128), nullable=True, unique=True, index=True)
+    status = Column(String(32), nullable=False, default="PENDING")
+    sent_at = Column(DateTime(timezone=True), nullable=True)
+    delivered_at = Column(DateTime(timezone=True), nullable=True)
+    failed_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+    recovery_case = relationship("RecoveryCase", back_populates="communications")
+
+
+class PaymentLink(Base):
+    """Persisted recovery-link metadata, including the real provider URL when one exists."""
+    __tablename__ = "payment_links"
+
+    id = Column(String(64), primary_key=True, default=gen_uuid)
+    provider_link_id = Column(String(128), nullable=True, unique=True, index=True)
+    recovery_case_id = Column(String(64), ForeignKey("recovery_cases.id"), nullable=True, index=True)
+    customer_id = Column(String(128), nullable=True, index=True)
+    provider = Column(String(64), nullable=False)
+    url = Column(Text, nullable=True)
+    amount = Column(Float, nullable=False, default=0.0)
+    currency = Column(String(8), nullable=False, default="INR")
+    status = Column(String(32), nullable=False, default="CREATED")
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    captured_at = Column(DateTime(timezone=True), nullable=True)
+
+    recovery_case = relationship("RecoveryCase", back_populates="payment_links")
+
+
+class Escalation(Base):
+    __tablename__ = "escalations"
+
+    id = Column(String(64), primary_key=True, default=gen_uuid)
+    recovery_case_id = Column(String(64), ForeignKey("recovery_cases.id"), nullable=False, index=True)
+    reason = Column(String(128), nullable=False)
+    priority = Column(String(32), nullable=False, default="MEDIUM")
+    severity = Column(String(32), nullable=False, default="MEDIUM")
+    status = Column(String(32), nullable=False, default="OPEN", index=True)
+    assigned_to = Column(String(128), nullable=True, index=True)
+    sla_deadline = Column(DateTime(timezone=True), nullable=True, index=True)
+    resolution = Column(String(128), nullable=True)
+    resolution_notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+
+    recovery_case = relationship("RecoveryCase", back_populates="escalations")
+    actions = relationship("EscalationAction", back_populates="escalation", cascade="all, delete-orphan")
+
+
+class EscalationAction(Base):
+    __tablename__ = "escalation_actions"
+
+    id = Column(String(64), primary_key=True, default=gen_uuid)
+    escalation_id = Column(String(64), ForeignKey("escalations.id"), nullable=False, index=True)
+    action = Column(String(64), nullable=False)
+    actor = Column(String(128), nullable=False, default="system")
+    notes = Column(Text, nullable=True)
+    metadata_json = Column(JSON, default=dict)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+
+    escalation = relationship("Escalation", back_populates="actions")
 
 
 class SafetyState(Base):
