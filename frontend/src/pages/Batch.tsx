@@ -183,6 +183,7 @@ export const Batch = () => {
                     <div>
                         <label className="block text-[10px] font-bold text-text-muted uppercase tracking-wider mb-1">Number of Payments</label>
                         <select disabled={running} value={count} onChange={e => setCount(Number(e.target.value))} className="w-full border border-border rounded px-3 py-2 font-mono text-sm focus:border-rzp-blue focus:outline-none bg-white">
+                            <option value={30}>30</option>
                             <option value={100}>100</option>
                             <option value={500}>500</option>
                             <option value={1000}>1,000</option>
