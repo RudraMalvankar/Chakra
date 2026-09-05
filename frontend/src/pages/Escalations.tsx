@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useReducer, useState } from 'react';
 import { API_BASE } from '../services/api';
 import { Badge } from '../components/ui/Badge';
 import { formatCurrency } from '../lib/format';
@@ -13,10 +13,16 @@ type Escalation = {
   created_at?: string | null;
 };
 
+type EscalationState = { items: Escalation[]; summary: any; error: string | null };
+type EscalationAction = { type: 'loaded'; items: Escalation[]; summary: any } | { type: 'failed'; error: string };
+function escalationReducer(state: EscalationState, action: EscalationAction): EscalationState {
+  return action.type === 'loaded'
+    ? { items: action.items, summary: action.summary, error: null }
+    : { ...state, error: action.error };
+}
+
 export const Escalations = () => {
-  const [items, setItems] = useState<Escalation[]>([]);
-  const [summary, setSummary] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [{ items, summary, error }, dispatch] = useReducer(escalationReducer, { items: [], summary: null, error: null });
   const [updating, setUpdating] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -26,11 +32,9 @@ export const Escalations = () => {
         fetch(`${API_BASE}/api/escalations/summary`),
       ]);
       if (!queue.ok || !stats.ok) throw new Error('Backend returned an escalation error');
-      setItems(await queue.json());
-      setSummary(await stats.json());
-      setError(null);
+      dispatch({ type: 'loaded', items: await queue.json(), summary: await stats.json() });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to load escalations');
+      dispatch({ type: 'failed', error: err instanceof Error ? err.message : 'Unable to load escalations' });
     }
   }, []);
 
@@ -52,7 +56,7 @@ export const Escalations = () => {
       if (!response.ok) throw new Error(`Transition failed (${response.status})`);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to update escalation');
+      dispatch({ type: 'failed', error: err instanceof Error ? err.message : 'Unable to update escalation' });
     } finally {
       setUpdating(null);
     }
