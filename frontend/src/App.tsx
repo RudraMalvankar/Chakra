@@ -62,6 +62,7 @@ export default function App() {
           <Route path="/receivables" element={<Receivables {...data} />} />
           <Route path="/promise-to-pay" element={<PromiseToPay {...data} />} />
           <Route path="/voice-recovery" element={<VoiceRecovery {...data} />} />
+          <Route path="/recovery/voice" element={<VoiceRecovery {...data} />} />
 
           <Route path="/scenario-lab" element={<ScenarioLab {...data} />} />
           <Route path="/gateway" element={<Gateway />} />
