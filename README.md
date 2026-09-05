@@ -470,6 +470,80 @@ Chakra/
 
 ---
 
+## 🚀 Deployment Guide
+
+### Option B: Deploying Frontend on Vercel + Backend on Render
+
+#### 1. Backend Web Service on Render
+1. Open [Render Dashboard](https://dashboard.render.com/) → **New +** → **Web Service** → Connect your GitHub repository.
+2. Configure the build parameters:
+   - **Name:** `chakra-backend`
+   - **Environment:** `Python 3`
+   - **Region:** Choose closest to your database (e.g. `Oregon` or `Frankfurt`)
+   - **Root Directory:** `.`
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `python -m uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT`
+   - **Health Check Path:** `/health`
+3. Add Environment Variables in Render:
+   - `DATABASE_URL`: Your Neon Postgres connection string (e.g., `postgresql://...`)
+   - `GEMINI_API_KEY`: Your Google Gemini API key
+   - `CORS_ORIGINS`: `*`
+   - `DRY_RUN`: `false`
+   - `USE_MOCK_RAZORPAY`: `true` (or `false` when connecting live Razorpay test keys)
+   - `RAZORPAY_KEY_ID`: *(Optional)* Your Razorpay test key
+   - `RAZORPAY_KEY_SECRET`: *(Optional)* Your Razorpay test secret
+4. Click **Deploy Web Service**. Once live, copy your backend URL (e.g. `https://chakra-backend.onrender.com`).
+
+*(Alternatively, use the included [`render.yaml`](render.yaml) Blueprint for 1-click infrastructure deployment).*
+
+#### 2. Frontend on Vercel
+1. Open [Vercel](https://vercel.com/) → **Add New Project** → Import your Chakra repository.
+2. Configure project settings:
+   - **Framework Preset:** `Vite`
+   - **Root Directory:** Click **Edit** and select `frontend`
+   - **Build Command:** `npm run build`
+   - **Output Directory:** `dist`
+3. Add Environment Variable:
+   - `VITE_API_BASE_URL`: Your Render backend URL (e.g., `https://chakra-backend.onrender.com`)
+4. Click **Deploy**.
+   - The included [`frontend/vercel.json`](frontend/vercel.json) handles client-side SPA routing rewrites automatically, ensuring sub-routes (`/cases`, `/gateway`, `/escalations`, `/voice`) work directly on refresh.
+
+---
+
+### Option C: Running with Docker Locally or on a Server
+
+Chakra is fully containerized with production-grade Dockerfiles and a unified Compose configuration.
+
+#### 1. Quickstart with Docker Compose
+```bash
+# Clone and enter directory
+git clone https://github.com/RudraMalvankar/Chakra.git
+cd Chakra
+
+# (Optional) Copy and configure environment variables
+cp .env.example .env
+
+# Build and start all services in the background
+docker compose up -d --build
+```
+
+- **Backend API & Docs:** [http://localhost:8001](http://localhost:8001) / [http://localhost:8001/docs](http://localhost:8001/docs)
+- **Frontend Dashboard:** [http://localhost:5173](http://localhost:5173)
+- **Health Check:** [http://localhost:8001/health](http://localhost:8001/health)
+
+#### 2. Pre-Built GitHub Container Packages (GHCR)
+The GitHub Actions CI/CD workflow automatically builds and publishes container packages on every push to `main` or release:
+
+```bash
+# Pull backend image
+docker pull ghcr.io/rudramalvankar/chakra/chakra-backend:latest
+
+# Pull frontend image
+docker pull ghcr.io/rudramalvankar/chakra/chakra-frontend:latest
+```
+
+---
+
 ## ⚖️ License & Ethical Disclosure
 
 - **Software License:** Apache 2.0.

@@ -5,6 +5,9 @@ on:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  release:
+    types: [ "published" ]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -32,8 +35,6 @@ jobs:
         RAZORPAY_KEY_ID: ""
         DATABASE_URL: "sqlite:///./test.db"
         GEMINI_API_KEY: "mock_key_for_ci"
-        # Provider-integrity tests mock HTTP calls to the explicit synthetic
-        # adapter; declaring its endpoint prevents an early unavailable return.
         MOCK_RAZORPAY_URL: "http://localhost:8001"
       run: |
         python -m pytest -q backend/tests
@@ -64,7 +65,7 @@ jobs:
 
   build-and-push-images:
     needs: [backend-test, frontend-build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -84,9 +85,11 @@ jobs:
       uses: docker/build-push-action@v5
       with:
         context: .
-        file: ./backend/Dockerfile
+        file: ./Dockerfile
         push: true
-        tags: ghcr.io/${{ env.repo }}/chakra-backend:latest
+        tags: |
+          ghcr.io/${{ env.repo }}/chakra-backend:latest
+          ghcr.io/${{ env.repo }}/chakra-backend:${{ github.sha }}
 
     - name: Build and push frontend image
       uses: docker/build-push-action@v5
@@ -94,4 +97,6 @@ jobs:
         context: ./frontend
         file: ./frontend/Dockerfile
         push: true
-        tags: ghcr.io/${{ env.repo }}/chakra-frontend:latest
+        tags: |
+          ghcr.io/${{ env.repo }}/chakra-frontend:latest
+          ghcr.io/${{ env.repo }}/chakra-frontend:${{ github.sha }}

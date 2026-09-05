@@ -1,4 +1,4 @@
-﻿services:
+services:
   # Backend Web Service (FastAPI + Uvicorn)
   - type: web
     name: chakra-backend
@@ -6,7 +6,7 @@
     region: oregon
     plan: free
     buildCommand: "pip install -r requirements.txt"
-    startCommand: "python -m uvicorn backend.app.main:app --host 0.0.0.0 --port "
+    startCommand: "python -m uvicorn backend.app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: /health
     autoDeploy: true
     envVars:
