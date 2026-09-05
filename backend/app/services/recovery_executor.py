@@ -134,6 +134,29 @@ class RecoveryExecutor:
                     status="CAPTURED" if outcome.recovered else ("AWAITING_PAYMENT" if outcome.status in {"created", "pending", "queued"} else "FAILED"),
                 )
 
+                link_url = res.get("short_url") or res.get("recovery_url") or res.get("url")
+                phone = getattr(ctx, "phone_number", None) or getattr(ctx, "phone", None)
+                if not phone and isinstance(getattr(ctx, "context", None), dict):
+                    phone = ctx.context.get("phone_number") or ctx.context.get("phone")
+                if phone and link_url and settings.is_twilio_configured:
+                    from backend.app.services.notify import send_payment_failed_sms
+                    cust_name = getattr(ctx, "customer_name", None) or (f"Customer {ctx.customer_id[-4:]}" if ctx.customer_id else "Customer")
+                    try:
+                        sms_res = await send_payment_failed_sms(
+                            to_number=phone,
+                            customer_name=cust_name,
+                            amount_inr=ctx.amount_inr,
+                            payment_link=link_url,
+                        )
+                        log_audit_event(ctx.payment_id, "payment_link_sms_dispatched", {
+                            "to_number": phone,
+                            "sms_status": sms_res.get("status"),
+                            "provider_message_id": sms_res.get("provider_message_id"),
+                            "effective_action": decision.decision.value,
+                        })
+                    except Exception as _sms_err:
+                        logger.warning("Failed to dispatch payment link SMS: %s", _sms_err)
+
             elif decision.decision == InterventionType.VOICE_RECOVERY:
                 customer_name = f"customer_{ctx.customer_id[-4:]}" if ctx.customer_id and len(ctx.customer_id) >= 4 else "customer"
                 amount_inr = int(ctx.amount_inr)

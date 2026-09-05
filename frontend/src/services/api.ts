@@ -175,4 +175,41 @@ export const getVoiceRecoveryStatus = async (call_sid: string) => {
   return requestJson<any>(`/api/voice/recovery/${call_sid}`);
 };
 
+// ─── Twilio SMS & Reminders ───────────────────────────────────────────────────
+
+export const sendReceivableSms = async (
+  receivableId: string,
+  payload: { phone_number: string; message?: string }
+) => {
+  return requestJson<any>(`/api/receivables/${encodeURIComponent(receivableId)}/sms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+};
+
+export const sendPromiseReminder = async (
+  promiseId: string,
+  payload: {
+    phone_number: string;
+    timing?: 'before' | 'due' | 'after' | 'auto';
+    payment_link?: string;
+    custom_message?: string;
+  }
+) => {
+  return requestJson<any>(`/api/receivables/promises/${encodeURIComponent(promiseId)}/remind`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+};
+
+export const dispatchPromiseReminders = async (payload?: { default_phone?: string }) => {
+  return requestJson<any>('/api/receivables/promises/dispatch-reminders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  });
+};
+
 export { request, requestJson, apiUrl };

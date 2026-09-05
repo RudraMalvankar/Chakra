@@ -486,3 +486,107 @@ def test_no_fake_call_success(unconfigured_twilio):
     assert res.status_code == 400
     body = res.json()
     assert "call_sid" not in body or body.get("call_sid") is None
+
+
+# ─── 19. Payment failed SMS notification helper ─────────────────────────────
+@pytest.mark.asyncio
+async def test_send_payment_failed_sms(mock_twilio_settings):
+    with patch("backend.app.services.notify.send_sms", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent", "provider": "twilio", "provider_message_id": "SM_test_123"}
+        from backend.app.services.notify import send_payment_failed_sms
+
+        res = await send_payment_failed_sms(
+            to_number="+919930832015",
+            customer_name="Rudra",
+            amount_inr=5000.0,
+            payment_link="https://rzp.io/l/test",
+        )
+        assert res["status"] == "sent"
+        assert res["provider_message_id"] == "SM_test_123"
+        mock_send.assert_called_once()
+        sent_msg = mock_send.call_args[0][1]
+        assert "5000" in sent_msg
+        assert "Rudra" in sent_msg
+        assert "https://rzp.io/l/test" in sent_msg
+
+
+# ─── 20. Promise-to-Pay reminder SMS helper (timing variations) ──────────────
+@pytest.mark.asyncio
+async def test_send_promise_reminder_sms_timings(mock_twilio_settings):
+    with patch("backend.app.services.notify.send_sms", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = {"status": "sent", "provider": "twilio", "provider_message_id": "SM_test_456"}
+        from backend.app.services.notify import send_promise_reminder_sms
+
+        # 1 day before
+        await send_promise_reminder_sms(
+            to_number="+919930832015",
+            customer_name="Rudra",
+            amount_inr=3000.0,
+            promise_date="2026-10-10",
+            timing="before",
+            payment_link="https://rzp.io/l/p_before",
+        )
+        msg_before = mock_send.call_args[0][1]
+        assert "tomorrow" in msg_before.lower()
+
+        # Due today
+        await send_promise_reminder_sms(
+            to_number="+919930832015",
+            customer_name="Rudra",
+            amount_inr=3000.0,
+            promise_date="2026-10-10",
+            timing="due",
+            payment_link="https://rzp.io/l/p_due",
+        )
+        msg_due = mock_send.call_args[0][1]
+        assert "today" in msg_due.lower()
+
+        # 1 day after / overdue
+        await send_promise_reminder_sms(
+            to_number="+919930832015",
+            customer_name="Rudra",
+            amount_inr=3000.0,
+            promise_date="2026-10-10",
+            timing="after",
+            payment_link="https://rzp.io/l/p_after",
+        )
+        msg_after = mock_send.call_args[0][1]
+        assert "overdue" in msg_after.lower()
+
+
+# ─── 21. Promise reminder API endpoint ──────────────────────────────────────
+def test_promise_remind_endpoint(mock_twilio_settings):
+    with (
+        patch("backend.app.services.notify.send_sms", new_callable=AsyncMock) as mock_send,
+        patch("backend.app.api.receivables.get_session_factory") as mock_factory,
+        patch("backend.app.api.receivables.DBService"),
+    ):
+        mock_send.return_value = {
+            "status": "sent",
+            "provider": "twilio",
+            "provider_message_id": "SM_remind_test",
+            "body": "Reminder sent",
+        }
+        mock_session = MagicMock()
+        mock_promise = MagicMock()
+        mock_promise.id = "p_123"
+        mock_promise.customer_name = "Rudra"
+        mock_promise.promised_amount = 5000.0
+        mock_promise.promise_date = "2026-09-06"
+        mock_promise.receivable_id = "rec_123"
+        mock_session.execute.return_value.scalar_one_or_none.return_value = mock_promise
+        mock_factory.return_value.__enter__.return_value = mock_session
+
+        res = client.post(
+            "/api/receivables/promises/p_123/remind",
+            json={
+                "phone_number": "+919930832015",
+                "timing": "before",
+            },
+        )
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "success"
+        assert data["promise_id"] == "p_123"
+        assert data["timing"] == "before"
+

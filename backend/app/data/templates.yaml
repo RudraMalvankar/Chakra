@@ -47,3 +47,27 @@ templates:
     body: "Your invoice is overdue. Please pay here: {link}"
     variables: [link]
     registered_with: mock_dlt
+
+  - id: sms_payment_failed_link
+    channel: sms
+    body: "Namaste {name}, your payment of Rs. {amount} failed. Complete your payment securely here: {link}"
+    variables: [name, amount, link]
+    registered_with: twilio_dlt
+
+  - id: sms_promise_due_tomorrow
+    channel: sms
+    body: "Namaste {name}, reminder that your payment promise of Rs. {amount} is due tomorrow ({date}). Pay securely: {link}"
+    variables: [name, amount, date, link]
+    registered_with: twilio_dlt
+
+  - id: sms_promise_due_today
+    channel: sms
+    body: "Namaste {name}, your payment of Rs. {amount} is due today. Please complete your payment here: {link}"
+    variables: [name, amount, link]
+    registered_with: twilio_dlt
+
+  - id: sms_promise_overdue_yesterday
+    channel: sms
+    body: "Namaste {name}, your payment promise of Rs. {amount} was due yesterday. To avoid account escalation, pay now: {link}"
+    variables: [name, amount, link]
+    registered_with: twilio_dlt

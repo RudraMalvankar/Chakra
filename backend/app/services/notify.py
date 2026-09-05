@@ -132,6 +132,59 @@ async def send_sms(to_number: str, message: str) -> Dict[str, Any]:
             from_=settings.twilio_from_number,
             to=to_number,
         )
-        return {"status": "sent", "provider": "twilio", "provider_message_id": result.sid}
+        return {"status": "sent", "provider": "twilio", "provider_message_id": result.sid, "body": message}
     except Exception as exc:
         return {"status": "failed", "provider": "twilio", "message": str(exc)[:240]}
+
+
+async def send_payment_failed_sms(
+    to_number: str,
+    customer_name: str,
+    amount_inr: float,
+    payment_link: str,
+    merchant_name: str = "Chakra",
+) -> Dict[str, Any]:
+    """Send an immediate payment failure alert SMS with a secure Razorpay payment link."""
+    message = (
+        f"Namaste {customer_name}, your {merchant_name} payment of Rs. {int(amount_inr)} failed. "
+        f"Complete your payment securely here: {payment_link}"
+    )
+    return await send_sms(to_number, message)
+
+
+async def send_promise_reminder_sms(
+    to_number: str,
+    customer_name: str,
+    amount_inr: float,
+    promise_date: str,
+    timing: str = "due",
+    payment_link: Optional[str] = None,
+    merchant_name: str = "Chakra",
+) -> Dict[str, Any]:
+    """Send a tailored promise-to-pay reminder SMS.
+
+    Timing options:
+    - 'before': 1 day before due date (due tomorrow)
+    - 'due': due today
+    - 'after': 1 day after / overdue (due yesterday or earlier)
+    """
+    link_part = f" Pay here: {payment_link}" if payment_link else ""
+    amt = int(amount_inr)
+
+    if timing == "before":
+        message = (
+            f"Namaste {customer_name}, reminder that your payment promise of Rs. {amt} for {merchant_name} "
+            f"is due tomorrow ({promise_date}).{link_part}"
+        )
+    elif timing == "after":
+        message = (
+            f"Namaste {customer_name}, your payment promise of Rs. {amt} for {merchant_name} "
+            f"was due on {promise_date} and is now overdue. Please clear it immediately to avoid account escalation:{link_part}"
+        )
+    else:  # 'due' / today
+        message = (
+            f"Namaste {customer_name}, your payment of Rs. {amt} for {merchant_name} is due today.{link_part}"
+        )
+
+    return await send_sms(to_number, message)
+

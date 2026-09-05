@@ -529,6 +529,182 @@ async def escalate_promise(promise_id: str):
     }
 
 
+class PromiseRemindRequest(BaseModel):
+    phone_number: str
+    timing: Optional[str] = "auto"  # "auto", "before", "due", "after"
+    payment_link: Optional[str] = None
+    custom_message: Optional[str] = None
+
+
+@router.post("/promises/{promise_id}/remind")
+async def remind_promise(promise_id: str, req: PromiseRemindRequest):
+    """Send an automated or custom Twilio SMS reminder for a Promise-to-Pay.
+
+    Supports:
+    - 1 day before due date ('before')
+    - Due today ('due')
+    - 1 day after / overdue ('after')
+    - Auto-detection based on promise_date vs today
+    """
+    from backend.app.services.notify import send_promise_reminder_sms, send_sms
+    from datetime import date, datetime
+
+    factory = get_session_factory()
+    with factory() as session:
+        promise = session.execute(select(PromiseToPay).where(PromiseToPay.id == promise_id)).scalar_one_or_none()
+        if not promise:
+            raise HTTPException(status_code=404, detail="Promise not found")
+
+        customer_name = promise.customer_name or "Valued Customer"
+        amount = promise.promised_amount or 0.0
+        p_date = promise.promise_date or ""
+        receivable_id = promise.receivable_id
+        customer_id = None
+
+        if receivable_id:
+            rec = session.execute(select(Receivable).where(Receivable.id == receivable_id)).scalar_one_or_none()
+            if rec:
+                customer_id = rec.customer_id
+
+    # Determine timing
+    timing = req.timing or "auto"
+    if timing == "auto":
+        today = date.today()
+        try:
+            p_dt = datetime.strptime(p_date, "%Y-%m-%d").date()
+            diff = (p_dt - today).days
+            if diff > 0:
+                timing = "before"
+            elif diff == 0:
+                timing = "due"
+            else:
+                timing = "after"
+        except Exception:
+            timing = "due"
+
+    payment_link = req.payment_link or f"https://rzp.io/l/p_{promise_id[:8]}"
+
+    if req.custom_message:
+        result = await send_sms(req.phone_number, req.custom_message)
+    else:
+        result = await send_promise_reminder_sms(
+            to_number=req.phone_number,
+            customer_name=customer_name,
+            amount_inr=amount,
+            promise_date=p_date,
+            timing=timing,
+            payment_link=payment_link,
+        )
+
+    provider_status = (result.get("status") or "").lower()
+    persist_status = "SENT" if provider_status == "sent" else "FAILED"
+
+    # Persist communication
+    DBService.record_communication(
+        case_id=receivable_id,
+        customer_id=customer_id,
+        channel="SMS",
+        communication_type="PROMISE_REMINDER",
+        provider=result.get("provider") or "twilio",
+        provider_message_id=result.get("provider_message_id"),
+        status=persist_status,
+        metadata={
+            "promise_id": promise_id,
+            "timing": timing,
+            "phone_number": req.phone_number,
+            "amount": amount,
+            "provider_result": result,
+        },
+    )
+
+    # Audit event
+    DBService.record_audit_event(
+        promise_id,
+        "promise_reminder_sent",
+        {
+            "promise_id": promise_id,
+            "timing": timing,
+            "to_phone": req.phone_number,
+            "amount_inr": amount,
+            "status": persist_status,
+            "provider_message_id": result.get("provider_message_id"),
+        },
+    )
+
+    return {
+        "status": "success" if persist_status == "SENT" else "failed",
+        "promise_id": promise_id,
+        "timing": timing,
+        "provider_result": result,
+        "message": result.get("body"),
+    }
+
+
+class DispatchRemindersRequest(BaseModel):
+    default_phone: Optional[str] = "+919930832015"
+
+
+@router.post("/promises/dispatch-reminders")
+async def dispatch_promise_reminders(req: DispatchRemindersRequest):
+    """Scans all upcoming, due today, and recently broken promises and sends SMS reminders."""
+    from backend.app.services.notify import send_promise_reminder_sms
+    from datetime import date, datetime, timedelta
+
+    today = date.today()
+    tomorrow = today + timedelta(days=1)
+    yesterday = today - timedelta(days=1)
+
+    factory = get_session_factory()
+    results = []
+
+    with factory() as session:
+        promises = session.execute(
+            select(PromiseToPay).where(
+                PromiseToPay.status.in_(("UPCOMING", "DUE_TODAY", "BROKEN"))
+            )
+        ).scalars().all()
+
+        for p in promises:
+            try:
+                p_dt = datetime.strptime(p.promise_date, "%Y-%m-%d").date()
+            except Exception:
+                continue
+
+            timing = None
+            if p_dt == tomorrow:
+                timing = "before"
+            elif p_dt == today:
+                timing = "due"
+            elif p_dt <= yesterday or p.status == "BROKEN":
+                timing = "after"
+
+            if timing and req.default_phone:
+                payment_link = f"https://rzp.io/l/p_{p.id[:8]}"
+                res = await send_promise_reminder_sms(
+                    to_number=req.default_phone,
+                    customer_name=p.customer_name or "Valued Customer",
+                    amount_inr=p.promised_amount or 0.0,
+                    promise_date=p.promise_date or "",
+                    timing=timing,
+                    payment_link=payment_link,
+                )
+                results.append({
+                    "promise_id": p.id,
+                    "customer": p.customer_name,
+                    "amount": p.promised_amount,
+                    "timing": timing,
+                    "status": res.get("status"),
+                    "provider_message_id": res.get("provider_message_id"),
+                })
+
+    return {
+        "total_scanned": len(promises),
+        "reminders_dispatched": len(results),
+        "results": results,
+    }
+
+
+
 @router.post("/{id}/recover")
 async def recover_receivable(id: str, action: str = "PAYMENT_LINK"):
     factory = get_session_factory()

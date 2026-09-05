@@ -20,6 +20,32 @@ export const Receivables = () => {
     });
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [promiseDate, setPromiseDate] = useState('');
+    const [smsPhone, setSmsPhone] = useState('+919930832015');
+    const [smsSending, setSmsSending] = useState(false);
+    const [smsFeedback, setSmsFeedback] = useState<string | null>(null);
+
+    const handleSendSms = async (recId: string) => {
+        if (!smsPhone) return;
+        setSmsSending(true);
+        setSmsFeedback(null);
+        try {
+            const res = await fetch(`${API_BASE}/api/receivables/${encodeURIComponent(recId)}/sms`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone_number: smsPhone }),
+            });
+            const data = await res.json();
+            if (res.ok && data.status === 'sent') {
+                setSmsFeedback(`SMS sent! SID: ${data.provider_message_id || 'OK'}`);
+            } else {
+                setSmsFeedback(`Failed: ${data.message || data.detail || 'Could not send SMS'}`);
+            }
+        } catch (e: any) {
+            setSmsFeedback(`Error: ${e.message || 'Network error'}`);
+        } finally {
+            setSmsSending(false);
+        }
+    };
 
     const fetchReceivables = async () => {
         try {
@@ -248,6 +274,30 @@ export const Receivables = () => {
                                         >
                                             Initiate Voice Recovery
                                         </button>
+                                        <div className="pt-3 border-t border-border mt-3 space-y-2">
+                                            <div className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Send Payment Link via SMS</div>
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    placeholder="+919930832015" 
+                                                    value={smsPhone} 
+                                                    onChange={e => setSmsPhone(e.target.value)} 
+                                                    className="flex-1 border border-border rounded px-2 py-1.5 font-mono text-xs" 
+                                                />
+                                                <button 
+                                                    disabled={smsSending || !smsPhone}
+                                                    onClick={() => handleSendSms(selected.id)}
+                                                    className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-[10px] font-bold uppercase tracking-wider rounded disabled:opacity-50 transition-colors"
+                                                >
+                                                    {smsSending ? "Sending..." : "Send SMS"}
+                                                </button>
+                                            </div>
+                                            {smsFeedback && (
+                                                <div className={`text-[10px] font-mono p-1.5 rounded ${smsFeedback.includes('Failed') || smsFeedback.includes('error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+                                                    {smsFeedback}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
