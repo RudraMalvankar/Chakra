@@ -1,22 +1,25 @@
-import React, { useState, useEffect } from 'react';
+import React, { useReducer, useState, useEffect } from 'react';
 import { API_BASE, fetchMockPayments, fetchConfig } from '../services/api';
 import { formatExact } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
 import { Loader } from 'lucide-react';
 
+type GatewayState = { payments: any[]; loading: boolean; config: any };
+type GatewayAction = { type: 'loaded'; payments: any[]; config: any };
+function gatewayReducer(_state: GatewayState, action: GatewayAction): GatewayState {
+    return { payments: action.payments, config: action.config, loading: false };
+}
+
 export const Gateway = () => {
-    const [payments, setPayments] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [{ payments, loading, config }, dispatch] = useReducer(gatewayReducer, {
+        payments: [], loading: true, config: { mode: 'unavailable' },
+    });
     const [retrying, setRetrying] = useState<string | null>(null);
-    const [config, setConfig] = useState<any>({ mode: 'unavailable' });
 
     const load = async () => {
-        setLoading(true);
         const data = await fetchMockPayments();
-        setPayments(data);
         const cfg = await fetchConfig();
-        setConfig(cfg);
-        setLoading(false);
+        dispatch({ type: 'loaded', payments: data, config: cfg });
     };
 
     useEffect(() => {
