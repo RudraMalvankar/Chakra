@@ -44,8 +44,8 @@ interface BatchCaseDetail {
     events: any[];
 }
 
-const POLL_INTERVAL_MS = 1000;
-const MAX_POLL_ATTEMPTS = 120;
+const POLL_INTERVAL_MS = 2000;
+const MAX_POLL_ATTEMPTS = 300;
 const POLL_TIMEOUT_MS = MAX_POLL_ATTEMPTS * POLL_INTERVAL_MS;
 
 export const Batch = () => {

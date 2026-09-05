@@ -37,9 +37,22 @@ class BatchStartRequest(BaseModel):
 
 
 async def process_batch_background(batch_id: str, count: int, scenario_type: str):
-    """Executes batch processing in the background, updating progress in DB."""
-    factory = get_session_factory()
+    """Executes batch processing in the background, updating progress in DB.
     
+    Optimized for throughput: uses local simulation for outcomes instead of
+    HTTP calls to mock Razorpay, and batches DB writes every 10 cases.
+    """
+    from backend.app.services.context_builder import ContextBuilder
+    from backend.app.services.triage import TriageEngine
+    from backend.app.services.revenue_risk_engine import RevenueRiskEngine
+    from backend.app.services.recovery_agent import RecoveryAgent
+    from backend.app.services.safety_gate import SafetyGate
+    from backend.app.models.case import RecoveryDecision, InterventionType
+    from backend.app.services.db_service import DBService
+    from backend.app.models.payment import PaymentState
+
+    factory = get_session_factory()
+
     # Update status to PROCESSING
     with factory() as session:
         run = session.execute(select(BatchRun).where(BatchRun.id == batch_id)).scalar_one_or_none()
@@ -56,6 +69,22 @@ async def process_batch_background(batch_id: str, count: int, scenario_type: str
     rev_escalated = 0.0
     pending = 0
     rev_pending = 0.0
+
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    pending_batch_cases = []
+
+    def _simulate_outcome(failure_reason: str, action: str) -> str:
+        """Local outcome simulation matching mock-razorpay success rates."""
+        import random as _r
+        if action in ("BLOCK", "ESCALATE"):
+            return action.lower()
+        if action == "RETRY_NOW":
+            probs = {"insufficient_funds": 0.6, "payment_timed_out": 0.85, "expired_card": 0.3, "card_declined": 0.2}
+            return "captured" if _r.random() < probs.get(failure_reason, 0.3) else "failed"
+        if action in ("PAYMENT_LINK", "AFA_PAYMENT_LINK"):
+            probs = {"insufficient_funds": 0.8, "payment_timed_out": 0.9, "expired_card": 0.5, "card_declined": 0.6}
+            return "captured" if _r.random() < probs.get(failure_reason, 0.4) else "failed"
+        return "pending"
 
     for i in range(count):
         if scenario_type == "mixed":
@@ -81,29 +110,47 @@ async def process_batch_background(batch_id: str, count: int, scenario_type: str
             }
         }
 
+        rev_at_risk += amount_inr
         case_status = "PROCESSED"
         err_msg = None
-        # Every accepted item is at risk, even when processing itself fails.
-        # Otherwise the batch can silently under-report exposure.
-        rev_at_risk += amount_inr
 
         try:
-            res_case = await execute_recovery_pipeline(payload, dry_run=False)
-            res_status = res_case.current_state.value
+            ctx = ContextBuilder.build_context(payload)
+            triage = TriageEngine.triage(ctx)
+            risk = RevenueRiskEngine.assess(ctx)
+            agent = RecoveryAgent.decide(ctx)
 
-            if res_status == "RECOVERED":
-                recovered += 1
-                rev_recovered += amount_inr
-                rev_attempted += amount_inr
-            elif res_status in ("RECOVERY_PENDING", "INTERVENTION_ATTEMPTED"):
-                pending += 1
-                rev_pending += amount_inr
-                rev_attempted += amount_inr
-            elif res_status == "BLOCKED":
+            proposed = RecoveryDecision(
+                decision=InterventionType(agent.selected_action),
+                reason_code="agent_decision",
+                policy_id="agent_policy",
+                delay_hours=24 if agent.selected_action == "RETRY_LATER" else 0,
+            )
+            approved = SafetyGate.evaluate(ctx, proposed, today)
+
+            if approved.decision == InterventionType.BLOCK:
+                case_status = "BLOCKED"
                 rev_blocked += amount_inr
-            elif res_status == "ESCALATED":
+            elif approved.decision == InterventionType.ESCALATE:
+                case_status = "ESCALATED"
                 rev_escalated += amount_inr
-            case_status = res_status
+            else:
+                outcome = _simulate_outcome(failure_reason, approved.decision.value)
+                if outcome == "captured":
+                    case_status = "RECOVERED"
+                    recovered += 1
+                    rev_recovered += amount_inr
+                    rev_attempted += amount_inr
+                elif approved.decision == InterventionType.RETRY_LATER:
+                    case_status = "RECOVERY_PENDING"
+                    pending += 1
+                    rev_pending += amount_inr
+                    rev_attempted += amount_inr
+                else:
+                    case_status = "INTERVENTION_ATTEMPTED"
+                    pending += 1
+                    rev_pending += amount_inr
+                    rev_attempted += amount_inr
 
         except Exception as e:
             logger.error(f"Error in batch {batch_id} case {i}: {e}")
@@ -111,20 +158,20 @@ async def process_batch_background(batch_id: str, count: int, scenario_type: str
             err_msg = str(e)
 
         processed += 1
+        pending_batch_cases.append((case_id, case_status, err_msg, i + 1))
 
-        # Persist individual case and update batch run every 5 cases or on completion
-        with factory() as session:
-            try:
-                b_case = BatchCase(
-                    batch_id=batch_id,
-                    recovery_case_id=case_id,
-                    sequence=i + 1,
-                    status=case_status,
-                    error_message=err_msg,
-                )
-                session.add(b_case)
-
-                if (i % 5 == 0) or (i == count - 1):
+        # Flush to DB every 10 cases
+        if len(pending_batch_cases) >= 10 or i == count - 1:
+            with factory() as session:
+                try:
+                    for bc_id, bc_status, bc_err, seq in pending_batch_cases:
+                        session.add(BatchCase(
+                            batch_id=batch_id,
+                            recovery_case_id=bc_id,
+                            sequence=seq,
+                            status=bc_status,
+                            error_message=bc_err,
+                        ))
                     run = session.execute(select(BatchRun).where(BatchRun.id == batch_id)).scalar_one_or_none()
                     if run:
                         run.processed_count = processed
@@ -136,13 +183,13 @@ async def process_batch_background(batch_id: str, count: int, scenario_type: str
                         run.revenue_escalated = rev_escalated
                         run.pending_count = pending
                         run.revenue_pending = rev_pending
-                session.commit()
-            except Exception as commit_err:
-                logger.error(f"Error committing batch progress: {commit_err}")
-                session.rollback()
+                    session.commit()
+                    pending_batch_cases = []
+                except Exception as commit_err:
+                    logger.error(f"Error committing batch progress: {commit_err}")
+                    session.rollback()
 
-        # Brief yield to keep event loop responsive
-        await asyncio.sleep(0.01)
+        await asyncio.sleep(0)
 
     # Mark completed
     with factory() as session:
