@@ -182,11 +182,10 @@ async def twilio_twiml(
         if not verify_twilio_signature(request, form_params, x_twilio_signature):
             raise HTTPException(status_code=403, detail="Invalid Twilio signature")
 
-    # Hinglish MVP Prompt
     twiml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-    <Gather input="speech" action="/webhooks/twilio/gather?case_id={case_id}&amp;amount={amount}" language="hi-IN" timeout="5">
-        <Say language="hi-IN">Namaste. Chakra se call hai. Aapka {amount} rupaye ka payment bacha hai. Kya aap abhi pay karenge ya kal?</Say>
+    <Gather input="speech" action="/webhooks/twilio/gather?case_id={case_id}&amp;amount={amount}" language="hi-IN" timeout="5" speechTimeout="auto">
+        <Say language="hi-IN">Namaste, main Chakra se bol raha hoon. Aapke payment ke regarding baat karni thi. Aap bataiye, payment kab kar paayenge?</Say>
     </Gather>
 </Response>'''
     return HTMLResponse(content=twiml, media_type="text/xml")
@@ -298,7 +297,9 @@ async def twilio_gather(
                 "transcript": speech,
             },
         )
-        twiml += '<Say language="hi-IN">Dhanyavaad. Humne aapka promise record kar liya hai. Kal reminder bhejenge.</Say>'
+        amt_spoken = intent.amount or amount or "kuch"
+        date_spoken = intent.promised_date or "kal"
+        twiml += f'<Say language="hi-IN">Thik hai, aapka {amt_spoken} rupaye ka payment {date_spoken} ke liye promise note kar raha hoon.</Say>'
         
         payload = {
             "payment_id": f"ptp_voice_{case_id}",
@@ -319,7 +320,22 @@ async def twilio_gather(
         twiml += '<Say language="hi-IN">Maaf kijiye, promise record nahi ho saka. Humari team aapse sampark karegi.</Say>'
         
     elif intent.intent == "pay_now":
-        twiml += '<Say language="hi-IN">Dhanyavaad. Payment link process kiya jayega.</Say>'
+        twiml += '<Say language="hi-IN">Bilkul. Main aapko payment link bhej raha hoon.</Say>'
+        
+        # Trigger the payment link workflow via existing executor
+        payload = {
+            "payment_id": f"pay_voice_{case_id}",
+            "case_id": case_id,
+            "amount_inr": float(amount) if amount else 0.0,
+            "error_code": "voice_requested_payment_link",
+            "case_type": "CHECKOUT_ABANDONMENT", # Or just trigger the generic payment link flow
+            "customer_id": "unknown",
+            "context": {
+                "voice_request": True,
+                "call_sid": call_sid
+            }
+        }
+        await execute_recovery_pipeline(payload, dry_run=True)
     elif intent.intent == "dispute":
         # A dispute is a hard stop for automated collection. Only create the
         # FK-backed escalation when this voice session is tied to a case.
@@ -343,7 +359,7 @@ async def twilio_gather(
                 "transcript": speech[:1000],
             },
         )
-        twiml += '<Say language="hi-IN">Aapka dispute record kar liya gaya hai. Automated recovery rok di gayi hai aur hamari team review karegi.</Say>'
+        twiml += '<Say language="hi-IN">Samajh gaya. Main is case ko review ke liye team ko forward karta hoon.</Say>'
     elif intent.intent == "unwilling":
         DBService.record_audit_event(
             case_id or call_sid,
@@ -357,7 +373,7 @@ async def twilio_gather(
             "promise_not_created",
             {"reason": "EXPLICIT_DATE_REQUIRED", "source": "voice", "transcript": speech[:1000]},
         )
-        twiml += '<Say language="hi-IN">Samajh gaya. Promise record karne ke liye kripya payment date batayein. Hamari team aapse follow up karegi.</Say>'
+        twiml += f'<Gather input="speech" action="/webhooks/twilio/gather?case_id={case_id}&amp;amount={amount}" language="hi-IN" timeout="5" speechTimeout="auto"><Say language="hi-IN">Aap kaunse din ya kis date ko payment karenge? Thoda specifically bataiye.</Say></Gather>'
     elif intent.intent in {"unknown", "unclear"}:
         DBService.record_audit_event(
             case_id or call_sid,
@@ -370,3 +386,40 @@ async def twilio_gather(
         
     twiml += '</Response>'
     return HTMLResponse(content=twiml, media_type="text/xml")
+
+
+@router.post("/twilio/status")
+async def twilio_status(request: Request, case_id: str = "", x_twilio_signature: Optional[str] = Header(None)):
+    form = await request.form()
+    form_params = dict(form)
+    
+    if settings.twilio_auth_token:
+        if not verify_twilio_signature(request, form_params, x_twilio_signature):
+            raise HTTPException(status_code=403, detail="Invalid Twilio signature")
+
+    call_sid = form.get("CallSid")
+    status = form.get("CallStatus", "unknown")
+    duration = form.get("CallDuration")
+    
+    DBService.record_audit_event(
+        case_id or call_sid,
+        "voice_call_status",
+        {
+            "call_sid": call_sid,
+            "status": status,
+            "duration": duration
+        }
+    )
+    
+    DBService.record_communication(
+        case_id=case_id or None,
+        customer_id=None,
+        channel="VOICE",
+        communication_type="CALL_STATUS_UPDATE",
+        provider="twilio" if settings.is_twilio_configured else "mock",
+        provider_message_id=call_sid,
+        status=status,
+        metadata={"duration": duration, "call_sid": call_sid}
+    )
+    
+    return {"status": "ok"}

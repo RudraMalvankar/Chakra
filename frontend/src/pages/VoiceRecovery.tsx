@@ -1,376 +1,281 @@
-import { API_BASE, fetchHealth } from '../services/api';
-import React, { useEffect, useState } from 'react';
-import { PhoneCall, Mic, Phone, Loader2 } from 'lucide-react';
-import { formatCurrency } from '../lib/format';
-import { Badge } from '../components/ui/Badge';
 
-type Mode = 'twilio' | 'simulation';
-type CallStatus = 'IDLE' | 'CONNECTING' | 'RINGING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+import React, { useState, useEffect, useRef } from "react";
+import { Mic, Phone, PhoneCall, PhoneOff, User, Activity, AlertCircle, FileText } from "lucide-react";
+import { startVoiceRecovery, getVoiceRecoveryStatus, getCases } from "../services/api";
 
-export const VoiceRecovery = () => {
-    const [mode, setMode] = useState<Mode>('simulation');
-    const [twilioConfigured, setTwilioConfigured] = useState<boolean | null>(null);
-    const [status, setStatus] = useState<CallStatus>('IDLE');
-    const [transcript, setTranscript] = useState<{ speaker: string; text: string }[]>([]);
-    const [intent, setIntent] = useState<any>(null);
-    const [error, setError] = useState<string | null>(null);
-    const [receivables, setReceivables] = useState<any[]>([]);
-    const [selectedId, setSelectedId] = useState('');
-    const [phoneNumber, setPhoneNumber] = useState('');
-    const [transcriptInput, setTranscriptInput] = useState('');
-    const [analyzing, setAnalyzing] = useState(false);
-    const [creatingPromise, setCreatingPromise] = useState(false);
-    const [promiseResult, setPromiseResult] = useState<any>(null);
-    const [promiseError, setPromiseError] = useState<string | null>(null);
+const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat("en-IN", {
+        style: "currency",
+        currency: "INR",
+        maximumFractionDigits: 0,
+    }).format(amount);
+};
+
+export const VoiceRecovery: React.FC = () => {
+    const [cases, setCases] = useState<any[]>([]);
+    const [selectedCaseId, setSelectedCaseId] = useState<string>("");
+    const [toNumber, setToNumber] = useState<string>("");
+    
+    const [status, setStatus] = useState<string>("idle");
+    const [callSid, setCallSid] = useState<string>("");
+    const [error, setError] = useState<string>("");
+    const [transcript, setTranscript] = useState<any[]>([]);
+    const [intents, setIntents] = useState<any[]>([]);
+    const [promise, setPromise] = useState<any>(null);
+
+    const timerRef = useRef<any>(null);
 
     useEffect(() => {
-        fetch(`${API_BASE}/api/receivables`)
-            .then((res) => (res.ok ? res.json() : []))
-            .then((items) => {
-                setReceivables(Array.isArray(items) ? items : []);
-                if (items?.[0]) setSelectedId(items[0].id);
-            })
-            .catch(() => setReceivables([]));
-        fetchHealth()
-            .then((h) => setTwilioConfigured(h.twilio === 'configured'))
-            .catch(() => setTwilioConfigured(false));
+        getCases().then(res => {
+            const openCases = (res.cases || []).filter((c: any) => 
+                ["RECOVERY_PENDING", "PROMISE_BROKEN"].includes(c.status)
+            );
+            setCases(openCases);
+        }).catch(err => console.error("Failed to load cases", err));
     }, []);
 
-    const selected = receivables.find((item) => item.id === selectedId);
-    const canCreatePromise =
-        intent?.intent === 'promise_to_pay' &&
-        intent?.amount != null &&
-        Number(intent.amount) > 0 &&
-        Boolean(intent?.promised_date) &&
-        Boolean(selected);
+    const selectedCase = cases.find(c => c.id === selectedCaseId);
 
-    const analyzeTranscript = async () => {
-        if (!transcriptInput.trim()) return;
-        setAnalyzing(true);
-        setError(null);
-        setPromiseResult(null);
-        setPromiseError(null);
-        try {
-            const res = await fetch(`${API_BASE}/api/receivables/voice/intent`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ transcript: transcriptInput.trim(), session_id: selectedId || undefined }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || `Intent analysis failed (${res.status})`);
-            setTranscript((current) => [...current, { speaker: 'CUSTOMER', text: transcriptInput.trim() }]);
-            setIntent(data);
-            setTranscriptInput('');
-            setStatus('COMPLETED');
-        } catch (e) {
-            setError(e instanceof Error ? e.message : 'Intent analysis failed');
-            setStatus('FAILED');
-        } finally {
-            setAnalyzing(false);
+    const startRecovery = async () => {
+        if (!selectedCaseId || !toNumber) {
+            setError("Please select a case and enter a phone number.");
+            return;
         }
-    };
-
-    const createPromiseFromIntent = async () => {
-        if (!canCreatePromise || !selected) return;
-        setCreatingPromise(true);
-        setPromiseError(null);
-        try {
-            const res = await fetch(`${API_BASE}/api/receivables/promises`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    receivable_id: selected.id,
-                    customer: selected.customer,
-                    amount: Number(intent.amount),
-                    promised_date: intent.promised_date,
-                    notes: 'Created from browser voice simulation',
-                    source: 'voice',
-                }),
-            });
-            const data = await res.json();
-            if (!res.ok) throw new Error(data.detail || `Promise create failed (${res.status})`);
-            setPromiseResult(data);
-        } catch (e) {
-            setPromiseError(e instanceof Error ? e.message : 'Unable to create promise');
-        } finally {
-            setCreatingPromise(false);
-        }
-    };
-
-    const startCall = async () => {
-        setStatus('CONNECTING');
+        setError("");
+        setStatus("CONNECTING");
         setTranscript([]);
-        setIntent(null);
-        setError(null);
-        setPromiseResult(null);
-        if (!twilioConfigured) {
-            setStatus('FAILED');
-            setError('TWILIO NOT CONFIGURED');
-            return;
-        }
-        if (!selected) {
-            setStatus('FAILED');
-            setError('Select an ingested receivable before starting a call.');
-            return;
-        }
-        if (!phoneNumber.trim()) {
-            setStatus('FAILED');
-            setError('Enter the customer phone number before starting a call.');
-            return;
-        }
+        setIntents([]);
+        setPromise(null);
 
         try {
-            const res = await fetch(`${API_BASE}/api/receivables/voice/start`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    receivable_id: selected.id,
-                    phone_number: phoneNumber.trim(),
-                }),
+            const res = await startVoiceRecovery({
+                case_id: selectedCaseId,
+                to_number: toNumber,
+                amount: selectedCase.amount_inr,
+                customer_name: selectedCase.customer_name
             });
-            const data = await res.json();
-
-            if (data.status === 'error') {
-                setStatus('FAILED');
-                setError(data.message || 'Call failed');
+            
+            if (res.status === "error") {
+                setError(res.message || "Failed to start call");
+                setStatus("FAILED");
                 return;
             }
-            setStatus(data.status === 'success' ? 'RINGING' : 'FAILED');
-            if (data.status !== 'success') setError(data.message || 'Provider did not accept the call');
-        } catch (e) {
-            console.error(e);
-            setStatus('FAILED');
-            setError(e instanceof Error ? e.message : 'Call failed');
+
+            setCallSid(res.call_sid);
+            setStatus("CALLING");
+        } catch (err: any) {
+            setError(err.message || "Failed to connect to Twilio.");
+            setStatus("FAILED");
         }
     };
 
-    const confidenceLabel =
-        intent?.confidence != null && Number.isFinite(Number(intent.confidence))
-            ? `${Math.round(Number(intent.confidence) * 100)}%`
-            : 'NOT AVAILABLE';
+    const pollStatus = async () => {
+        if (!callSid || ["COMPLETED", "FAILED", "completed", "failed", "busy", "no-answer", "canceled"].includes(status.toLowerCase())) {
+            return;
+        }
+        
+        try {
+            const data = await getVoiceRecoveryStatus(callSid);
+            
+            if (data.status) setStatus(data.status.toUpperCase());
+            if (data.transcript) setTranscript(data.transcript);
+            if (data.intents) setIntents(data.intents);
+            if (data.promise) setPromise(data.promise);
+            
+        } catch (err) {
+            console.error("Polling error", err);
+        }
+    };
+
+    useEffect(() => {
+        if (callSid && !["COMPLETED", "FAILED", "completed", "failed", "busy", "no-answer", "canceled"].includes(status.toLowerCase())) {
+            timerRef.current = setInterval(pollStatus, 2000);
+        }
+        return () => {
+            if (timerRef.current) clearInterval(timerRef.current);
+        };
+    }, [callSid, status]);
+
+    const latestIntent = intents.length > 0 ? intents[intents.length - 1] : null;
 
     return (
-        <div className="max-w-6xl mx-auto space-y-6">
-            <div className="bg-white border border-border shadow-sm p-6 flex justify-between items-center">
-                <div>
-                    <h2 className="text-lg font-bold text-text-main uppercase tracking-wider flex items-center">
-                        <PhoneCall className="mr-3 text-rzp-blue" size={20} />
-                        Voice Recovery
-                    </h2>
-                    <p className="text-sm text-text-muted mt-1">
-                        Two modes: real Twilio calls, or browser transcript simulation (not a live phone call).
-                    </p>
-                </div>
-            </div>
+        <div className="p-6 h-full flex flex-col bg-gray-50">
+            <h1 className="text-2xl font-black text-text-main tracking-tight uppercase mb-6 flex items-center">
+                <Mic className="mr-3 text-rzp-blue" size={28} />
+                LIVE VOICE RECOVERY
+            </h1>
 
-            <div className="flex gap-2">
-                <button
-                    type="button"
-                    onClick={() => { setMode('twilio'); setError(null); }}
-                    className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border ${mode === 'twilio' ? 'bg-rzp-blue text-white border-rzp-blue' : 'bg-white text-text-muted border-border'}`}
-                >
-                    A) Real Twilio
-                </button>
-                <button
-                    type="button"
-                    onClick={() => { setMode('simulation'); setError(null); }}
-                    className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border ${mode === 'simulation' ? 'bg-rzp-blue text-white border-rzp-blue' : 'bg-white text-text-muted border-border'}`}
-                >
-                    B) Browser Voice Simulation
-                </button>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-white border border-border shadow-sm p-6 col-span-1 h-[600px] flex flex-col">
-                    <h3 className="text-xs font-bold text-text-main uppercase tracking-wider border-b border-border pb-4 mb-4">Customer Details</h3>
-
-                    <div className="space-y-4 mb-8">
-                        <div>
-                            <div className="text-[10px] text-text-muted uppercase tracking-widest mb-1">Receivable</div>
-                            <select value={selectedId} onChange={(e) => setSelectedId(e.target.value)} className="w-full border border-border rounded px-2 py-2 font-mono text-xs" disabled={receivables.length === 0}>
-                                {receivables.length === 0 && <option value="">No ingested receivables</option>}
-                                {receivables.map((item) => (
-                                    <option key={item.id} value={item.id}>
-                                        {item.invoice_id || item.id} — {item.customer}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                        <div>
-                            <div className="text-[10px] text-text-muted uppercase tracking-widest mb-1">Customer</div>
-                            <div className="font-bold text-text-main">{selected?.customer || 'No receivable selected'}</div>
-                        </div>
-                        {mode === 'twilio' && (
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 min-h-0">
+                {/* Configuration Panel */}
+                <div className="bg-white border border-border rounded shadow-sm p-6 flex flex-col space-y-6">
+                    <div>
+                        <h3 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-4">Setup Call</h3>
+                        
+                        <div className="space-y-4">
                             <div>
-                                <div className="text-[10px] text-text-muted uppercase tracking-widest mb-1">Phone</div>
-                                <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="+91…" className="w-full border border-border rounded px-2 py-2 font-mono text-sm" />
+                                <label className="block text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Select Case</label>
+                                <select 
+                                    className="w-full border border-border p-2 rounded text-sm"
+                                    value={selectedCaseId}
+                                    onChange={(e) => setSelectedCaseId(e.target.value)}
+                                    disabled={status !== "idle" && status !== "FAILED"}
+                                >
+                                    <option value="">-- Choose Recovery Case --</option>
+                                    {cases.map((c: any) => (
+                                        <option key={c.id} value={c.id}>
+                                            {c.id} - {c.customer_name} ({formatCurrency(c.amount_inr)})
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
-                        )}
-                        <div>
-                            <div className="text-[10px] text-text-muted uppercase tracking-widest mb-1">Amount</div>
-                            <div className="font-mono text-2xl font-bold text-text-main">
-                                {selected ? formatCurrency(selected.remaining_amount ?? selected.amount) : 'Not available'}
-                            </div>
-                        </div>
-                        <div>
-                            <div className="text-[10px] text-text-muted uppercase tracking-widest mb-1">Language</div>
-                            <div className="font-mono text-xs">Hinglish (hi-IN)</div>
-                        </div>
-                    </div>
 
-                    {mode === 'twilio' && (
-                        <div className="mt-auto space-y-3">
-                            <div className="text-[10px] font-mono uppercase tracking-widest">
-                                Twilio:{' '}
-                                <span className={twilioConfigured ? 'text-rzp-green font-bold' : 'text-rzp-red font-bold'}>
-                                    {twilioConfigured == null ? 'Checking…' : twilioConfigured ? 'Configured' : 'NOT CONFIGURED'}
-                                </span>
+                            {selectedCase && (
+                                <div className="p-3 bg-blue-50 border border-blue-100 rounded text-sm">
+                                    <div className="flex justify-between mb-1">
+                                        <span className="text-text-muted">Customer:</span>
+                                        <span className="font-bold">{selectedCase.customer_name}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-text-muted">Outstanding:</span>
+                                        <span className="font-bold text-rzp-red">{formatCurrency(selectedCase.amount_inr)}</span>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Target Phone Number</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="+919876543210"
+                                    className="w-full border border-border p-2 rounded text-sm font-mono"
+                                    value={toNumber}
+                                    onChange={(e) => setToNumber(e.target.value)}
+                                    disabled={status !== "idle" && status !== "FAILED"}
+                                />
+                                <div className="text-[10px] text-text-muted mt-1">Must be verified in Twilio if using Trial account.</div>
                             </div>
+
+                            {error && (
+                                <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs font-bold uppercase rounded flex items-center">
+                                    <AlertCircle size={16} className="mr-2" />
+                                    {error}
+                                </div>
+                            )}
+
                             <button
-                                onClick={startCall}
-                                disabled={!twilioConfigured || (status !== 'IDLE' && status !== 'COMPLETED' && status !== 'FAILED')}
-                                className="w-full py-3 bg-rzp-blue text-white font-bold uppercase tracking-widest rounded hover:bg-blue-700 transition-colors disabled:opacity-50 flex justify-center items-center"
+                                onClick={startRecovery}
+                                disabled={!selectedCaseId || !toNumber || (status !== "idle" && status !== "FAILED" && status !== "COMPLETED")}
+                                className="w-full py-3 bg-rzp-blue hover:bg-blue-700 text-white font-bold text-sm uppercase tracking-wider rounded disabled:opacity-50 transition-colors flex items-center justify-center"
                             >
-                                {status === 'CONNECTING' ? <Loader2 className="animate-spin mr-2" size={18} /> : <Phone className="mr-2" size={18} />}
-                                {status === 'IDLE' || status === 'COMPLETED' || status === 'FAILED' ? 'Start real call' : 'Call in progress'}
+                                <Phone className="mr-2" size={18} />
+                                Start Voice Recovery
                             </button>
                         </div>
-                    )}
-                </div>
-
-                <div className="col-span-2 bg-gray-50 border border-border shadow-sm h-[600px] flex flex-col">
-                    <div className="px-6 py-4 border-b border-border bg-white flex justify-between items-center shrink-0">
-                        <h3 className="text-xs font-bold text-text-main uppercase tracking-wider">
-                            {mode === 'twilio' ? 'Real Twilio console' : 'Browser simulation console — not a live phone call'}
-                        </h3>
-                        <Badge status={status}>{status}</Badge>
                     </div>
 
-                    <div className="flex-1 p-6 overflow-y-auto flex flex-col space-y-4">
-                        {mode === 'twilio' && status === 'IDLE' && (
-                            <div className="flex-1 flex items-center justify-center text-text-muted font-mono text-sm text-center px-6">
-                                {twilioConfigured
-                                    ? 'Ready to place a real Twilio call when credentials and webhook URL are set.'
-                                    : 'TWILIO NOT CONFIGURED — set account SID, auth token, from-number, and webhook base URL.'}
+                    <div className="mt-auto pt-6 border-t border-border">
+                        <div className="flex justify-between items-center text-xs font-mono">
+                            <span className="text-text-muted">Call Status</span>
+                            <span className={`font-bold px-2 py-1 rounded ${
+                                ["COMPLETED", "FAILED"].includes(status) ? "bg-gray-100 text-gray-800" :
+                                status === "idle" ? "bg-blue-50 text-blue-600" :
+                                "bg-green-100 text-green-800"
+                            }`}>
+                                {status}
+                            </span>
+                        </div>
+                        {callSid && (
+                            <div className="mt-2 text-[10px] font-mono text-text-muted truncate">
+                                SID: {callSid}
                             </div>
                         )}
-                        {mode === 'twilio' && status === 'RINGING' && (
-                            <div className="flex-1 flex items-center justify-center text-text-muted font-mono text-sm">
-                                Twilio accepted the call. Conversation updates will appear from provider callbacks.
+                    </div>
+                </div>
+
+                {/* Conversation Panel */}
+                <div className="lg:col-span-2 bg-white border border-border rounded shadow-sm flex flex-col h-[600px] overflow-hidden">
+                    <div className="p-4 border-b border-border bg-gray-50 flex items-center justify-between">
+                        <h3 className="text-xs font-bold text-text-main uppercase tracking-wider flex items-center">
+                            <Activity className="mr-2 text-rzp-blue" size={16} />
+                            Live Conversation View
+                        </h3>
+                        {status === "IN-PROGRESS" || status === "IN_PROGRESS" || status === "RINGING" ? (
+                            <span className="flex h-3 w-3">
+                              <span className="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-green-400 opacity-75"></span>
+                              <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span>
+                            </span>
+                        ) : null}
+                    </div>
+
+                    <div className="flex-1 p-6 overflow-y-auto space-y-6 bg-gray-50">
+                        {transcript.length === 0 && status === "idle" && (
+                            <div className="h-full flex flex-col items-center justify-center text-text-muted">
+                                <PhoneOff size={48} className="mb-4 opacity-20" />
+                                <p className="text-sm font-mono">Start a call to see live transcript.</p>
                             </div>
                         )}
-                        {status === 'FAILED' && error && (
-                            <div className="p-4 border border-red-200 bg-red-50 text-rzp-red font-mono text-sm">{error}</div>
-                        )}
+                        
+                        {status === "CALLING" || status === "CONNECTING" ? (
+                            <div className="flex flex-col items-center justify-center py-10 text-text-muted">
+                                <div className="animate-pulse flex items-center mb-4">
+                                    <PhoneCall size={32} className="text-rzp-blue" />
+                                </div>
+                                <p className="text-sm font-mono font-bold uppercase">{status}...</p>
+                            </div>
+                        ) : null}
 
                         {transcript.map((t, i) => (
-                            <div key={i} className={`flex flex-col ${t.speaker === 'CUSTOMER' ? 'items-end' : 'items-start'}`}>
-                                <div className="text-[10px] font-bold text-text-muted mb-1">{t.speaker}</div>
-                                <div
-                                    className={`p-3 rounded max-w-[70%] font-mono text-sm ${
-                                        t.speaker === 'CUSTOMER'
-                                            ? 'bg-white border border-border text-text-main'
-                                            : 'bg-blue-50 border border-blue-100 text-rzp-blue'
-                                    }`}
-                                >
+                            <div key={i} className={`flex flex-col ${t.speaker === "CUSTOMER" ? "items-end" : "items-start"}`}>
+                                <div className="text-[10px] font-bold text-text-muted mb-1 flex items-center">
+                                    {t.speaker === "CUSTOMER" ? <User size={12} className="mr-1"/> : <Mic size={12} className="mr-1"/>}
+                                    {t.speaker}
+                                </div>
+                                <div className={`p-3 rounded-lg max-w-[80%] font-medium text-sm ${
+                                        t.speaker === "CUSTOMER"
+                                            ? "bg-white border border-border text-text-main shadow-sm"
+                                            : "bg-blue-50 border border-blue-100 text-rzp-blue"
+                                    }`}>
                                     {t.text}
                                 </div>
                             </div>
                         ))}
-
-                        {mode === 'simulation' && (
-                            <div className="mt-auto border border-dashed border-border bg-white p-4">
-                                <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-2">
-                                    Browser voice simulation — type or paste customer speech (not a live call)
-                                </div>
-                                <textarea
-                                    value={transcriptInput}
-                                    onChange={(e) => setTranscriptInput(e.target.value)}
-                                    placeholder="Paste customer speech in Hindi, Hinglish, or English"
-                                    className="w-full border border-border rounded p-2 font-mono text-sm min-h-20"
-                                />
-                                <button
-                                    onClick={analyzeTranscript}
-                                    disabled={analyzing || !transcriptInput.trim()}
-                                    className="mt-2 px-4 py-2 bg-rzp-blue text-white rounded text-xs font-bold uppercase disabled:opacity-50"
-                                >
-                                    {analyzing ? 'Analyzing…' : 'Analyze voice intent'}
-                                </button>
-                            </div>
-                        )}
                     </div>
 
-                    {intent && mode === 'simulation' && (
-                        <div className="shrink-0 p-6 border-t border-border bg-white space-y-4">
-                            <div className="flex items-center mb-2">
-                                <Mic className="text-rzp-blue mr-2" size={18} />
-                                <h4 className="text-xs font-bold text-text-main uppercase tracking-wider">Gemini voice intent result</h4>
-                            </div>
-                            <div className="grid grid-cols-2 md:grid-cols-6 gap-4 p-4 bg-gray-50 border border-border rounded font-mono text-sm">
-                                <div>
-                                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Intent</div>
-                                    <div className="font-bold text-text-main">{String(intent.intent || '').replace(/_/g, ' ') || 'NOT AVAILABLE'}</div>
-                                </div>
-                                <div>
-                                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Amount</div>
-                                    <div className="font-bold text-text-main">
-                                        {intent.amount != null ? formatCurrency(intent.amount) : 'NOT AVAILABLE'}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Date</div>
-                                    <div className="font-bold text-text-main">{intent.promised_date || 'NOT AVAILABLE'}</div>
-                                </div>
-                                <div>
-                                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Confidence</div>
-                                    <div className="font-bold text-text-main">{confidenceLabel}</div>
-                                </div>
-                                <div>
-                                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">Model</div>
-                                    <div className="font-bold text-text-main">{intent.model_used || (intent.ai_used ? 'Gemini' : 'Fallback')}</div>
-                                </div>
-                                <div>
-                                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1">AI used</div>
-                                    <div className="font-bold text-text-main">{intent.ai_used ? 'YES' : 'NO'}</div>
-                                </div>
-                            </div>
-
-                            {canCreatePromise && (
-                                <div className="flex items-center gap-3">
-                                    <button
-                                        onClick={createPromiseFromIntent}
-                                        disabled={creatingPromise}
-                                        className="px-4 py-2 bg-rzp-blue text-white rounded text-xs font-bold uppercase disabled:opacity-50"
-                                    >
-                                        {creatingPromise ? 'Creating promise…' : 'Create promise via backend'}
-                                    </button>
-                                    <span className="text-xs font-mono text-text-muted">Uses amount/date from Gemini intent only.</span>
-                                </div>
-                            )}
-                            {promiseError && <div className="text-xs font-mono text-rzp-red">{promiseError}</div>}
-                            {promiseResult && (
-                                <div className="p-3 border border-border bg-gray-50 font-mono text-xs space-y-2">
-                                    <div>
-                                        Promise {promiseResult.id} · {promiseResult.status} · {formatCurrency(promiseResult.amount)} ·{' '}
-                                        {promiseResult.promised_date}
-                                    </div>
-                                    {(promiseResult.audit_events || []).length > 0 && (
+                    {/* AI Interpretation Panel */}
+                    {(latestIntent || promise) && (
+                        <div className="p-4 border-t border-border bg-white">
+                            <h4 className="text-[10px] font-bold text-text-muted uppercase tracking-widest mb-3 flex items-center">
+                                <FileText size={12} className="mr-1" />
+                                AI Interpretation
+                            </h4>
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 font-mono text-xs">
+                                {latestIntent && (
+                                    <>
                                         <div>
-                                            <div className="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-1">Audit events</div>
-                                            {(promiseResult.audit_events || []).map((ev: any, i: number) => (
-                                                <div key={i}>
-                                                    {ev.event_type}
-                                                    {ev.details?.source ? ` · source=${ev.details.source}` : ''}
-                                                    {ev.details?.amount_inr != null ? ` · ₹${ev.details.amount_inr}` : ''}
-                                                </div>
-                                            ))}
+                                            <div className="text-text-muted mb-1">INTENT</div>
+                                            <div className="font-bold text-rzp-blue">{latestIntent.intent}</div>
                                         </div>
-                                    )}
+                                        <div>
+                                            <div className="text-text-muted mb-1">LANGUAGE</div>
+                                            <div className="font-bold">{latestIntent.language || "N/A"}</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-text-muted mb-1">CONFIDENCE</div>
+                                            <div className="font-bold">{(latestIntent.confidence * 100).toFixed(0)}%</div>
+                                        </div>
+                                        <div>
+                                            <div className="text-text-muted mb-1">MODEL</div>
+                                            <div className="font-bold">{latestIntent.model_used}</div>
+                                        </div>
+                                    </>
+                                )}
+                            </div>
+                            {promise && (
+                                <div className="mt-4 p-3 bg-green-50 border border-green-200 text-green-800 rounded font-mono text-xs">
+                                    <div className="font-bold uppercase mb-1">Promise Persisted</div>
+                                    <div>Amount: {formatCurrency(promise.amount_inr)} (Source: {promise.source})</div>
                                 </div>
                             )}
-                            <div className="text-center text-xs font-mono text-text-muted">
-                                Interpretation only — values come from the voice intent API, not simulated confidence or scripted replies.
-                            </div>
                         </div>
                     )}
                 </div>
@@ -378,3 +283,4 @@ export const VoiceRecovery = () => {
         </div>
     );
 };
+

@@ -12,6 +12,7 @@ from backend.app.api.webhooks import router as webhook_router
 from backend.app.api.receivables import router as receivables_router
 from backend.app.api.batches import router as batches_router
 from backend.app.api.escalations import router as escalations_router
+from backend.app.api.voice import router as voice_router
 from backend.app.services.metrics_aggregator import generate_metrics_report
 from backend.app.lib.audit import AUDIT_FILE, log_audit_event
 from backend.app.lib.config_utils import get_recovery_policy, get_regulatory_policy
@@ -47,6 +48,7 @@ app.include_router(webhook_router, prefix="/webhooks")
 app.include_router(receivables_router, prefix="/api/receivables")
 app.include_router(batches_router, prefix="/api/batches")
 app.include_router(escalations_router, prefix="/api/escalations")
+app.include_router(voice_router)
 
 @app.get("/health")
 def health_check():
