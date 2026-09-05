@@ -86,7 +86,7 @@ class ResolveEscalationRequest(BaseModel):
 
 # ─── Read Endpoints ──────────────────────────────────────────────────────────
 
-@router.get("/")
+@router.get("")
 def list_escalations(limit: int = 200):
     return DBService.list_escalations(limit=limit)
 

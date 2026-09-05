@@ -107,6 +107,9 @@ export const VoiceRecovery: React.FC = () => {
   const vadIntervalRef = useRef<any>(null);
   const speechDetectedRef = useRef<boolean>(false);
   const isRecordingRef = useRef<boolean>(false);
+  // Browser built-in SpeechRecognition (runs parallel to MediaRecorder as STT fallback)
+  const browserSttRef = useRef<any>(null);
+  const browserSttTextRef = useRef<string>("");
 
   useEffect(() => {
     isHandsFreeRef.current = isHandsFree;
@@ -367,9 +370,10 @@ export const VoiceRecovery: React.FC = () => {
 
         // Convert audio chunks to Base64 and dispatch to Gemini Speech-to-Text
         const chunks = audioChunksRef.current;
-        if (chunks.length > 0 && speechDetectedRef.current && isCallActiveRef.current) {
+        if (chunks.length > 0 && isCallActiveRef.current) {
           const blob = new Blob(chunks, { type: recorder.mimeType || "audio/webm" });
-          if (blob.size > 1500) {
+          // If speech was flagged or recording duration had enough audio data (> 1000 bytes)
+          if (blob.size > 1000) {
             const reader = new FileReader();
             reader.onloadend = () => {
               const base64Data = (reader.result as string).split(",")[1];
@@ -383,9 +387,51 @@ export const VoiceRecovery: React.FC = () => {
       };
 
       speechDetectedRef.current = false;
+      browserSttTextRef.current = "";
       recorder.start(100); // 100ms chunk slices
       isRecordingRef.current = true;
       setIsListening(true);
+
+      // Start browser built-in SpeechRecognition in parallel for reliable STT
+      try {
+        const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (SpeechRecognition) {
+          const recognition = new SpeechRecognition();
+          recognition.lang = "hi-IN"; // Hindi/Hinglish
+          recognition.continuous = true;
+          recognition.interimResults = false;
+          recognition.maxAlternatives = 1;
+
+          recognition.onresult = (event: any) => {
+            let finalText = "";
+            for (let i = 0; i < event.results.length; i++) {
+              if (event.results[i].isFinal) {
+                finalText += event.results[i][0].transcript + " ";
+              }
+            }
+            if (finalText.trim()) {
+              browserSttTextRef.current = finalText.trim();
+              console.log("[BrowserSTT] Recognized:", finalText.trim());
+            }
+          };
+
+          recognition.onerror = (event: any) => {
+            console.warn("[BrowserSTT] Error:", event.error);
+          };
+
+          recognition.onend = () => {
+            console.log("[BrowserSTT] Session ended");
+          };
+
+          recognition.start();
+          browserSttRef.current = recognition;
+          console.log("[BrowserSTT] Started alongside MediaRecorder");
+        } else {
+          console.warn("[BrowserSTT] Not available in this browser");
+        }
+      } catch (sttErr) {
+        console.warn("[BrowserSTT] Failed to start:", sttErr);
+      }
 
       // Start VAD volume check to detect when user starts and stops speaking
       startVadVolumeMonitor();
@@ -404,8 +450,9 @@ export const VoiceRecovery: React.FC = () => {
     const dataArray = new Uint8Array(analyser.frequencyBinCount);
 
     let consecutiveSilenceCount = 0;
-    const SPEECH_THRESHOLD = 15; // Volume threshold for speech
-    const SILENCE_FRAMES_NEEDED = 14; // ~1.4 seconds of silence to finalize turn
+    // Lower threshold so built-in laptop microphones are easily triggered
+    const SPEECH_THRESHOLD = 5; 
+    const SILENCE_FRAMES_NEEDED = 8; // ~0.8 seconds of silence to finalize turn (faster response)
 
     vadIntervalRef.current = setInterval(() => {
       if (!isRecordingRef.current) return;
@@ -417,7 +464,7 @@ export const VoiceRecovery: React.FC = () => {
         sum += dataArray[i];
       }
       const avg = sum / dataArray.length;
-      setAudioLevel(Math.min(100, Math.round(avg * 2.5)));
+      setAudioLevel(Math.min(100, Math.round(avg * 3.5)));
 
       if (avg > SPEECH_THRESHOLD) {
         speechDetectedRef.current = true;
@@ -437,6 +484,13 @@ export const VoiceRecovery: React.FC = () => {
       try {
         mediaRecorderRef.current.stop();
       } catch (e) {}
+    }
+    // Stop browser SpeechRecognition if running
+    if (browserSttRef.current) {
+      try {
+        browserSttRef.current.stop();
+      } catch (e) {}
+      browserSttRef.current = null;
     }
     if (vadIntervalRef.current) {
       clearInterval(vadIntervalRef.current);
@@ -596,9 +650,14 @@ export const VoiceRecovery: React.FC = () => {
     ]);
 
     try {
+      // Include browser-recognized speech text as fallback for Gemini audio STT
+      const browserRecognizedText = browserSttTextRef.current || "";
+      console.log("[VoiceRecovery] Dispatching audio to backend. Browser STT text:", browserRecognizedText || "(none)");
+      
       const res = await sendSimulatedVoiceTurn({
         case_id: selectedCaseId,
         call_sid: callSid,
+        user_speech: browserRecognizedText || undefined,
         audio_base64: audioBase64,
         audio_mime: mimeType,
         amount: selectedCase?.amount_inr ?? 0,

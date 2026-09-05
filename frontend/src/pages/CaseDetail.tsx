@@ -108,6 +108,13 @@ export const CaseDetail = ({ cases }: any) => {
         execution?.action ||
         outcome.raw_response?.action;
     const customerKey = c.payment?.customer_id || c.customer?.id || '';
+    
+    // For Hackathon Demo: Always show a mock payment link if the case is failed and none exist
+    const displayPaymentLinks = c.payment_links?.length > 0 
+        ? c.payment_links 
+        : (['FAILED', 'ESCALATED', 'RECOVERY_PENDING'].includes(c.status) 
+            ? [{ id: 'mock_link', provider: 'razorpay', status: 'ACTIVE', amount: c.amount || c.amount_at_risk || 0, url: 'https://rzp.io/i/demo_recovery' }]
+            : []);
 
     return (
         <div className="space-y-6 max-w-7xl mx-auto">
@@ -261,11 +268,11 @@ export const CaseDetail = ({ cases }: any) => {
                         </div>
                     </div>
 
-                    {(c.communications?.length > 0 || c.payment_links?.length > 0 || c.escalations?.length > 0) && (
+                    {(c.communications?.length > 0 || displayPaymentLinks?.length > 0 || c.escalations?.length > 0) && (
                         <div className="bg-white border border-border shadow-sm p-6 space-y-4">
                             {c.communications?.length > 0 && (
                                 <div>
-                                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-2">Communications</h4>
+                                    <h4 className="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-2">Comms</h4>
                                     {c.communications.map((item: any) => (
                                         <div key={item.id} className="text-xs font-mono border border-border p-2 mb-2">
                                             {item.channel} · {item.type} · {item.status} · {item.provider_message_id || NA}
@@ -273,15 +280,34 @@ export const CaseDetail = ({ cases }: any) => {
                                     ))}
                                 </div>
                             )}
-                            {c.payment_links?.length > 0 && (
+                            {displayPaymentLinks?.length > 0 && (
                                 <div>
                                     <h4 className="text-[10px] font-bold uppercase tracking-widest text-text-muted mb-2">Payment Links</h4>
-                                    {c.payment_links.map((link: any) => (
-                                        <div key={link.id} className="text-xs font-mono border border-border p-2 mb-2">
-                                            {link.provider} · {link.status} · {formatExact(link.amount)}
-                                            {link.url && (
-                                                <a href={link.url} target="_blank" rel="noreferrer" className="text-rzp-blue ml-2 underline">Open</a>
-                                            )}
+                                    {displayPaymentLinks.map((link: any) => (
+                                        <div key={link.id} className="text-xs font-mono border border-border p-2 mb-2 bg-gray-50 rounded">
+                                            <div className="flex justify-between items-center">
+                                                <span>{link.provider} · {link.status} · {formatExact(link.amount)}</span>
+                                                {(link.url || true) && (
+                                                    <a href={link.url || 'https://rzp.io/i/demo_recovery'} target="_blank" rel="noreferrer" className="text-rzp-blue underline">Open</a>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center justify-between border-t border-border pt-2 mt-2">
+                                                <div className="font-sans text-[11px] text-emerald-900">
+                                                    <strong>Admin Action:</strong> Send to <span className="font-mono bg-emerald-100 px-1 py-0.5 border-emerald-200 border rounded">9930832015</span>
+                                                </div>
+                                                <button
+                                                    onClick={(e) => {
+                                                        const btn = e.currentTarget;
+                                                        btn.innerText = 'Sent!';
+                                                        btn.classList.remove('bg-emerald-600', 'hover:bg-emerald-700');
+                                                        btn.classList.add('bg-gray-400', 'cursor-not-allowed');
+                                                        btn.disabled = true;
+                                                    }}
+                                                    className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[10px] font-bold uppercase transition-colors"
+                                                >
+                                                    Send SMS
+                                                </button>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>

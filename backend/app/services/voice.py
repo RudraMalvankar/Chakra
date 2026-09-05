@@ -134,13 +134,13 @@ async def extract_voice_intent(transcript: str) -> VoiceIntent:
         )
     lower = safe_transcript.lower()
     fallback_intent = "unknown"
-    if any(w in lower for w in ["galat", "wrong invoice", "dispute"]):
+    if any(w in lower for w in ["galat", "wrong invoice", "dispute", "गलत"]):
         fallback_intent = "dispute"
-    elif any(w in lower for w in ["nahi", "no", "mat", "not paying"]):
+    elif any(w in lower for w in ["nahi", "no", "mat", "not paying", "नहीं", "मना"]):
         fallback_intent = "unwilling"
-    elif any(w in lower for w in ["kal", "tomorrow", "baad", "next week", "agle", "promise"]):
+    elif any(w in lower for w in ["kal", "tomorrow", "baad", "next week", "agle", "promise", "दिन", "कल", "बाद", "परसों", "दूंगा", "करुंगा"]):
         fallback_intent = "promise_to_pay"
-    elif any(w in lower for w in ["abhi", "now", "pay", "haan", "yes", "ok"]):
+    elif any(w in lower for w in ["abhi", "now", "pay", "haan", "yes", "ok", "अभी", "हाँ", "हां", "तुरंत"]):
         fallback_intent = "pay_now"
     if not safe_transcript.strip():
         fallback_intent = "unclear"

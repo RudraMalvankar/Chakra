@@ -97,7 +97,7 @@ export const Escalations: React.FC = () => {
     dispatch({ type: 'loading' });
     try {
       const [queue, stats] = await Promise.all([
-        fetch(`${API_BASE}/api/escalations/`),
+        fetch(`${API_BASE}/api/escalations`),
         fetch(`${API_BASE}/api/escalations/summary`),
       ]);
       if (!queue.ok || !stats.ok) throw new Error('Backend returned an escalation error');

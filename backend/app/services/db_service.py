@@ -258,10 +258,75 @@ class DBService:
         if not session:
             return []
         try:
+            from sqlalchemy.orm import selectinload
             rows = session.execute(
-                select(Escalation).order_by(desc(Escalation.created_at)).limit(limit)
+                select(Escalation).options(selectinload(Escalation.actions)).order_by(desc(Escalation.created_at)).limit(limit)
             ).scalars().all()
-            return [DBService._escalation_dict(row, session=session, full=False) for row in rows]
+
+            # Bulk load related objects to fix N+1 over Postgres
+            case_ids = list({row.recovery_case_id for row in rows if row.recovery_case_id})
+            recs_map = {}
+            rcs_map = {}
+            if case_ids:
+                from sqlalchemy.orm import selectinload
+                from backend.app.db.models import Payment
+                # 1. Bulk load RecoveryCase with relationships
+                rcs = session.execute(
+                    select(RecoveryCase)
+                    .options(selectinload(RecoveryCase.payment).selectinload(Payment.customer))
+                    .where(RecoveryCase.id.in_(case_ids))
+                ).scalars().all()
+                rcs_map = {rc.id: rc for rc in rcs}
+                
+                # 2. Bulk load Receivable
+                recs = session.execute(select(Receivable).where(Receivable.invoice_number.in_(case_ids))).scalars().all()
+                recs_map = {rec.invoice_number: rec for rec in recs}
+
+            result = []
+            for row in rows:
+                # We temporarily set the fetched items so _escalation_dict can use them without DB query
+                rc = rcs_map.get(row.recovery_case_id)
+                rec = recs_map.get(row.recovery_case_id)
+                
+                # Pass session=None so it doesn't do N+1 queries itself, but we manually populate the data
+                data = DBService._escalation_dict(row, session=None, full=False)
+                
+                # Manually do what _escalation_dict would have done with the session
+                amount_at_risk = 0.0
+                customer_name = "Customer"
+                customer_phone = "+919930832015"
+                customer_email = "rudracmalvankar@gmail.com"
+                invoice_number = row.recovery_case_id
+                days_overdue = 0
+
+                if rec:
+                    amount_at_risk = max(0.0, float(rec.amount - (rec.recovered_amount or 0.0)))
+                    customer_name = rec.customer_name
+                    invoice_number = rec.invoice_number
+                    days_overdue = rec.days_overdue
+                elif rc:
+                    amount_at_risk = float(rc.amount_at_risk or 0.0)
+                    if rc.payment:
+                        invoice_number = rc.payment.external_order_id or rc.payment.external_payment_id or rc.payment.id
+                        if rc.payment.customer:
+                            customer_name = getattr(rc.payment.customer, "display_name", None) or getattr(rc.payment.customer, "external_customer_id", None) or customer_name
+                            summary = getattr(rc.payment.customer, "customer_history_summary", {}) or {}
+                            if isinstance(summary, dict):
+                                if summary.get("phone"):
+                                    customer_phone = summary["phone"]
+                                if summary.get("email"):
+                                    customer_email = summary["email"]
+
+                data["amount_at_risk_inr"] = amount_at_risk
+                data["customer_name"] = customer_name
+                data["customer_phone"] = customer_phone
+                data["customer_email"] = customer_email
+                data["invoice_number"] = invoice_number
+                data["days_overdue"] = days_overdue
+                
+                result.append(data)
+                
+            return result
         finally:
             session.close()
 
@@ -289,16 +354,41 @@ class DBService:
             now = datetime.now(tz.utc)
             sla_risk = 0
             total_rev = 0.0
-            rows = session.execute(
-                select(Escalation.amount_at_risk_inr, Escalation.sla_deadline).where(
+            
+            # Fetch escalations safely without N+1 queries for summary
+            escalations = session.execute(
+                select(Escalation.recovery_case_id, Escalation.sla_deadline).where(
                     ~Escalation.status.in_(closed_statuses)
                 )
             ).all()
-            for amt, deadline in rows:
-                total_rev += float(amt or 0)
-                if deadline:
+            
+            # Bulk load amounts to prevent N+1 network latency over Postgres
+            case_ids = list({e.recovery_case_id for e in escalations if e.recovery_case_id})
+            amounts_map = {}
+            if case_ids:
+                # 1. Try RecoveryCase
+                rcs = session.execute(
+                    select(RecoveryCase.id, RecoveryCase.amount_at_risk)
+                    .where(RecoveryCase.id.in_(case_ids))
+                ).all()
+                for rc_id, amt in rcs:
+                    amounts_map[rc_id] = float(amt or 0.0)
+                
+                # 2. Try Receivable for remaining
+                remaining_ids = [cid for cid in case_ids if cid not in amounts_map]
+                if remaining_ids:
+                    recs = session.execute(
+                        select(Receivable.invoice_number, Receivable.amount, Receivable.recovered_amount)
+                        .where(Receivable.invoice_number.in_(remaining_ids))
+                    ).all()
+                    for inv, amt, recovered in recs:
+                        amounts_map[inv] = max(0.0, float((amt or 0) - (recovered or 0)))
+
+            for e in escalations:
+                total_rev += amounts_map.get(e.recovery_case_id, 0.0)
+                if e.sla_deadline:
                     try:
-                        dl = datetime.fromisoformat(str(deadline).replace("Z", "+00:00"))
+                        dl = datetime.fromisoformat(str(e.sla_deadline).replace("Z", "+00:00"))
                         if dl.tzinfo is None:
                             dl = dl.replace(tzinfo=tz.utc)
                         if (dl - now).total_seconds() / 3600.0 <= 4:

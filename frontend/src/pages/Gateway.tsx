@@ -1,8 +1,9 @@
 import React, { useReducer, useState, useEffect } from 'react';
 import { API_BASE, fetchProviderPayments, fetchConfig, ApiError } from '../services/api';
-import { formatExact } from '../lib/format';
+import { formatExact, formatCurrency } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
-import { Loader } from 'lucide-react';
+import { Loader, Eye, X, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 type GatewayState = {
     payments: any[];
@@ -37,6 +38,7 @@ export const Gateway = () => {
     });
     const [retrying, setRetrying] = useState<string | null>(null);
     const [actionError, setActionError] = useState<string | null>(null);
+    const [selectedPayment, setSelectedPayment] = useState<any | null>(null);
 
     const load = async () => {
         dispatch({ type: 'loading' });
@@ -193,20 +195,30 @@ export const Gateway = () => {
                                                 : 'NOT AVAILABLE'}
                                         </td>
                                         <td className="px-6 py-4">
-                                            {p.status === 'failed' && config.mode === 'synthetic' && (
+                                            <div className="flex items-center gap-2">
                                                 <button
-                                                    onClick={() => handleRetry(p.id)}
-                                                    disabled={retrying === p.id}
-                                                    className="text-xs bg-gray-100 hover:bg-gray-200 text-text-main px-3 py-1 rounded font-mono font-bold transition-colors disabled:opacity-50 flex items-center"
+                                                    onClick={() => setSelectedPayment(p)}
+                                                    className="px-2 py-1 bg-blue-50 border border-blue-200 text-rzp-blue text-[10px] font-bold uppercase rounded hover:bg-blue-100 flex items-center gap-1 transition-colors"
+                                                    title="View complete payment payload & audit trace"
                                                 >
-                                                    {retrying === p.id ? <Loader className="animate-spin mr-1" size={12} /> : 'Synthetic Retry'}
+                                                    <Eye size={12} />
+                                                    View
                                                 </button>
-                                            )}
-                                            {p.status === 'failed' && config.mode === 'test' && (
-                                                <span className="text-[10px] font-mono text-text-muted uppercase">
-                                                    No generic Razorpay retry
-                                                </span>
-                                            )}
+                                                {p.status === 'failed' && config.mode === 'synthetic' && (
+                                                    <button
+                                                        onClick={() => handleRetry(p.id)}
+                                                        disabled={retrying === p.id}
+                                                        className="text-xs bg-gray-100 hover:bg-gray-200 text-text-main px-3 py-1 rounded font-mono font-bold transition-colors disabled:opacity-50 flex items-center"
+                                                    >
+                                                        {retrying === p.id ? <Loader className="animate-spin mr-1" size={12} /> : 'Synthetic Retry'}
+                                                    </button>
+                                                )}
+                                                {p.status === 'failed' && config.mode === 'test' && (
+                                                    <span className="text-[10px] font-mono text-text-muted uppercase">
+                                                        No generic retry
+                                                    </span>
+                                                )}
+                                            </div>
                                         </td>
                                     </tr>
                                 ))
@@ -215,6 +227,110 @@ export const Gateway = () => {
                     </table>
                 </div>
             </div>
+
+            {/* Gateway Payment Details Modal */}
+            {selectedPayment && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto border border-border">
+                        <div className="px-6 py-4 border-b border-border bg-gray-50 flex justify-between items-center sticky top-0 bg-white">
+                            <div>
+                                <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Gateway Transaction Details</div>
+                                <h3 className="text-base font-bold font-mono text-text-main flex items-center gap-2 mt-0.5">
+                                    {selectedPayment.id}
+                                    <Badge status={selectedPayment.status === 'captured' ? 'SUCCESS' : selectedPayment.status === 'failed' ? 'FAILED' : 'INFO'}>
+                                        {selectedPayment.status}
+                                    </Badge>
+                                </h3>
+                            </div>
+                            <button
+                                onClick={() => setSelectedPayment(null)}
+                                className="text-text-muted hover:text-text-main p-1 rounded-md hover:bg-gray-100"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4 text-xs font-mono">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div className="p-3 bg-gray-50 rounded border border-border">
+                                    <div className="text-[10px] text-text-muted uppercase font-bold">Amount</div>
+                                    <div className="text-sm font-bold text-text-main mt-0.5">
+                                        {formatExact((selectedPayment.amount ?? 0) / 100)} {selectedPayment.currency || 'INR'}
+                                    </div>
+                                </div>
+                                <div className="p-3 bg-gray-50 rounded border border-border">
+                                    <div className="text-[10px] text-text-muted uppercase font-bold">Method</div>
+                                    <div className="text-xs font-bold text-text-main mt-0.5 uppercase">
+                                        {selectedPayment.method || 'N/A'}
+                                    </div>
+                                </div>
+                                <div className="p-3 bg-gray-50 rounded border border-border">
+                                    <div className="text-[10px] text-text-muted uppercase font-bold">Order Reference</div>
+                                    <div className="text-[11px] font-bold text-text-main mt-0.5 truncate">
+                                        {selectedPayment.order_id || 'N/A'}
+                                    </div>
+                                </div>
+                                <div className="p-3 bg-gray-50 rounded border border-border">
+                                    <div className="text-[10px] text-text-muted uppercase font-bold">Provider</div>
+                                    <div className="text-xs font-bold text-rzp-blue mt-0.5 uppercase">
+                                        {config.mode === 'test' ? 'RAZORPAY TEST' : 'SYNTHETIC GATEWAY'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-4 bg-gray-50 rounded border border-border space-y-2">
+                                <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Customer & Contact Information</div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
+                                    <div><span className="text-text-muted">Customer ID:</span> <span className="font-bold">{selectedPayment.customer_id || 'NOT AVAILABLE'}</span></div>
+                                    <div><span className="text-text-muted">Email:</span> <span className="font-bold">{selectedPayment.email || 'NOT AVAILABLE'}</span></div>
+                                    <div><span className="text-text-muted">Contact:</span> <span className="font-bold">{selectedPayment.contact || 'NOT AVAILABLE'}</span></div>
+                                    <div><span className="text-text-muted">Created:</span> <span className="font-bold">{selectedPayment.created_at ? new Date(selectedPayment.created_at * 1000).toLocaleString() : 'N/A'}</span></div>
+                                </div>
+                            </div>
+
+                            {(selectedPayment.error_code || selectedPayment.error_description || selectedPayment.error_reason) && (
+                                <div className="p-4 bg-red-50 rounded border border-red-200 space-y-2">
+                                    <div className="text-[10px] font-bold text-rzp-red uppercase tracking-wider">Error & Failure Diagnostics</div>
+                                    <div className="space-y-1 text-xs">
+                                        {selectedPayment.error_code && (
+                                            <div><span className="text-text-muted">Error Code:</span> <span className="font-bold text-rzp-red">{selectedPayment.error_code}</span></div>
+                                        )}
+                                        {selectedPayment.error_description && (
+                                            <div><span className="text-text-muted">Description:</span> <span className="font-bold text-text-main">{selectedPayment.error_description}</span></div>
+                                        )}
+                                        {selectedPayment.error_reason && (
+                                            <div><span className="text-text-muted">Reason:</span> <span className="font-bold text-text-main">{selectedPayment.error_reason}</span></div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="space-y-2">
+                                <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Raw Provider Payload</div>
+                                <pre className="p-3 bg-gray-900 text-green-400 rounded text-[11px] overflow-x-auto max-h-48">
+                                    {JSON.stringify(selectedPayment, null, 2)}
+                                </pre>
+                            </div>
+
+                            <div className="pt-4 border-t border-border flex justify-between items-center">
+                                <Link
+                                    to={`/cases/${selectedPayment.id}`}
+                                    className="px-4 py-2 bg-rzp-blue hover:bg-blue-700 text-white rounded text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors"
+                                >
+                                    <ExternalLink size={13} />
+                                    Investigate Recovery Case
+                                </Link>
+                                <button
+                                    onClick={() => setSelectedPayment(null)}
+                                    className="px-4 py-2 border border-border text-text-muted hover:bg-gray-50 rounded text-xs font-bold uppercase tracking-wider"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

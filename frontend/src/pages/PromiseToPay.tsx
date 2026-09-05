@@ -2,7 +2,8 @@ import React, { useReducer, useEffect, useState } from 'react';
 import { API_BASE, sendPromiseReminder, sendPromiseEmail, dispatchPromiseReminders } from '../services/api';
 import { formatCurrency } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
-import { Handshake, MessageSquare, Send, CheckCircle2, AlertCircle, Clock, Mail } from 'lucide-react';
+import { Handshake, MessageSquare, Send, CheckCircle2, AlertCircle, Clock, Mail, Eye, X, ExternalLink } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface Promise {
     id: string;
@@ -38,6 +39,7 @@ export const PromiseToPay = () => {
     const [emailSendingId, setEmailSendingId] = useState<string | null>(null);
     const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const [batchSending, setBatchSending] = useState(false);
+    const [selectedPromise, setSelectedPromise] = useState<Promise | null>(null);
 
     const handleSendEmailReminder = async (promise: Promise) => {
         setEmailSendingId(promise.id);
@@ -140,7 +142,7 @@ export const PromiseToPay = () => {
 
     if (loading) {
         return (
-            <div className="max-w-5xl mx-auto space-y-6">
+            <div className="max-w-7xl mx-auto space-y-6">
                 <div className="bg-white border border-border shadow-sm p-6">
                     <div className="text-sm font-mono text-text-muted">Loading promises...</div>
                 </div>
@@ -149,7 +151,7 @@ export const PromiseToPay = () => {
     }
 
     return (
-        <div className="max-w-5xl mx-auto space-y-6">
+        <div className="max-w-7xl mx-auto space-y-6">
             {/* Header */}
             <div className="bg-white border border-border shadow-sm p-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -270,7 +272,7 @@ export const PromiseToPay = () => {
                                     <th className="px-6 py-3 font-semibold">Status</th>
                                     <th className="px-6 py-3 font-semibold">Source</th>
                                     <th className="px-6 py-3 font-semibold">Created</th>
-                                    <th className="px-6 py-3 font-semibold text-center">Action</th>
+                                    <th className="px-6 py-3 font-semibold text-center">Actions</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-border font-mono">
@@ -283,26 +285,36 @@ export const PromiseToPay = () => {
                                         <td className="px-6 py-3 text-text-muted uppercase">{p.source}</td>
                                         <td className="px-6 py-3 text-text-muted">{p.created_at ? new Date(p.created_at).toLocaleDateString() : '-'}</td>
                                         <td className="px-6 py-3">
-                                            <div className="flex items-center justify-center gap-2">
+                                            <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                                {/* Inspect details button */}
+                                                <button
+                                                    onClick={() => setSelectedPromise(p)}
+                                                    className="px-2 py-1 bg-gray-50 border border-gray-200 text-[10px] font-bold text-text-main uppercase hover:bg-gray-100 flex items-center gap-1 rounded transition-colors whitespace-nowrap"
+                                                    title="View Promise and Invoice Details"
+                                                >
+                                                    <Eye size={11} />
+                                                    Details
+                                                </button>
+
                                                 {/* Remind via SMS button available for any non-terminal promise */}
                                                 {!['FULFILLED', 'ESCALATED'].includes(p.status) && (
                                                     <>
                                                         <button
                                                             onClick={() => setActiveRemindPromise(p)}
-                                                            className="px-2 py-1 bg-blue-50 border border-blue-200 text-[10px] font-bold text-rzp-blue uppercase hover:bg-blue-100 flex items-center gap-1 rounded transition-colors"
+                                                            className="px-2 py-1 bg-blue-50 border border-blue-200 text-[10px] font-bold text-rzp-blue uppercase hover:bg-blue-100 flex items-center gap-1 rounded transition-colors whitespace-nowrap"
                                                             title="Send SMS reminder through Twilio"
                                                         >
-                                                            <MessageSquare size={12} />
-                                                            Remind (SMS)
+                                                            <MessageSquare size={11} />
+                                                            SMS
                                                         </button>
                                                         <button
                                                             disabled={emailSendingId === p.id}
                                                             onClick={(e) => { e.stopPropagation(); handleSendEmailReminder(p); }}
-                                                            className="px-2 py-1 bg-purple-50 border border-purple-200 text-[10px] font-bold text-purple-700 uppercase hover:bg-purple-100 flex items-center gap-1 rounded transition-colors disabled:opacity-50"
+                                                            className="px-2 py-1 bg-purple-50 border border-purple-200 text-[10px] font-bold text-purple-700 uppercase hover:bg-purple-100 flex items-center gap-1 rounded transition-colors disabled:opacity-50 whitespace-nowrap"
                                                             title="Send Email reminder via Twilio Comms API"
                                                         >
-                                                            <Mail size={12} />
-                                                            {emailSendingId === p.id ? 'Sending...' : 'Remind (Email)'}
+                                                            <Mail size={11} />
+                                                            {emailSendingId === p.id ? 'Sending...' : 'Email'}
                                                         </button>
                                                     </>
                                                 )}
@@ -321,7 +333,7 @@ export const PromiseToPay = () => {
                                                                     loadPromises();
                                                                 } catch (e) { alert('Failed to fulfill'); }
                                                             }}
-                                                            className="px-2 py-1 bg-gray-100 border text-[10px] font-bold text-green-700 uppercase hover:bg-gray-200 rounded"
+                                                            className="px-2 py-1 bg-green-50 border border-green-200 text-[10px] font-bold text-green-700 uppercase hover:bg-green-100 rounded whitespace-nowrap"
                                                         >
                                                             Fulfill
                                                         </button>
@@ -333,7 +345,7 @@ export const PromiseToPay = () => {
                                                                     loadPromises();
                                                                 } catch (e) { alert('Failed to break'); }
                                                             }}
-                                                            className="px-2 py-1 bg-gray-100 border text-[10px] font-bold text-rzp-red uppercase hover:bg-gray-200 rounded"
+                                                            className="px-2 py-1 bg-red-50 border border-red-200 text-[10px] font-bold text-rzp-red uppercase hover:bg-red-100 rounded whitespace-nowrap"
                                                         >
                                                             Break
                                                         </button>
@@ -345,6 +357,80 @@ export const PromiseToPay = () => {
                                 ))}
                             </tbody>
                         </table>
+                    </div>
+                </div>
+            )}
+
+            {/* Promise Detail Modal / Drawer */}
+            {selectedPromise && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg shadow-xl max-w-xl w-full max-h-[85vh] overflow-y-auto border border-border">
+                        <div className="px-6 py-4 border-b border-border bg-gray-50 flex justify-between items-center sticky top-0 bg-white">
+                            <div>
+                                <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Promise Inspection</div>
+                                <h3 className="text-base font-bold font-mono text-text-main flex items-center gap-2 mt-0.5">
+                                    {selectedPromise.customer_name}
+                                    {getStatusBadge(selectedPromise.status)}
+                                </h3>
+                            </div>
+                            <button
+                                onClick={() => setSelectedPromise(null)}
+                                className="text-text-muted hover:text-text-main p-1 rounded-md hover:bg-gray-100"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4 text-xs font-mono">
+                            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                                <div className="p-3 bg-gray-50 rounded border border-border">
+                                    <div className="text-[10px] text-text-muted uppercase font-bold">Promised Amount</div>
+                                    <div className="text-sm font-bold text-text-main mt-0.5">
+                                        {formatCurrency(selectedPromise.promised_amount)}
+                                    </div>
+                                </div>
+                                <div className="p-3 bg-gray-50 rounded border border-border">
+                                    <div className="text-[10px] text-text-muted uppercase font-bold">Target Date</div>
+                                    <div className="text-xs font-bold text-text-main mt-0.5">
+                                        {selectedPromise.promise_date}
+                                    </div>
+                                </div>
+                                <div className="p-3 bg-gray-50 rounded border border-border">
+                                    <div className="text-[10px] text-text-muted uppercase font-bold">Origin Source</div>
+                                    <div className="text-xs font-bold text-rzp-blue mt-0.5 uppercase">
+                                        {selectedPromise.source || 'MANUAL'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-4 bg-gray-50 rounded border border-border space-y-2">
+                                <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Associated Receivable & References</div>
+                                <div className="space-y-1.5 text-xs">
+                                    <div><span className="text-text-muted">Receivable ID:</span> <span className="font-bold text-text-main">{selectedPromise.receivable_id}</span></div>
+                                    <div><span className="text-text-muted">Promise ID:</span> <span className="font-bold text-text-main">{selectedPromise.id}</span></div>
+                                    <div><span className="text-text-muted">Created:</span> <span className="font-bold text-text-main">{selectedPromise.created_at ? new Date(selectedPromise.created_at).toLocaleString() : 'N/A'}</span></div>
+                                    {selectedPromise.notes && (
+                                        <div><span className="text-text-muted">Notes:</span> <span className="font-bold text-text-main">{selectedPromise.notes}</span></div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="pt-4 border-t border-border flex justify-between items-center">
+                                <Link
+                                    to="/receivables"
+                                    className="px-4 py-2 bg-rzp-blue hover:bg-blue-700 text-white rounded text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors"
+                                >
+                                    <ExternalLink size={13} />
+                                    Open Invoices / Receivables
+                                </Link>
+                                <button
+                                    onClick={() => setSelectedPromise(null)}
+                                    className="px-4 py-2 border border-border text-text-muted hover:bg-gray-50 rounded text-xs font-bold uppercase tracking-wider"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

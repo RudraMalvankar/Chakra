@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { API_BASE } from '../services/api';
 import { formatCurrency, formatExact } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
-import { Loader } from 'lucide-react';
+import { Loader, Eye, X, ExternalLink } from 'lucide-react';
 
 interface BatchResponse {
     batch_id: string;
@@ -60,7 +60,8 @@ export const Batch = () => {
     const [error, setError] = useState<string | null>(null);
     const [batchCases, setBatchCases] = useState<BatchCaseDetail[]>([]);
     const [casesLoading, setCasesLoading] = useState(false);
-    const [showCases, setShowCases] = useState(false);
+    const [showCases, setShowCases] = useState(true);
+    const [selectedCase, setSelectedCase] = useState<BatchCaseDetail | null>(null);
     const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const attemptsRef = useRef(0);
 
@@ -345,11 +346,21 @@ export const Batch = () => {
                                                 {c.risk_probability != null ? `${(c.risk_probability * 100).toFixed(0)}%` : '-'}
                                             </td>
                                             <td className="px-4 py-2">
-                                                {c.case_id && (
-                                                    <Link to={`/cases/${c.case_id}`} className="text-rzp-blue text-[10px] font-bold hover:underline">
-                                                        Trace →
-                                                    </Link>
-                                                )}
+                                                <div className="flex items-center gap-2">
+                                                    <button
+                                                        onClick={() => setSelectedCase(c)}
+                                                        className="px-2 py-0.5 bg-blue-50 border border-blue-200 text-rzp-blue text-[10px] font-bold uppercase rounded hover:bg-blue-100 flex items-center gap-1 transition-colors"
+                                                        title="Quick view case details"
+                                                    >
+                                                        <Eye size={11} />
+                                                        View
+                                                    </button>
+                                                    {c.case_id && (
+                                                        <Link to={`/cases/${c.case_id}`} className="text-rzp-blue text-[10px] font-bold hover:underline flex items-center gap-0.5" title="Open full case audit trace">
+                                                            Trace →
+                                                        </Link>
+                                                    )}
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -357,6 +368,116 @@ export const Batch = () => {
                             </table>
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Case Detail Modal / Drawer */}
+            {selectedCase && (
+                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[85vh] overflow-y-auto border border-border">
+                        <div className="px-6 py-4 border-b border-border bg-gray-50 flex justify-between items-center sticky top-0 bg-white">
+                            <div>
+                                <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Case Inspection</div>
+                                <h3 className="text-base font-bold font-mono text-text-main flex items-center gap-2 mt-0.5">
+                                    {selectedCase.case_id || `Sequence #${selectedCase.sequence}`}
+                                    <Badge status={selectedCase.status}>{selectedCase.status}</Badge>
+                                </h3>
+                            </div>
+                            <button
+                                onClick={() => setSelectedCase(null)}
+                                className="text-text-muted hover:text-text-main p-1 rounded-md hover:bg-gray-100"
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-4 text-xs font-mono">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                <div className="p-3 bg-gray-50 rounded border border-border">
+                                    <div className="text-[10px] text-text-muted uppercase font-bold">Amount at Risk</div>
+                                    <div className="text-sm font-bold text-text-main mt-0.5">
+                                        {selectedCase.amount > 0 ? formatCurrency(selectedCase.amount) : 'N/A'}
+                                    </div>
+                                </div>
+                                <div className="p-3 bg-gray-50 rounded border border-border">
+                                    <div className="text-[10px] text-text-muted uppercase font-bold">Case Type</div>
+                                    <div className="text-xs font-bold text-text-main mt-0.5 uppercase">
+                                        {selectedCase.case_type || 'PAYMENT_FAILURE'}
+                                    </div>
+                                </div>
+                                <div className="p-3 bg-gray-50 rounded border border-border">
+                                    <div className="text-[10px] text-text-muted uppercase font-bold">Agent Action</div>
+                                    <div className="text-xs font-bold text-rzp-blue mt-0.5">
+                                        {selectedCase.selected_action || selectedCase.current_action || 'N/A'}
+                                    </div>
+                                </div>
+                                <div className="p-3 bg-gray-50 rounded border border-border">
+                                    <div className="text-[10px] text-text-muted uppercase font-bold">Risk Score</div>
+                                    <div className="text-xs font-bold text-text-main mt-0.5">
+                                        {selectedCase.risk_probability != null ? `${(selectedCase.risk_probability * 100).toFixed(0)}%` : 'N/A'}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="p-4 bg-gray-50 rounded border border-border space-y-2">
+                                <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Safety & Regulatory Guardrails</div>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                    <div><span className="text-text-muted">Safety Decision:</span> <span className="font-bold">{selectedCase.safety_eligibility || selectedCase.status}</span></div>
+                                    <div><span className="text-text-muted">Reason Code:</span> <span className="font-bold">{selectedCase.safety_reason_code || 'Standard Policy'}</span></div>
+                                </div>
+                            </div>
+
+                            <div className="p-4 bg-purple-50/50 rounded border border-purple-200 space-y-2">
+                                <div className="text-[10px] font-bold text-purple-700 uppercase tracking-wider">Gemini AI Triage</div>
+                                <div className="space-y-1 text-xs">
+                                    <div><span className="text-text-muted">Classification:</span> <span className="font-bold text-purple-900">{selectedCase.ai_classification || (selectedCase.ai_used ? 'AI Assessed' : 'Deterministic Rule Engine')}</span></div>
+                                    {selectedCase.ai_confidence != null && (
+                                        <div><span className="text-text-muted">Confidence:</span> <span className="font-bold text-purple-900">{(selectedCase.ai_confidence * 100).toFixed(0)}%</span></div>
+                                    )}
+                                    {selectedCase.ai_reasoning && (
+                                        <div><span className="text-text-muted">Reasoning:</span> <p className="text-purple-900 mt-1">{selectedCase.ai_reasoning}</p></div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {selectedCase.events && selectedCase.events.length > 0 && (
+                                <div className="space-y-2">
+                                    <div className="text-[10px] font-bold text-text-muted uppercase tracking-wider">Audit Events Trace ({selectedCase.events.length})</div>
+                                    <div className="border border-border rounded divide-y divide-border max-h-48 overflow-y-auto">
+                                        {selectedCase.events.map((ev: any, idx: number) => (
+                                            <div key={idx} className="p-2 text-[11px] flex justify-between items-center bg-white hover:bg-gray-50">
+                                                <div>
+                                                    <span className="font-bold text-text-main">{ev.event_type}</span>
+                                                    {ev.action && <span className="text-text-muted ml-2">({ev.action})</span>}
+                                                </div>
+                                                <Badge status={ev.status === 'RECOVERED' ? 'SUCCESS' : ev.status === 'BLOCKED' ? 'DANGER' : 'INFO'}>
+                                                    {ev.status || 'OK'}
+                                                </Badge>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="pt-4 border-t border-border flex justify-between items-center">
+                                {selectedCase.case_id ? (
+                                    <Link
+                                        to={`/cases/${selectedCase.case_id}`}
+                                        className="px-4 py-2 bg-rzp-blue hover:bg-blue-700 text-white rounded text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-colors"
+                                    >
+                                        <ExternalLink size={13} />
+                                        Open Full Case Investigation
+                                    </Link>
+                                ) : <div />}
+                                <button
+                                    onClick={() => setSelectedCase(null)}
+                                    className="px-4 py-2 border border-border text-text-muted hover:bg-gray-50 rounded text-xs font-bold uppercase tracking-wider"
+                                >
+                                    Close
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>

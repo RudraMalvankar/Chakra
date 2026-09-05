@@ -1,9 +1,32 @@
-node_modules
-dist
+﻿# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.py[cod]
+*.class
+venv/
+.venv/
+env/
 .env
-.pytest_cache
-__pycache__
-*.pyc
-.git
-.github
-voice_notes
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node
+node_modules/
+dist/
+build/
+.next/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Antigravity/OS
+.DS_Store
+Thumbs.db

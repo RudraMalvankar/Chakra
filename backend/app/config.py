@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # Gemini API Configuration
     gemini_api_key: Optional[str] = None
-    gemini_model: str = "gemini-3-flash-preview"
+    gemini_model: str = "gemini-2.5-flash"
     gemini_fallback_model: str = "gemini-2.5-flash"
 
     # Twilio Voice Configuration

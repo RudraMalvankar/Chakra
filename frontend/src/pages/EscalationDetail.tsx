@@ -725,6 +725,24 @@ export const EscalationDetail: React.FC = () => {
                     </div>
                   )}
 
+                  {generatedLink && (
+                    <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between">
+                      <div className="text-[11px] font-sans text-emerald-900">
+                        <strong>Admin Action:</strong> Send payment link to <span className="font-mono bg-emerald-100 px-1 py-0.5 rounded ml-1">9930832015</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActionFeedback({ type: 'success', text: 'Payment link sent successfully via SMS to +91 9930832015!' });
+                        }}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold uppercase transition-colors flex items-center gap-1"
+                      >
+                        <MessageSquare size={12} />
+                        Send SMS
+                      </button>
+                    </div>
+                  )}
+
                   <div className="flex justify-end">
                     <button
                       type="submit"

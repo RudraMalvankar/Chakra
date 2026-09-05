@@ -7,6 +7,7 @@ and the Communication table for transcript persistence.
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+import logging
 from backend.app.services.voice import get_voice_provider
 from backend.app.services.db_service import DBService
 from backend.app.config import settings
@@ -240,19 +241,41 @@ async def simulate_voice_turn(req: SimulateVoiceTurnRequest):
     from backend.app.services.voice import extract_voice_intent, synthesize_neural_speech, transcribe_user_audio
 
     spoken_text = (req.user_speech or "").strip()
+    logger = logging.getLogger("chakra.voice_api")
 
-    # If raw audio was recorded from the laptop microphone, transcribe it with Gemini
-    if req.audio_base64:
+    # If we already have browser STT text, use it directly to save latency and API quota.
+    # Otherwise, try to transcribe the raw audio with Gemini.
+    if not spoken_text and req.audio_base64:
         try:
             raw_audio = base64.b64decode(req.audio_base64)
+            logger.info("Received audio blob: %d bytes, mime=%s, browser_stt=(empty)",
+                        len(raw_audio), req.audio_mime)
             transcribed = await transcribe_user_audio(raw_audio, req.audio_mime or "audio/webm")
             if transcribed:
+                logger.info("Gemini audio STT succeeded: %s", transcribed)
                 spoken_text = transcribed
+            else:
+                logger.warning("Gemini audio STT returned empty.")
         except Exception as exc:
-            pass
+            logger.warning("Gemini audio transcription exception: %s", exc, exc_info=True)
 
+    # If no speech was detected from audio or text, ask customer politely to repeat
     if not spoken_text:
-        spoken_text = "Main kal payment kar dunga"
+        ai_reply = "Aapki aawaz theek se sunayi nahi di. Kripya dobara bataiye, payment kab tak arrange ho payega?"
+        audio_res = await synthesize_neural_speech(ai_reply, req.voice_preference)
+        return {
+            "status": "success",
+            "intent": "unknown",
+            "confidence": 0.0,
+            "user_speech": "[Aawaz sunayi nahi di]",
+            "ai_response": ai_reply,
+            "promise": None,
+            "payment_link": None,
+            "audio_base64": audio_res.get("audio_base64") if audio_res else None,
+            "audio_format": audio_res.get("audio_format") if audio_res else None,
+            "voice_engine": audio_res.get("engine") if audio_res else None,
+            "voice_name": audio_res.get("voice") if audio_res else None,
+        }
 
     intent_result = await extract_voice_intent(spoken_text)
     intent = intent_result.intent

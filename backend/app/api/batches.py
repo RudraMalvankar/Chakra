@@ -14,7 +14,16 @@ from datetime import datetime, timezone
 
 from sqlalchemy import select, desc
 from backend.app.db.session import get_session_factory
-from backend.app.db.models import BatchRun, BatchCase, RecoveryCase, utcnow
+from backend.app.db.models import (
+    BatchRun,
+    BatchCase,
+    RecoveryCase,
+    RecoveryDecision as RecoveryDecisionModel,
+    RecoveryEvent,
+    Payment,
+    Customer,
+    utcnow,
+)
 from backend.app.services.recovery_executor import execute_recovery_pipeline
 
 logger = logging.getLogger("chakra.batches")
@@ -171,22 +180,135 @@ async def process_batch_background(batch_id: str, count: int, scenario_type: str
             logger.error(f"Error in batch {batch_id} case {i}: {e}")
             case_status = "FAILED"
             err_msg = str(e)
+            approved = None
+            triage = None
+            risk = None
+            agent = None
 
         processed += 1
-        pending_batch_cases.append((case_id, case_status, err_msg, i + 1))
+        pending_batch_cases.append({
+            "case_id": case_id,
+            "status": case_status,
+            "err_msg": err_msg,
+            "sequence": i + 1,
+            "amount_inr": amount_inr,
+            "failure_reason": failure_reason,
+            "cust_id": cust_id,
+            "triage": triage,
+            "risk": risk,
+            "agent": agent,
+            "approved": approved,
+        })
 
         # Flush to DB every 10 cases
         if len(pending_batch_cases) >= 10 or i == count - 1:
             with factory() as session:
                 try:
-                    for bc_id, bc_status, bc_err, seq in pending_batch_cases:
+                    for item in pending_batch_cases:
+                        cid = item["case_id"]
+                        amt = item["amount_inr"]
+                        c_status = item["status"]
+                        c_err = item["err_msg"]
+                        seq = item["sequence"]
+                        apr = item["approved"]
+                        trg = item["triage"]
+                        rsk = item["risk"]
+                        ag = item["agent"]
+
+                        # 1. Upsert Customer & Payment if needed
+                        cust = session.execute(select(Customer).where(Customer.external_customer_id == item["cust_id"])).scalar_one_or_none()
+                        if not cust:
+                            cust = Customer(external_customer_id=item["cust_id"], display_name=f"Batch Customer {cid[-6:]}")
+                            session.add(cust)
+                            session.flush()
+
+                        pay = session.execute(select(Payment).where(Payment.id == cid)).scalar_one_or_none()
+                        if not pay:
+                            pay = Payment(
+                                id=cid,
+                                external_payment_id=cid,
+                                external_order_id=f"order_{cid}",
+                                customer_id=cust.id,
+                                amount=amt,
+                                currency="INR",
+                                status="CAPTURED" if c_status == "RECOVERED" else "FAILED",
+                                failure_code=item["failure_reason"],
+                                provider="synthetic",
+                            )
+                            session.add(pay)
+                            session.flush()
+
+                        # 2. Create RecoveryCase
+                        ai_used = bool(getattr(trg, "ai_used", False)) if trg else False
+                        ai_class = getattr(trg, "classification", None) if trg else None
+                        ai_conf = getattr(trg, "confidence", None) if trg else None
+                        ai_reason = getattr(trg, "reasoning", None) if trg else None
+
+                        rc = RecoveryCase(
+                            id=cid,
+                            payment_id=cid,
+                            case_type="PAYMENT_FAILURE",
+                            status=c_status,
+                            amount_at_risk=amt,
+                            risk_probability=float(getattr(rsk, "probability", 0.5)) if rsk else 0.5,
+                            recovery_eligible=c_status != "BLOCKED",
+                            current_action=apr.decision.value if apr else "NONE",
+                            ai_used=ai_used,
+                            ai_classification=ai_class,
+                            ai_confidence=ai_conf,
+                            ai_reasoning=ai_reason,
+                        )
+                        session.add(rc)
+                        session.flush()
+
+                        # 3. Create RecoveryDecision
+                        if apr:
+                            selected_act = apr.decision.value
+                            exp_rec = float(getattr(ag, "expected_recovery_inr", 0.0)) if ag else 0.0
+                            rd = RecoveryDecisionModel(
+                                recovery_case_id=cid,
+                                selected_action=selected_act,
+                                confidence=float(getattr(ag, "confidence", 1.0)) if ag else 1.0,
+                                reasoning_summary=f"Selected {selected_act} for {item['failure_reason']}",
+                                expected_recovery=exp_rec,
+                                effective_probability=float(getattr(rsk, "probability", 0.5)) if rsk else 0.5,
+                            )
+                            session.add(rd)
+
+                        # 4. Create RecoveryEvent (Safety check & execution outcome)
+                        if apr:
+                            elig = getattr(apr, "eligibility", apr.decision.value)
+                            session.add(RecoveryEvent(
+                                recovery_case_id=cid,
+                                event_type="safety_check_completed",
+                                action=apr.decision.value,
+                                status=str(elig),
+                                amount=amt,
+                                metadata_json={
+                                    "eligibility": str(elig),
+                                    "decision": apr.decision.value,
+                                    "reason_code": apr.reason_code,
+                                    "policy_id": apr.policy_id,
+                                },
+                            ))
+                        session.add(RecoveryEvent(
+                            recovery_case_id=cid,
+                            event_type="execution_completed",
+                            action=apr.decision.value if apr else "NONE",
+                            status=c_status,
+                            amount=amt if c_status == "RECOVERED" else 0.0,
+                            metadata_json={"status": c_status, "outcome": "simulated"},
+                        ))
+
+                        # 5. Add BatchCase with recovery_case_id linked
                         session.add(BatchCase(
                             batch_id=batch_id,
-                            recovery_case_id=None,
+                            recovery_case_id=cid,
                             sequence=seq,
-                            status=bc_status,
-                            error_message=bc_err,
+                            status=c_status,
+                            error_message=c_err,
                         ))
+
                     run = session.execute(select(BatchRun).where(BatchRun.id == batch_id)).scalar_one_or_none()
                     if run:
                         run.processed_count = processed
