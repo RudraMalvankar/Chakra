@@ -23,6 +23,30 @@ export const Receivables = () => {
     const [smsPhone, setSmsPhone] = useState('+919930832015');
     const [smsSending, setSmsSending] = useState(false);
     const [smsFeedback, setSmsFeedback] = useState<string | null>(null);
+    const [emailSending, setEmailSending] = useState(false);
+    const [emailFeedback, setEmailFeedback] = useState<string | null>(null);
+
+    const handleSendEmail = async (recId: string) => {
+        setEmailSending(true);
+        setEmailFeedback(null);
+        try {
+            const res = await fetch(`${API_BASE}/api/receivables/${encodeURIComponent(recId)}/email`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ to_email: 'rudracmalvankar@gmail.com' }),
+            });
+            const data = await res.json();
+            if (res.ok && data.status === 'sent') {
+                setEmailFeedback(`Email dispatched to rudracmalvankar@gmail.com! Operation: ${data.provider_message_id || 'OK'}`);
+            } else {
+                setEmailFeedback(`Failed: ${data.message || 'Could not send email'}`);
+            }
+        } catch (e: any) {
+            setEmailFeedback(`Error: ${e.message || 'Network error'}`);
+        } finally {
+            setEmailSending(false);
+        }
+    };
 
     const handleSendSms = async (recId: string) => {
         if (!smsPhone) return;
@@ -295,6 +319,29 @@ export const Receivables = () => {
                                             {smsFeedback && (
                                                 <div className={`text-[10px] font-mono p-1.5 rounded ${smsFeedback.includes('Failed') || smsFeedback.includes('error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
                                                     {smsFeedback}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="pt-3 border-t border-border mt-3 space-y-2">
+                                            <div className="text-[10px] font-bold uppercase tracking-widest text-text-muted">Send Twilio Email (Comms API)</div>
+                                            <div className="flex gap-2">
+                                                <input 
+                                                    type="text" 
+                                                    readOnly
+                                                    value="rudracmalvankar@gmail.com" 
+                                                    className="flex-1 border border-border bg-gray-50 rounded px-2 py-1.5 font-mono text-xs text-text-muted cursor-not-allowed" 
+                                                />
+                                                <button 
+                                                    disabled={emailSending}
+                                                    onClick={() => handleSendEmail(selected.id)}
+                                                    className="px-3 py-1.5 bg-rzp-blue hover:bg-blue-700 text-white text-[10px] font-bold uppercase tracking-wider rounded disabled:opacity-50 transition-colors"
+                                                >
+                                                    {emailSending ? "Sending..." : "Send Email"}
+                                                </button>
+                                            </div>
+                                            {emailFeedback && (
+                                                <div className={`text-[10px] font-mono p-1.5 rounded ${emailFeedback.includes('Failed') || emailFeedback.includes('error') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'}`}>
+                                                    {emailFeedback}
                                                 </div>
                                             )}
                                         </div>

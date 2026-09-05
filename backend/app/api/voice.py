@@ -170,11 +170,14 @@ class SimulateVoiceStartRequest(BaseModel):
     case_id: str
     amount: float
     customer_name: Optional[str] = None
+    voice_preference: Optional[str] = None
 
 
 @router.post("/api/voice/simulate/start")
 async def start_simulated_voice_call(req: SimulateVoiceStartRequest):
     import uuid
+    from backend.app.services.voice import synthesize_neural_speech
+
     session_id = f"CA_sim_{uuid.uuid4().hex[:12]}"
     cust_name = req.customer_name or "Customer"
     amount_str = f"₹{int(req.amount):,}" if req.amount else "pending amount"
@@ -202,12 +205,19 @@ async def start_simulated_voice_call(req: SimulateVoiceStartRequest):
         metadata={"speaker": "CHAKRA", "text": greeting, "call_sid": session_id},
     )
 
+    # Synthesize realistic neural audio
+    audio_res = await synthesize_neural_speech(greeting, req.voice_preference)
+
     return {
         "status": "success",
         "call_sid": session_id,
         "mode": "browser_simulation",
         "provider": "gemini_2.5_flash_native",
         "greeting": greeting,
+        "audio_base64": audio_res.get("audio_base64") if audio_res else None,
+        "audio_format": audio_res.get("audio_format") if audio_res else None,
+        "voice_engine": audio_res.get("engine") if audio_res else None,
+        "voice_name": audio_res.get("voice") if audio_res else None,
     }
 
 
@@ -217,11 +227,12 @@ class SimulateVoiceTurnRequest(BaseModel):
     user_speech: str
     amount: float
     customer_name: Optional[str] = None
+    voice_preference: Optional[str] = None
 
 
 @router.post("/api/voice/simulate/turn")
 async def simulate_voice_turn(req: SimulateVoiceTurnRequest):
-    from backend.app.services.voice import extract_voice_intent
+    from backend.app.services.voice import extract_voice_intent, synthesize_neural_speech
 
     intent_result = await extract_voice_intent(req.user_speech)
     intent = intent_result.intent
@@ -299,6 +310,9 @@ async def simulate_voice_turn(req: SimulateVoiceTurnRequest):
         },
     )
 
+    # Synthesize realistic neural audio
+    audio_res = await synthesize_neural_speech(ai_reply, req.voice_preference)
+
     return {
         "user_speech": req.user_speech,
         "ai_response": ai_reply,
@@ -309,5 +323,9 @@ async def simulate_voice_turn(req: SimulateVoiceTurnRequest):
         "promise": promise,
         "payment_link": payment_link,
         "call_sid": req.call_sid,
+        "audio_base64": audio_res.get("audio_base64") if audio_res else None,
+        "audio_format": audio_res.get("audio_format") if audio_res else None,
+        "voice_engine": audio_res.get("engine") if audio_res else None,
+        "voice_name": audio_res.get("voice") if audio_res else None,
     }
 

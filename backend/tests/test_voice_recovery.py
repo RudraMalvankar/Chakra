@@ -590,3 +590,45 @@ def test_promise_remind_endpoint(mock_twilio_settings):
         assert data["promise_id"] == "p_123"
         assert data["timing"] == "before"
 
+
+# ─── 22. Twilio Comms Email helper test ─────────────────────────────────────
+@pytest.mark.asyncio
+async def test_send_email_twilio_comms(mock_twilio_settings):
+    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
+        mock_post.return_value.status_code = 202
+        mock_post.return_value.json = MagicMock(return_value={"operationId": "comms_op_test_123"})
+        from backend.app.services.notify import send_email
+
+        res = await send_email()
+        assert res["status"] == "sent"
+        assert res["provider_message_id"] == "comms_op_test_123"
+        assert res["to"] == "rudracmalvankar@gmail.com"
+
+
+# ─── 23. Receivable Email API endpoint test ──────────────────────────────────
+def test_receivable_email_endpoint(mock_twilio_settings):
+    with (
+        patch("backend.app.services.notify.send_email", new_callable=AsyncMock) as mock_email,
+        patch("backend.app.api.receivables.get_session_factory") as mock_factory,
+        patch("backend.app.api.receivables.DBService"),
+    ):
+        mock_email.return_value = {
+            "status": "sent",
+            "provider": "twilio_email",
+            "provider_message_id": "comms_op_rec_test",
+            "to": "rudracmalvankar@gmail.com",
+        }
+        mock_session = MagicMock()
+        mock_rec = MagicMock()
+        mock_rec.id = "rec_test_123"
+        mock_rec.customer_id = "cust_test_123"
+        mock_session.execute.return_value.scalar_one_or_none.return_value = mock_rec
+        mock_factory.return_value.__enter__.return_value = mock_session
+
+        res = client.post("/api/receivables/rec_test_123/email", json={})
+        assert res.status_code == 200
+        data = res.json()
+        assert data["status"] == "sent"
+        assert data["provider_message_id"] == "comms_op_rec_test"
+
+

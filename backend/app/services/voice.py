@@ -154,3 +154,140 @@ def generate_hinglish_voice_note(customer_name: str, amount_inr: float, payment_
     Previously used pyttsx3. Returns None — Twilio TTS handles speech via TwiML.
     """
     return None
+
+
+def clean_text_for_speech(text: str) -> str:
+    """Pre-process dialogue text to make natural spoken speech.
+
+    Replaces raw payment link URLs with natural speech phrase ('SMS par bheje gaye link')
+    and removes special characters/markdown formatting that degrade pronunciation.
+    """
+    if not text:
+        return ""
+    # Replace URLs so TTS doesn't spell out 'h-t-t-p-s-colon-slash-slash...'
+    cleaned = re.sub(r"https?://\S+", "SMS par bheje gaye link", text)
+    # Remove asterisks, hashes, backticks
+    cleaned = re.sub(r"[*#`_]", "", cleaned)
+    # Replace Rupee symbol with 'Rupees'
+    cleaned = cleaned.replace("₹", "Rupees ")
+    return cleaned.strip()
+
+
+async def synthesize_neural_speech(
+    text: str, voice_preference: Optional[str] = None
+) -> Optional[Dict[str, Any]]:
+    """Synthesizes high-fidelity, human-like voice audio for in-browser voice recovery.
+
+    Supports:
+    1. Neural Indian Hinglish (edge-tts: hi-IN-SwaraNeural, en-IN-NeerjaNeural, hi-IN-MadhurNeural)
+    2. Google Gemini 3.1 Flash Native TTS (gemini-Sulafat, gemini-Kore, gemini-Aoede, gemini-Puck)
+    3. Seamless bidirectional fallback if network or quota limits arise.
+    """
+    import io
+    import wave
+    import base64
+    import logging
+
+    logger = logging.getLogger("chakra.voice_synthesis")
+    clean_text = clean_text_for_speech(text)
+    if not clean_text:
+        return None
+
+    pref = (voice_preference or "hi-IN-SwaraNeural").strip()
+
+    # Strategy 1: If requested Gemini TTS
+    if pref.startswith("gemini-"):
+        voice_name = pref.replace("gemini-", "").strip() or "Sulafat"
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=settings.gemini_api_key)
+            resp = client.models.generate_content(
+                model="gemini-3.1-flash-tts-preview",
+                contents=clean_text,
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name=voice_name)
+                        )
+                    ),
+                ),
+            )
+            part = resp.candidates[0].content.parts[0]
+            pcm_bytes = part.inline_data.data
+            wav_buf = io.BytesIO()
+            with wave.open(wav_buf, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(24000)
+                wf.writeframes(pcm_bytes)
+            return {
+                "audio_base64": base64.b64encode(wav_buf.getvalue()).decode("utf-8"),
+                "audio_format": "audio/wav",
+                "engine": "gemini-3.1-flash-tts",
+                "voice": voice_name,
+            }
+        except Exception as exc:
+            logger.warning("Gemini TTS synthesis failed (%s), falling back to Neural Indian Voice: %s", pref, exc)
+            pref = "hi-IN-SwaraNeural"
+
+    # Strategy 2: Neural Indian Voice via edge-tts
+    try:
+        import edge_tts
+
+        voice_name = pref if pref.startswith(("hi-IN-", "en-IN-")) else "hi-IN-SwaraNeural"
+        comm = edge_tts.Communicate(clean_text, voice_name)
+        chunks = []
+        async for chunk in comm.stream():
+            if chunk["type"] == "audio":
+                chunks.append(chunk["data"])
+        mp3_bytes = b"".join(chunks)
+        if mp3_bytes:
+            return {
+                "audio_base64": base64.b64encode(mp3_bytes).decode("utf-8"),
+                "audio_format": "audio/mp3",
+                "engine": "neural-indian-voice",
+                "voice": voice_name,
+            }
+    except Exception as exc:
+        logger.warning("Edge-TTS neural synthesis failed for %s: %s", pref, exc)
+
+    # Strategy 3: Final fallback to Gemini TTS if Edge-TTS failed
+    if settings.gemini_api_key:
+        try:
+            from google import genai
+            from google.genai import types
+
+            client = genai.Client(api_key=settings.gemini_api_key)
+            resp = client.models.generate_content(
+                model="gemini-3.1-flash-tts-preview",
+                contents=clean_text,
+                config=types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=types.SpeechConfig(
+                        voice_config=types.VoiceConfig(
+                            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Sulafat")
+                        )
+                    ),
+                ),
+            )
+            part = resp.candidates[0].content.parts[0]
+            pcm_bytes = part.inline_data.data
+            wav_buf = io.BytesIO()
+            with wave.open(wav_buf, "wb") as wf:
+                wf.setnchannels(1)
+                wf.setsampwidth(2)
+                wf.setframerate(24000)
+                wf.writeframes(pcm_bytes)
+            return {
+                "audio_base64": base64.b64encode(wav_buf.getvalue()).decode("utf-8"),
+                "audio_format": "audio/wav",
+                "engine": "gemini-3.1-flash-tts",
+                "voice": "Sulafat",
+            }
+        except Exception as exc:
+            logger.warning("Gemini TTS fallback also failed: %s", exc)
+
+    return None

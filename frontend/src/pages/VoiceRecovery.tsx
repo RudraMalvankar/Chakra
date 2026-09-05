@@ -71,10 +71,13 @@ export const VoiceRecovery: React.FC = () => {
   const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [audioEnabled, setAudioEnabled] = useState<boolean>(true);
   const [isListening, setIsListening] = useState<boolean>(false);
+  const [selectedVoice, setSelectedVoice] = useState<string>("hi-IN-SwaraNeural");
+  const [activeVoiceMeta, setActiveVoiceMeta] = useState<{ engine?: string; voice?: string } | null>(null);
 
   const timerRef = useRef<any>(null);
   const transcriptEndRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     getCases()
@@ -98,8 +101,22 @@ export const VoiceRecovery: React.FC = () => {
   const isTerminal = TERMINAL_STATUSES.includes(status.toLowerCase());
   const isCallActive = status !== "idle" && !isTerminal && status !== "FAILED";
 
-  // Speech synthesis helper for speaking AI responses aloud
-  const speakText = (text: string) => {
+  const stopAudioPlayback = () => {
+    if (currentAudioRef.current) {
+      try {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      } catch (e) {}
+    }
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch (e) {}
+    }
+    setIsSpeaking(false);
+  };
+
+  const speakTextFallback = (text: string) => {
     if (!audioEnabled || typeof window === "undefined" || !("speechSynthesis" in window)) {
       return;
     }
@@ -114,8 +131,45 @@ export const VoiceRecovery: React.FC = () => {
       utterance.onerror = () => setIsSpeaking(false);
       window.speechSynthesis.speak(utterance);
     } catch (e) {
-      console.warn("Speech synthesis error", e);
+      console.warn("Speech synthesis fallback error", e);
       setIsSpeaking(false);
+    }
+  };
+
+  // High-fidelity neural audio streaming player (plays base64 WAV/MP3 from Gemini or Neural Indian Voice)
+  const playAudioStream = (audioBase64?: string, audioFormat?: string, fallbackText?: string) => {
+    if (!audioEnabled) return;
+
+    stopAudioPlayback();
+
+    if (audioBase64) {
+      try {
+        const mime = audioFormat || "audio/mp3";
+        const audio = new Audio(`data:${mime};base64,${audioBase64}`);
+        currentAudioRef.current = audio;
+        audio.onplay = () => setIsSpeaking(true);
+        audio.onended = () => {
+          setIsSpeaking(false);
+          currentAudioRef.current = null;
+        };
+        audio.onerror = (err) => {
+          console.warn("Audio element playback error, falling back to speech synthesis", err);
+          setIsSpeaking(false);
+          currentAudioRef.current = null;
+          if (fallbackText) speakTextFallback(fallbackText);
+        };
+        audio.play().catch((err) => {
+          console.warn("Audio autoplay blocked or interrupted", err);
+          if (fallbackText) speakTextFallback(fallbackText);
+        });
+        return;
+      } catch (err) {
+        console.warn("Failed to create Audio with stream data", err);
+      }
+    }
+
+    if (fallbackText) {
+      speakTextFallback(fallbackText);
     }
   };
 
@@ -194,10 +248,14 @@ export const VoiceRecovery: React.FC = () => {
           case_id: selectedCaseId,
           amount: selectedCase?.amount_inr ?? 0,
           customer_name: selectedCase?.customer_name,
+          voice_preference: selectedVoice,
         });
 
         setIsAiThinking(false);
         setCallSid(res.call_sid);
+        if (res.voice_engine) {
+          setActiveVoiceMeta({ engine: res.voice_engine, voice: res.voice_name });
+        }
         const greeting = res.greeting || "Namaste! Main Chakra se bol raha hoon. Aapke pending bill ke regarding call hai.";
 
         setTranscript([
@@ -208,7 +266,7 @@ export const VoiceRecovery: React.FC = () => {
           },
         ]);
 
-        speakText(greeting);
+        playAudioStream(res.audio_base64, res.audio_format, greeting);
       } catch (err: any) {
         setIsAiThinking(false);
         setError(err?.message || "Failed to initialize Gemini 2.5 voice dialog.");
@@ -264,9 +322,13 @@ export const VoiceRecovery: React.FC = () => {
         user_speech: textToSend,
         amount: selectedCase?.amount_inr ?? 0,
         customer_name: selectedCase?.customer_name,
+        voice_preference: selectedVoice,
       });
 
       setIsAiThinking(false);
+      if (res.voice_engine) {
+        setActiveVoiceMeta({ engine: res.voice_engine, voice: res.voice_name });
+      }
 
       // 3. Append AI response
       const aiMessage = {
@@ -295,8 +357,8 @@ export const VoiceRecovery: React.FC = () => {
         setGeneratedLink(res.payment_link);
       }
 
-      // 5. Speak AI response aloud
-      speakText(res.ai_response);
+      // 5. Play natural high-fidelity neural audio
+      playAudioStream(res.audio_base64, res.audio_format, res.ai_response);
     } catch (err: any) {
       setIsAiThinking(false);
       const fallbackAi = {
@@ -305,15 +367,12 @@ export const VoiceRecovery: React.FC = () => {
         timestamp: new Date().toISOString(),
       };
       setTranscript((prev) => [...prev, fallbackAi]);
-      speakText(fallbackAi.text);
+      playAudioStream(undefined, undefined, fallbackAi.text);
     }
   };
 
   const handleEndCall = () => {
-    if (typeof window !== "undefined" && "speechSynthesis" in window) {
-      window.speechSynthesis.cancel();
-    }
-    setIsSpeaking(false);
+    stopAudioPlayback();
     setStatus("completed");
   };
 
@@ -438,6 +497,43 @@ export const VoiceRecovery: React.FC = () => {
                 : "Initiate outbound phone call to target mobile via Twilio voice network."}
             </p>
           </div>
+
+          {/* Neural Voice Profile Selector (Gemini Mode) */}
+          {callMethod === "browser_gemini" && (
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[10px] font-bold text-text-muted uppercase tracking-widest">
+                  Neural Voice Profile
+                </label>
+                {activeVoiceMeta?.engine && (
+                  <span className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-purple-100 text-purple-800 font-bold border border-purple-200">
+                    Active: {activeVoiceMeta.engine} ({activeVoiceMeta.voice})
+                  </span>
+                )}
+              </div>
+              <select
+                className="w-full border border-border p-2 rounded text-xs bg-white font-sans focus:outline-none focus:ring-1 focus:ring-purple-500"
+                value={selectedVoice}
+                onChange={(e) => setSelectedVoice(e.target.value)}
+                disabled={isCallActive}
+              >
+                <optgroup label="🇮🇳 Neural Indian Voices (Natural Human Accent)">
+                  <option value="hi-IN-SwaraNeural">Swara (Female) — Hindi / Hinglish Natural Human</option>
+                  <option value="en-IN-NeerjaNeural">Neerja (Female) — Indian English Professional</option>
+                  <option value="hi-IN-MadhurNeural">Madhur (Male) — Hindi Natural Human</option>
+                </optgroup>
+                <optgroup label="✨ Google Gemini 3.1 Flash Native TTS">
+                  <option value="gemini-Sulafat">Gemini Sulafat (Female) — Warm & Conversational</option>
+                  <option value="gemini-Kore">Gemini Kore (Female) — Firm Recovery Agent</option>
+                  <option value="gemini-Aoede">Gemini Aoede (Female) — Breezy & Calm</option>
+                  <option value="gemini-Puck">Gemini Puck (Male) — Upbeat & Clear</option>
+                </optgroup>
+              </select>
+              <p className="text-[10px] text-purple-700 mt-1 font-mono flex items-center gap-1">
+                <Sparkles size={11} /> High-fidelity neural voice streamed directly to browser.
+              </p>
+            </div>
+          )}
 
           {/* Case Selection */}
           <div>

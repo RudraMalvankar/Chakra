@@ -59,16 +59,16 @@ def log_audit_event(
         pass
 
     # Robust file append with retry for Windows file locking
-    for attempt in range(5):
+    for attempt in range(10):
         try:
             with open(filepath, "a", encoding="utf-8") as f:
                 f.write(line)
             return
         except (PermissionError, OSError) as e:
-            if attempt < 4:
-                time.sleep(0.02)
+            if attempt < 9:
+                time.sleep(0.05 * (attempt + 1))
             else:
-                raise OSError(f"Failed to write to audit log after 5 attempts: {e}")
+                raise OSError(f"Failed to write to audit log after 10 attempts: {e}")
 
 
 def clear_audit_log(filepath: str = AUDIT_FILE) -> None:

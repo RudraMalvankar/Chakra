@@ -179,6 +179,7 @@ export const startSimulatedVoiceCall = async (payload: {
   case_id: string;
   amount: number;
   customer_name?: string;
+  voice_preference?: string;
 }) => {
   return requestJson<any>('/api/voice/simulate/start', {
     method: 'POST',
@@ -193,6 +194,7 @@ export const sendSimulatedVoiceTurn = async (payload: {
   user_speech: string;
   amount: number;
   customer_name?: string;
+  voice_preference?: string;
 }) => {
   return requestJson<any>('/api/voice/simulate/turn', {
     method: 'POST',
@@ -232,6 +234,30 @@ export const sendPromiseReminder = async (
 
 export const dispatchPromiseReminders = async (payload?: { default_phone?: string }) => {
   return requestJson<any>('/api/receivables/promises/dispatch-reminders', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  });
+};
+
+// ─── Twilio Comms Email ───────────────────────────────────────────────────────
+
+export const sendReceivableEmail = async (
+  receivableId: string,
+  payload?: { to_email?: string; subject?: string; html_content?: string }
+) => {
+  return requestJson<any>(`/api/receivables/${encodeURIComponent(receivableId)}/email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  });
+};
+
+export const sendPromiseEmail = async (
+  promiseId: string,
+  payload?: { to_email?: string; subject?: string; html_content?: string }
+) => {
+  return requestJson<any>(`/api/receivables/promises/${encodeURIComponent(promiseId)}/email`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload || {}),

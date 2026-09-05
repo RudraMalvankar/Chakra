@@ -823,6 +823,89 @@ async def send_receivable_sms(id: str, req: SmsRequest):
     return {**result, "persisted_status": persist_status, "delivery_claimed": False}
 
 
+class EmailRequest(BaseModel):
+    to_email: Optional[str] = "rudracmalvankar@gmail.com"
+    subject: Optional[str] = None
+    html_content: Optional[str] = None
+
+
+@router.post("/{id}/email")
+async def send_receivable_email(id: str, req: EmailRequest):
+    """Send an email via Twilio Comms API with constant recipient and approved template."""
+    from backend.app.services.notify import send_email
+    factory = get_session_factory()
+    with factory() as session:
+        rec = session.execute(select(Receivable).where(Receivable.id == id)).scalar_one_or_none()
+        if not rec:
+            raise HTTPException(status_code=404, detail="Receivable not found")
+        customer_id = rec.customer_id
+
+    result = await send_email(to_email=req.to_email, subject=req.subject, html_content=req.html_content)
+    provider_status = (result.get("status") or "").lower()
+    persist_status = "SENT" if provider_status == "sent" else "FAILED"
+
+    DBService.record_communication(
+        case_id=None,
+        customer_id=customer_id,
+        channel="EMAIL",
+        communication_type="RECEIVABLE_EMAIL",
+        provider="twilio_email",
+        provider_message_id=result.get("provider_message_id"),
+        status=persist_status,
+        metadata={"provider_result": result, "receivable_id": id},
+    )
+    DBService.record_audit_event(
+        id,
+        "receivable_email_sent",
+        {
+            "receivable_id": id,
+            "to_email": result.get("to"),
+            "status": persist_status,
+            "operation_id": result.get("provider_message_id"),
+        },
+    )
+    return {**result, "persisted_status": persist_status}
+
+
+@router.post("/promises/{promise_id}/email")
+async def send_promise_email(promise_id: str, req: EmailRequest):
+    """Send a promise reminder email via Twilio Comms API."""
+    from backend.app.services.notify import send_email
+    factory = get_session_factory()
+    with factory() as session:
+        promise = session.execute(select(PromiseToPay).where(PromiseToPay.id == promise_id)).scalar_one_or_none()
+        if not promise:
+            raise HTTPException(status_code=404, detail="Promise not found")
+        receivable_id = promise.receivable_id
+
+    result = await send_email(to_email=req.to_email, subject=req.subject, html_content=req.html_content)
+    provider_status = (result.get("status") or "").lower()
+    persist_status = "SENT" if provider_status == "sent" else "FAILED"
+
+    DBService.record_communication(
+        case_id=receivable_id,
+        customer_id=None,
+        channel="EMAIL",
+        communication_type="PROMISE_EMAIL",
+        provider="twilio_email",
+        provider_message_id=result.get("provider_message_id"),
+        status=persist_status,
+        metadata={"promise_id": promise_id, "provider_result": result},
+    )
+    DBService.record_audit_event(
+        promise_id,
+        "promise_email_sent",
+        {
+            "promise_id": promise_id,
+            "to_email": result.get("to"),
+            "status": persist_status,
+            "operation_id": result.get("provider_message_id"),
+        },
+    )
+    return {**result, "persisted_status": persist_status}
+
+
+
 @router.post("/voice/start")
 async def start_voice_recovery(req: VoiceRecoveryRequest):
     from backend.app.services.voice import get_voice_provider

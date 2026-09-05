@@ -1,8 +1,8 @@
 import React, { useReducer, useEffect, useState } from 'react';
-import { API_BASE, sendPromiseReminder, dispatchPromiseReminders } from '../services/api';
+import { API_BASE, sendPromiseReminder, sendPromiseEmail, dispatchPromiseReminders } from '../services/api';
 import { formatCurrency } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
-import { Handshake, MessageSquare, Send, CheckCircle2, AlertCircle, Clock } from 'lucide-react';
+import { Handshake, MessageSquare, Send, CheckCircle2, AlertCircle, Clock, Mail } from 'lucide-react';
 
 interface Promise {
     id: string;
@@ -35,8 +35,32 @@ export const PromiseToPay = () => {
     const [remindPhone, setRemindPhone] = useState('+919930832015');
     const [remindTiming, setRemindTiming] = useState<'auto' | 'before' | 'due' | 'after'>('auto');
     const [remindSending, setRemindSending] = useState(false);
+    const [emailSendingId, setEmailSendingId] = useState<string | null>(null);
     const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
     const [batchSending, setBatchSending] = useState(false);
+
+    const handleSendEmailReminder = async (promise: Promise) => {
+        setEmailSendingId(promise.id);
+        setFeedback(null);
+        try {
+            const res = await sendPromiseEmail(promise.id);
+            if (res.status === 'sent') {
+                setFeedback({
+                    type: 'success',
+                    message: `Twilio email dispatched to ${res.to || 'rudracmalvankar@gmail.com'}! Operation: ${res.provider_message_id || 'OK'}`,
+                });
+            } else {
+                setFeedback({
+                    type: 'error',
+                    message: `Email failed: ${res.message || 'Error'}`,
+                });
+            }
+        } catch (e: any) {
+            setFeedback({ type: 'error', message: `Email error: ${e.message || 'Error'}` });
+        } finally {
+            setEmailSendingId(null);
+        }
+    };
 
     async function loadPromises() {
         try {
@@ -262,14 +286,25 @@ export const PromiseToPay = () => {
                                             <div className="flex items-center justify-center gap-2">
                                                 {/* Remind via SMS button available for any non-terminal promise */}
                                                 {!['FULFILLED', 'ESCALATED'].includes(p.status) && (
-                                                    <button
-                                                        onClick={() => setActiveRemindPromise(p)}
-                                                        className="px-2 py-1 bg-blue-50 border border-blue-200 text-[10px] font-bold text-rzp-blue uppercase hover:bg-blue-100 flex items-center gap-1 rounded transition-colors"
-                                                        title="Send SMS reminder through Twilio"
-                                                    >
-                                                        <MessageSquare size={12} />
-                                                        Remind (SMS)
-                                                    </button>
+                                                    <>
+                                                        <button
+                                                            onClick={() => setActiveRemindPromise(p)}
+                                                            className="px-2 py-1 bg-blue-50 border border-blue-200 text-[10px] font-bold text-rzp-blue uppercase hover:bg-blue-100 flex items-center gap-1 rounded transition-colors"
+                                                            title="Send SMS reminder through Twilio"
+                                                        >
+                                                            <MessageSquare size={12} />
+                                                            Remind (SMS)
+                                                        </button>
+                                                        <button
+                                                            disabled={emailSendingId === p.id}
+                                                            onClick={(e) => { e.stopPropagation(); handleSendEmailReminder(p); }}
+                                                            className="px-2 py-1 bg-purple-50 border border-purple-200 text-[10px] font-bold text-purple-700 uppercase hover:bg-purple-100 flex items-center gap-1 rounded transition-colors disabled:opacity-50"
+                                                            title="Send Email reminder via Twilio Comms API"
+                                                        >
+                                                            <Mail size={12} />
+                                                            {emailSendingId === p.id ? 'Sending...' : 'Remind (Email)'}
+                                                        </button>
+                                                    </>
                                                 )}
 
                                                 {['UPCOMING', 'DUE_TODAY'].includes(p.status) && (

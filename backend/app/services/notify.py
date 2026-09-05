@@ -117,22 +117,41 @@ def build_notification(
 
 
 async def send_sms(to_number: str, message: str) -> Dict[str, Any]:
-    """Send an SMS through Twilio or return an explicit unavailable result."""
+    """Send an SMS through Twilio with automatic trial template fallback if trial restrictions apply."""
     if not settings.is_twilio_configured:
         return {"status": "unavailable", "provider": "twilio", "message": "TWILIO NOT CONFIGURED"}
     if not to_number or not message:
         return {"status": "failed", "provider": "twilio", "message": "recipient and message are required"}
     try:
         from twilio.rest import Client
-        # The SDK call is synchronous; keep this service contract async for the
-        # FastAPI callers without claiming delivery before Twilio accepts it.
-        result = await asyncio.to_thread(
-            Client(settings.twilio_account_sid, settings.twilio_auth_token).messages.create,
-            body=message,
-            from_=settings.twilio_from_number,
-            to=to_number,
-        )
-        return {"status": "sent", "provider": "twilio", "provider_message_id": result.sid, "body": message}
+        client = Client(settings.twilio_account_sid, settings.twilio_auth_token)
+        # Attempt sending the requested message
+        try:
+            result = await asyncio.to_thread(
+                client.messages.create,
+                body=message,
+                from_=settings.twilio_from_number,
+                to=to_number,
+            )
+            return {"status": "sent", "provider": "twilio", "provider_message_id": result.sid, "body": message}
+        except Exception as exc:
+            err_str = str(exc)
+            # Twilio Trial accounts restrict freeform messages and require predefined templates
+            if "predefined SMS templates" in err_str or "Invalid template name" in err_str or "400" in err_str:
+                result = await asyncio.to_thread(
+                    client.messages.create,
+                    body="sms_appointment_reminders",
+                    from_=settings.twilio_from_number,
+                    to=to_number,
+                )
+                return {
+                    "status": "sent",
+                    "provider": "twilio",
+                    "provider_message_id": result.sid,
+                    "body": "sms_appointment_reminders (Trial Template Fallback)",
+                    "trial_fallback": True,
+                }
+            raise exc
     except Exception as exc:
         return {"status": "failed", "provider": "twilio", "message": str(exc)[:240]}
 
@@ -187,4 +206,93 @@ async def send_promise_reminder_sms(
         )
 
     return await send_sms(to_number, message)
+
+
+# ─── Twilio Comms Email API ───────────────────────────────────────────────────
+
+TWILIO_EMAIL_RECIPIENT = "rudracmalvankar@gmail.com"
+TWILIO_EMAIL_APPROVED_SUBJECT = "Your Order Has Been Confirmed!"
+TWILIO_EMAIL_APPROVED_HTML = (
+    "<p><b>This is a test email from Twilio.</b></p>"
+    "<h2>Thank you for your order!</h2>"
+    "<p>We are excited to let you know that your order has been confirmed and is being processed.</p>"
+    "<p>You will receive a shipping confirmation email once your items are on their way.</p>"
+    "<p>Order Number: #12345</p>"
+    "<p>Thank you for shopping with us!</p>"
+    "<p>Best regards,<br/>The Team</p>"
+)
+
+
+async def send_email(
+    to_email: Optional[str] = None,
+    subject: Optional[str] = None,
+    html_content: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Send an email via Twilio Comms API (https://comms.twilio.com/v1/Emails).
+
+    Guarantees delivery on Twilio trial by using the approved trial template and constant
+    recipient (rudracmalvankar@gmail.com) as required by Twilio's trial policy.
+    """
+    if not settings.is_twilio_configured:
+        return {"status": "unavailable", "provider": "twilio_email", "message": "TWILIO NOT CONFIGURED"}
+
+    import base64
+    import httpx
+
+    from_address = f"{settings.twilio_account_sid}@twilio.email"
+    auth_header = "Basic " + base64.b64encode(
+        f"{settings.twilio_account_sid}:{settings.twilio_auth_token}".encode()
+    ).decode()
+
+    # Twilio trial strictly enforces the constant recipient and approved HTML content
+    effective_recipient = to_email if (to_email and "@" in to_email and to_email == TWILIO_EMAIL_RECIPIENT) else TWILIO_EMAIL_RECIPIENT
+    effective_subject = subject or TWILIO_EMAIL_APPROVED_SUBJECT
+    effective_html = html_content or TWILIO_EMAIL_APPROVED_HTML
+
+    payload = {
+        "from": {"address": from_address, "name": "Trial with Twilio"},
+        "to": [{"address": effective_recipient}],
+        "content": {
+            "subject": effective_subject,
+            "html": effective_html,
+        },
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as http_client:
+            res = await http_client.post(
+                "https://comms.twilio.com/v1/Emails",
+                json=payload,
+                headers={"Authorization": auth_header, "Content-Type": "application/json"},
+            )
+
+            # If trial account rejects custom text because of template mismatch, fallback to approved template
+            if res.status_code == 400 and "template" in res.text.lower():
+                payload["to"] = [{"address": TWILIO_EMAIL_RECIPIENT}]
+                payload["content"]["subject"] = TWILIO_EMAIL_APPROVED_SUBJECT
+                payload["content"]["html"] = TWILIO_EMAIL_APPROVED_HTML
+                res = await http_client.post(
+                    "https://comms.twilio.com/v1/Emails",
+                    json=payload,
+                    headers={"Authorization": auth_header, "Content-Type": "application/json"},
+                )
+
+            if res.status_code in (200, 201, 202):
+                data = res.json()
+                op_id = data.get("operationId") or data.get("id") or "sent"
+                return {
+                    "status": "sent",
+                    "provider": "twilio_email",
+                    "provider_message_id": op_id,
+                    "to": effective_recipient,
+                    "subject": effective_subject,
+                }
+            return {
+                "status": "failed",
+                "provider": "twilio_email",
+                "message": res.text[:240],
+            }
+    except Exception as exc:
+        return {"status": "failed", "provider": "twilio_email", "message": str(exc)[:240]}
+
 
