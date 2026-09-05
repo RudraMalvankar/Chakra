@@ -167,7 +167,7 @@ async def process_batch_background(batch_id: str, count: int, scenario_type: str
                     for bc_id, bc_status, bc_err, seq in pending_batch_cases:
                         session.add(BatchCase(
                             batch_id=batch_id,
-                            recovery_case_id=bc_id,
+                            recovery_case_id=None,
                             sequence=seq,
                             status=bc_status,
                             error_message=bc_err,
