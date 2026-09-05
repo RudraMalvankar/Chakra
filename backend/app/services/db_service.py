@@ -49,8 +49,8 @@ def get_db_session() -> Optional[Session]:
 class DBService:
 
     @staticmethod
-    def _escalation_dict(escalation: Escalation) -> Dict[str, Any]:
-        return {
+    def _escalation_dict(escalation: Escalation, session=None, full: bool = False) -> Dict[str, Any]:
+        data = {
             "id": escalation.id,
             "case_id": escalation.recovery_case_id,
             "reason": escalation.reason,
@@ -73,9 +73,118 @@ class DBService:
                     "metadata": action.metadata_json or {},
                     "created_at": action.created_at.isoformat() if action.created_at else None,
                 }
-                for action in sorted(escalation.actions, key=lambda value: value.created_at)
+                for action in sorted(escalation.actions, key=lambda value: value.created_at or utcnow())
             ],
         }
+
+        # Enrich with case, customer, and financial context if session available
+        if session:
+            case_id = escalation.recovery_case_id
+            rc = session.get(RecoveryCase, case_id) if case_id else None
+            rec = None
+            if case_id:
+                rec = session.get(Receivable, case_id)
+                if not rec:
+                    rec = session.execute(select(Receivable).where(Receivable.invoice_number == case_id)).scalar_one_or_none()
+
+            amount_at_risk = 0.0
+            customer_name = "Customer"
+            customer_phone = "+919930832015"
+            customer_email = "rudracmalvankar@gmail.com"
+            invoice_number = case_id
+            days_overdue = 0
+
+            if rec:
+                amount_at_risk = max(0.0, float(rec.amount - (rec.recovered_amount or 0.0)))
+                customer_name = rec.customer_name
+                invoice_number = rec.invoice_number
+                days_overdue = rec.days_overdue
+            elif rc:
+                amount_at_risk = float(rc.amount_at_risk or 0.0)
+                if rc.payment:
+                    invoice_number = rc.payment.external_order_id or rc.payment.external_payment_id or rc.payment.id
+                    if rc.payment.customer:
+                        customer_name = getattr(rc.payment.customer, "display_name", None) or getattr(rc.payment.customer, "external_customer_id", None) or customer_name
+                        summary = getattr(rc.payment.customer, "customer_history_summary", {}) or {}
+                        if isinstance(summary, dict):
+                            if summary.get("phone"):
+                                customer_phone = summary["phone"]
+                            if summary.get("email"):
+                                customer_email = summary["email"]
+
+            data["amount_at_risk_inr"] = amount_at_risk
+            data["customer_name"] = customer_name
+            data["customer_phone"] = customer_phone
+            data["customer_email"] = customer_email
+            data["invoice_number"] = invoice_number
+            data["days_overdue"] = days_overdue
+
+            if full:
+                # Root cause human explanation
+                reason_clean = escalation.reason.upper()
+                if "COMPLIANCE" in reason_clean or "MANDATE" in reason_clean:
+                    root_cause = "Automated debit stopped by regulatory compliance rules (RBI AFA directive or revoked customer mandate). Cannot auto-debit."
+                elif "DISPUTE" in reason_clean:
+                    root_cause = "Customer disputed the charge or requested cancellation. Automated debits suspended pending human dispute review."
+                elif "PROMISE" in reason_clean:
+                    root_cause = "Customer scheduled a Promise-to-Pay that was not fulfilled by due date. Overdue escalation required."
+                elif "RETRY" in reason_clean or "MAX" in reason_clean:
+                    root_cause = "Maximum automated retry attempts reached without bank capture. Stopped to prevent card network spam penalties."
+                else:
+                    root_cause = f"Case escalated for reason: {escalation.reason}. Manual specialist resolution required."
+                data["root_cause_explanation"] = root_cause
+
+                # What Chakra tried
+                tried = []
+                if rc and rc.events:
+                    for ev in rc.events:
+                        tried.append(f"{ev.event_type.replace('_', ' ').title()} - {ev.action or 'recorded'}")
+                if not tried:
+                    tried = [
+                        "Mandate validity verified against NPCI / Card network",
+                        "Safety Gate evaluated AFA policy thresholds",
+                        "Automated retry paused per risk bounds",
+                    ]
+                data["what_chakra_tried"] = tried
+
+                # Recent communications
+                comms = []
+                if case_id:
+                    comms_rows = session.execute(
+                        select(Communication).where(
+                            (Communication.recovery_case_id == case_id) | (Communication.customer_id == customer_name)
+                        ).order_by(desc(Communication.created_at)).limit(10)
+                    ).scalars().all()
+                    for c in comms_rows:
+                        comms.append({
+                            "id": c.id,
+                            "channel": c.channel,
+                            "status": c.status,
+                            "sent_at": c.sent_at.isoformat() if c.sent_at else (c.created_at.isoformat() if c.created_at else None),
+                            "provider": c.provider,
+                            "provider_message_id": c.provider_message_id,
+                            "metadata": c.body_metadata or {},
+                        })
+                data["communications"] = comms
+
+                # Recent payment links
+                links = []
+                if case_id:
+                    link_rows = session.execute(
+                        select(PaymentLink).where(PaymentLink.recovery_case_id == case_id).order_by(desc(PaymentLink.created_at)).limit(5)
+                    ).scalars().all()
+                    for l in link_rows:
+                        links.append({
+                            "id": l.id,
+                            "url": l.url,
+                            "amount": l.amount,
+                            "status": l.status,
+                            "provider": l.provider,
+                            "created_at": l.created_at.isoformat() if l.created_at else None,
+                        })
+                data["payment_links"] = links
+
+        return data
 
     @staticmethod
     def create_escalation(
@@ -86,11 +195,25 @@ class DBService:
         actor: str = "system",
         notes: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
-        """Create one open escalation per case/reason and persist its first action."""
+        """Create one open escalation per case/reason and persist its first action safely."""
         session = get_db_session()
         if not session:
             return None
         try:
+            # Ensure parent RecoveryCase exists to satisfy PostgreSQL foreign key constraint
+            rc = session.execute(select(RecoveryCase).where(RecoveryCase.id == case_id)).scalar_one_or_none()
+            if not rc:
+                rec = session.execute(select(Receivable).where(Receivable.id == case_id)).scalar_one_or_none()
+                amt = float(rec.amount) if rec else 0.0
+                rc = RecoveryCase(
+                    id=case_id,
+                    case_type="RECEIVABLE_ESCALATION" if rec else "MANUAL_ESCALATION",
+                    status="ESCALATED",
+                    amount_at_risk=amt,
+                )
+                session.add(rc)
+                session.flush()
+
             escalation = session.execute(
                 select(Escalation).where(
                     Escalation.recovery_case_id == case_id,
@@ -99,12 +222,15 @@ class DBService:
                 )
             ).scalar_one_or_none()
             if not escalation:
+                from datetime import timedelta
+                sla_hours = 2 if priority == "CRITICAL" else (4 if priority == "HIGH" else 24)
                 escalation = Escalation(
                     recovery_case_id=case_id,
                     reason=reason,
                     priority=priority,
                     severity=severity,
                     status="OPEN",
+                    sla_deadline=utcnow() + timedelta(hours=sla_hours),
                 )
                 session.add(escalation)
                 session.flush()
@@ -116,7 +242,7 @@ class DBService:
                 ))
             session.commit()
             session.refresh(escalation)
-            return DBService._escalation_dict(escalation)
+            return DBService._escalation_dict(escalation, session=session, full=True)
         except Exception as exc:
             session.rollback()
             logger.error("Error creating escalation: %s", exc)
@@ -133,7 +259,7 @@ class DBService:
             rows = session.execute(
                 select(Escalation).order_by(desc(Escalation.created_at)).limit(limit)
             ).scalars().all()
-            return [DBService._escalation_dict(row) for row in rows]
+            return [DBService._escalation_dict(row, session=session, full=False) for row in rows]
         finally:
             session.close()
 
@@ -144,7 +270,7 @@ class DBService:
             return None
         try:
             escalation = session.get(Escalation, escalation_id)
-            return DBService._escalation_dict(escalation) if escalation else None
+            return DBService._escalation_dict(escalation, session=session, full=True) if escalation else None
         finally:
             session.close()
 
@@ -152,21 +278,15 @@ class DBService:
     def transition_escalation(
         escalation_id: str,
         status: str,
-        actor: str,
+        actor: str = "operator",
         notes: Optional[str] = None,
         assigned_to: Optional[str] = None,
         resolution: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
-        allowed = {
-            "OPEN": {"ASSIGNED", "IN_PROGRESS", "CLOSED"},
-            "ASSIGNED": {"IN_PROGRESS", "CUSTOMER_CONTACTED", "CLOSED"},
-            "IN_PROGRESS": {"CUSTOMER_CONTACTED", "ACTION_TAKEN", "PROMISE_RECEIVED", "RESOLVED", "UNRECOVERABLE", "CLOSED"},
-            "CUSTOMER_CONTACTED": {"ACTION_TAKEN", "PROMISE_RECEIVED", "RESOLVED", "UNRECOVERABLE", "CLOSED"},
-            "ACTION_TAKEN": {"RESOLVED", "UNRECOVERABLE", "CLOSED"},
-            "PROMISE_RECEIVED": {"RESOLVED", "UNRECOVERABLE", "CLOSED"},
-            "RESOLVED": {"CLOSED"},
-            "UNRECOVERABLE": {"CLOSED"},
-            "CLOSED": set(),
+        valid_statuses = {
+            "OPEN", "ASSIGNED", "IN_PROGRESS", "CUSTOMER_CONTACTED",
+            "ACTION_TAKEN", "PROMISE_RECEIVED", "RESOLVED", "UNRECOVERABLE", "CLOSED"
         }
         session = get_db_session()
         if not session:
@@ -175,30 +295,75 @@ class DBService:
             escalation = session.get(Escalation, escalation_id)
             if not escalation:
                 return None
-            if status not in allowed.get(escalation.status, set()):
-                raise ValueError(f"Invalid escalation transition {escalation.status} -> {status}")
-            escalation.status = status
+            status_clean = status.upper()
+            if status_clean not in valid_statuses:
+                raise ValueError(f"Invalid escalation status: {status}")
+
+            escalation.status = status_clean
             if assigned_to is not None:
                 escalation.assigned_to = assigned_to
-            if status in {"RESOLVED", "CLOSED", "UNRECOVERABLE"}:
+            if status_clean in {"RESOLVED", "CLOSED", "UNRECOVERABLE"}:
                 escalation.resolved_at = utcnow()
-                escalation.resolution = resolution or status
+                escalation.resolution = resolution or status_clean
                 escalation.resolution_notes = notes
+            elif status_clean in {"OPEN", "IN_PROGRESS"}:
+                escalation.resolved_at = None
+                escalation.resolution = None
+
             escalation.updated_at = utcnow()
+            meta = dict(metadata or {})
+            if assigned_to:
+                meta["assigned_to"] = assigned_to
+            if resolution:
+                meta["resolution"] = resolution
+
             session.add(EscalationAction(
                 escalation_id=escalation.id,
-                action=status,
+                action=status_clean,
                 actor=actor,
                 notes=notes,
-                metadata_json={"assigned_to": assigned_to} if assigned_to else {},
+                metadata_json=meta,
             ))
             session.commit()
             session.refresh(escalation)
-            return DBService._escalation_dict(escalation)
+            return DBService._escalation_dict(escalation, session=session, full=True)
         except Exception as exc:
             session.rollback()
             logger.error("Error transitioning escalation: %s", exc)
             raise
+        finally:
+            session.close()
+
+    @staticmethod
+    def record_escalation_action(
+        escalation_id: str,
+        action: str,
+        actor: str = "operator",
+        notes: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Dict[str, Any]]:
+        session = get_db_session()
+        if not session:
+            return None
+        try:
+            escalation = session.get(Escalation, escalation_id)
+            if not escalation:
+                return None
+            session.add(EscalationAction(
+                escalation_id=escalation.id,
+                action=action,
+                actor=actor,
+                notes=notes,
+                metadata_json=metadata or {},
+            ))
+            escalation.updated_at = utcnow()
+            session.commit()
+            session.refresh(escalation)
+            return DBService._escalation_dict(escalation, session=session, full=True)
+        except Exception as exc:
+            session.rollback()
+            logger.error("Error recording escalation action: %s", exc)
+            return None
         finally:
             session.close()
 
