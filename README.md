@@ -549,3 +549,11 @@ docker pull ghcr.io/rudramalvankar/chakra/chakra-frontend:latest
 - **Software License:** Apache 2.0.
 - **Benchmark Disclosure:** All benchmarks provided in `metrics_report.json` and demonstrated in the Command Center are derived from a **synthetic 120-case deterministic seed**. They demonstrate architectural correctness and recovery logic; they are **not** production Razorpay transaction records.
 - **Financial Simulation Notice:** When operated in default mode, Chakra connects to the internal `mock-razorpay` gateway and does not process real monetary transactions.
+
+---
+
+## 👤 Author
+
+**Made by [Rudra Malvankar](https://github.com/RudraMalvankar)**
+
+© 2026 Rudra Malvankar. All rights to the code remain with the author.
