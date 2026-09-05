@@ -1,0 +1,33 @@
+subscription_policy:
+  grace_period_days: 7
+  max_retries: 3
+  retry_delays_hours: [24, 48, 72]
+  dunning_stages:
+    - stage: 1
+      trigger: first_failure
+      action: RETRY_NOW
+      delay_hours: 24
+      reason: "First subscription payment failure, immediate retry within grace"
+    - stage: 2
+      trigger: retry_2_failed
+      action: PAYMENT_LINK
+      reason: "Second retry failed, send payment link for manual update"
+    - stage: 3
+      trigger: retry_3_failed
+      action: VOICE_RECOVERY
+      reason: "Third retry failed, escalate to voice outreach"
+    - stage: 4
+      trigger: grace_period_expired
+      action: PAUSE_SUBSCRIPTION
+      reason: "Grace period exhausted, pause subscription to stop dunning"
+    - stage: 5
+      trigger: paused_7_days_no_payment
+      action: ESCALATE
+      reason: "Paused 7+ days without payment, escalate to human"
+  cancellation_threshold_days: 30
+  pause_after_failures: 3
+  resume_on_payment: true
+  churn_risk_signals:
+    - past_failed_payments_count >= 3
+    - subscription_age_days < 30
+    - alerts_ignored >= 2

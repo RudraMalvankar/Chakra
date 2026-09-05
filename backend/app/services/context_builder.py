@@ -63,6 +63,13 @@ class ContextBuilder:
         if not isinstance(data, dict):
             data = {}
 
+        # Flatten nested 'notes' dict into data for subscription fields
+        notes = data.get("notes")
+        if isinstance(notes, dict):
+            for nk, nv in notes.items():
+                if nk not in data or data[nk] is None:
+                    data[nk] = nv
+
         metadata = data.get("metadata", {})
         if not isinstance(metadata, dict):
             metadata = {}
@@ -179,6 +186,18 @@ class ContextBuilder:
             "is_first_transaction": is_first_transaction,
             "raw_metadata": metadata
         }
+
+        # Extract subscription-specific fields
+        if case_type == CaseType.SUBSCRIPTION:
+            context_dict["subscription_id"] = data.get("id") or data.get("subscription_id") or mandate_id
+            context_dict["subscription_status"] = data.get("status", "failed")
+            context_dict["subscription_frequency"] = data.get("frequency", "monthly")
+            context_dict["plan_id"] = data.get("plan_id", "")
+            context_dict["past_failed_payments_count"] = _safe_int(data.get("past_failed_payments_count", 0), 0)
+            context_dict["subscription_age_days"] = _safe_int(data.get("subscription_age_days", 999), 999)
+            context_dict["churn_risk"] = data.get("churn_risk", "LOW")
+            context_dict["grace_period_remaining"] = _safe_int(data.get("grace_period_remaining", 7), 7)
+            context_dict["billing_cycle_day"] = _safe_int(data.get("billing_cycle_day", 0), 0)
         
         # Merge all additional fields from data into context
         reserved_keys = [

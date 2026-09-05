@@ -125,6 +125,30 @@ class TriageEngine:
 
         # Fast path for non-payment cases to avoid LLM latency (unless explicitly ambiguous)
         from backend.app.models.case import CaseType
+        if ctx.case_type == CaseType.SUBSCRIPTION and error_code not in AMBIGUOUS_CODES:
+            error_lower = (ctx.error_code or "").lower()
+            if "halted" in error_lower:
+                return TriageResult(
+                    error_code=ctx.error_code or "subscription_halted",
+                    diagnosis="SUBSCRIPTION_HALTED",
+                    is_ambiguous=False,
+                    recommended_action=InterventionType.ESCALATE,
+                    reason="subscription_halted",
+                    confidence=0.95,
+                    requires_human=True,
+                    ai_used=False,
+                )
+            return TriageResult(
+                error_code=ctx.error_code or "subscription_failed",
+                diagnosis="SUBSCRIPTION_PAYMENT_FAILED",
+                is_ambiguous=False,
+                recommended_action=InterventionType.RETRY_LATER,
+                reason="subscription_payment_failed",
+                confidence=0.90,
+                delay_hours=RECOVERY_POLICY.get("transient_failure_retry_delay_hours", 1),
+                requires_human=False,
+                ai_used=False,
+            )
         if ctx.case_type != CaseType.PAYMENT_FAILURE and error_code not in AMBIGUOUS_CODES:
             return TriageResult(
                 error_code=ctx.error_code or "unknown",

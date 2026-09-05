@@ -173,6 +173,39 @@ def generate_mock_data():
                 }
             }
         })
+
+    # Additional subscription scenarios: grace period, churn risk, mandate revoked
+    sub_scenarios = [
+        {"days": 0, "churn": "LOW", "past_failures": 0, "grace": 7, "label": "fresh_failure"},
+        {"days": 3, "churn": "LOW", "past_failures": 1, "grace": 4, "label": "grace_period"},
+        {"days": 7, "churn": "MEDIUM", "past_failures": 2, "grace": 0, "label": "grace_expired"},
+        {"days": 14, "churn": "HIGH", "past_failures": 3, "grace": 0, "label": "high_churn"},
+        {"days": 30, "churn": "HIGH", "past_failures": 5, "grace": 0, "label": "cancellation_threshold"},
+        {"days": 0, "churn": "LOW", "past_failures": 0, "grace": 7, "label": "mandate_revoked", "error": "mandate_revoked"},
+        {"days": 5, "churn": "MEDIUM", "past_failures": 2, "grace": 2, "label": "fraud_subscription", "error": "fraud_flag"},
+    ]
+    for i, sc in enumerate(sub_scenarios):
+        new_cases.append({
+            "event": "subscription.failed",
+            "payload": {
+                "subscription": {
+                    "entity": {
+                        "id": f"sub_Mck_sc_{i}",
+                        "customer_id": f"cust_sub_sc_{i}",
+                        "amount": random.randint(29900, 149900),
+                        "currency": "INR",
+                        "status": "failed",
+                        "error_code": sc.get("error", "subscription_failed"),
+                        "notes": {
+                            "days_overdue": sc["days"],
+                            "churn_risk": sc["churn"],
+                            "past_failed_payments_count": sc["past_failures"],
+                            "grace_period_remaining": sc["grace"],
+                        }
+                    }
+                }
+            }
+        })
         
     # 24 Checkout Abandonment
     for i in range(24):

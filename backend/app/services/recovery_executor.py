@@ -185,6 +185,52 @@ class RecoveryExecutor:
                 })
                 ctx.current_state = PaymentState.RECOVERY_PENDING
 
+            elif decision.decision.value == "SUBSCRIPTION_PAUSE":
+                sub_id = ctx.context.get("subscription_id") or ctx.mandate_id or ctx.payment_id
+                res = await razorpay_client.pause_subscription(sub_id)
+                log_audit_event(ctx.payment_id, "subscription_paused", {
+                    "subscription_id": sub_id,
+                    "provider_response": res,
+                    "effective_action": decision.decision.value
+                })
+                from backend.app.services.db_service import DBService
+                DBService.update_subscription_status(sub_id, "PAUSED")
+                ctx.current_state = PaymentState.BLOCKED
+
+            elif decision.decision.value == "SUBSCRIPTION_RESUME":
+                sub_id = ctx.context.get("subscription_id") or ctx.mandate_id or ctx.payment_id
+                res = await razorpay_client.resume_subscription(sub_id)
+                log_audit_event(ctx.payment_id, "subscription_resumed", {
+                    "subscription_id": sub_id,
+                    "provider_response": res,
+                    "effective_action": decision.decision.value
+                })
+                from backend.app.services.db_service import DBService
+                DBService.update_subscription_status(sub_id, "ACTIVE")
+                ctx.current_state = PaymentState.RECOVERED
+
+            elif decision.decision.value == "SUBSCRIPTION_CANCEL":
+                sub_id = ctx.context.get("subscription_id") or ctx.mandate_id or ctx.payment_id
+                res = await razorpay_client.cancel_subscription(sub_id)
+                log_audit_event(ctx.payment_id, "subscription_cancelled", {
+                    "subscription_id": sub_id,
+                    "provider_response": res,
+                    "effective_action": decision.decision.value
+                })
+                from backend.app.services.db_service import DBService
+                DBService.update_subscription_status(sub_id, "CANCELLED")
+                ctx.current_state = PaymentState.BLOCKED
+
+            elif decision.decision.value == "SUBSCRIPTION_RETRY":
+                sub_id = ctx.context.get("subscription_id") or ctx.mandate_id or ctx.payment_id
+                res = await razorpay_client.retry_subscription_payment(sub_id)
+                log_audit_event(ctx.payment_id, "subscription_retry_attempted", {
+                    "subscription_id": sub_id,
+                    "provider_response": res,
+                    "effective_action": decision.decision.value
+                })
+                ctx.current_state = PaymentState.RECOVERY_PENDING
+
         except Exception as e:
             log_audit_event(ctx.payment_id, "execution_error", {"error": str(e), "effective_action": decision.decision.value})
             ctx.current_state = PaymentState.RECOVERY_FAILED

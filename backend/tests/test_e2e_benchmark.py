@@ -67,7 +67,7 @@ async def test_120_payment_benchmark_dry_run():
     clear_audit_log()
     reset_safety_state()
 
-    assert len(SEED_DATA) == 120
+    assert len(SEED_DATA) == 127
 
     for payment in SEED_DATA:
         ctx = await execute_recovery_pipeline(payment, dry_run=True)
@@ -85,9 +85,9 @@ async def test_120_payment_benchmark_dry_run():
     metrics = report["metrics"]
     invariants = report["invariants"]
 
-    assert metrics["payments_processed"] == 120
+    assert metrics["payments_processed"] == 127
     assert metrics["revenue_at_risk_inr"] > 0
-    assert metrics["payments_blocked"] + metrics["payments_escalated"] + metrics["payments_recovery_eligible"] == 120
+    assert metrics["payments_blocked"] + metrics["payments_escalated"] + metrics["payments_recovery_eligible"] == 127
     assert invariants["all_passed"] is True
 
 
@@ -107,7 +107,7 @@ async def test_120_payment_benchmark_live_run():
     metrics = report["metrics"]
     invariants = report["invariants"]
 
-    assert metrics["payments_processed"] == 120
+    assert metrics["payments_processed"] == 127
     assert metrics["revenue_at_risk_inr"] > 0
     assert metrics["interventions_attempted"] > 0
 

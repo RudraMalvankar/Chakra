@@ -71,3 +71,33 @@ templates:
     body: "Namaste {name}, your payment promise of Rs. {amount} was due yesterday. To avoid account escalation, pay now: {link}"
     variables: [name, amount, link]
     registered_with: twilio_dlt
+
+  - id: sub_pause_notification
+    channel: sms
+    body: "Namaste {name}, your {merchant} subscription of Rs. {amount} has been paused due to payment failure. Resume here: {link}"
+    variables: [name, merchant, amount, link]
+    registered_with: twilio_dlt
+
+  - id: sub_resume_notification
+    channel: sms
+    body: "Namaste {name}, your {merchant} subscription has been successfully resumed. Thank you!"
+    variables: [name, merchant]
+    registered_with: twilio_dlt
+
+  - id: sub_cancellation_warning
+    channel: sms
+    body: "Urgent: Your {merchant} subscription will be cancelled in {days} days due to unpaid dues of Rs. {amount}. Pay now: {link}"
+    variables: [name, merchant, days, amount, link]
+    registered_with: twilio_dlt
+
+  - id: sub_dunning_stage_2
+    channel: email
+    body: "Your subscription payment is overdue. Please update your payment method to avoid service interruption: {link}"
+    variables: [link]
+    registered_with: mock_dlt
+
+  - id: sub_dunning_stage_3
+    channel: sms
+    body: "Namaste {name}, we tried reaching you about your Rs. {amount} subscription payment. Please pay here: {link}"
+    variables: [name, amount, link]
+    registered_with: twilio_dlt

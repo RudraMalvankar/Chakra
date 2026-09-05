@@ -22,7 +22,8 @@ export const AppShell = ({ children, data }: any) => {
             { path: '/checkout-recovery', label: 'Checkout Recovery' },
             { path: '/receivables', label: 'Receivables' },
             { path: '/promise-to-pay', label: 'Promise-to-Pay' },
-            { path: '/voice-recovery', label: 'Voice Recovery' }
+            { path: '/voice-recovery', label: 'Voice Recovery' },
+            { path: '/subscriptions', label: 'Subscriptions' }
         ]},
         { title: 'SIMULATION', items: [
             { path: '/scenario-lab', label: 'Scenario Lab' },

@@ -228,6 +228,51 @@ class PromiseToPay(Base):
     receivable = relationship("Receivable", back_populates="promises")
 
 
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+
+    id = Column(String(64), primary_key=True, default=gen_uuid)
+    external_subscription_id = Column(String(128), unique=True, index=True, nullable=False)
+    customer_id = Column(String(128), nullable=False, index=True)
+    plan_id = Column(String(128), nullable=True)
+    amount = Column(Float, nullable=False, default=0.0)
+    currency = Column(String(8), default="INR", nullable=False)
+    frequency = Column(String(32), default="monthly")  # monthly, quarterly, yearly
+    status = Column(String(64), default="ACTIVE", index=True)  # ACTIVE, PAST_DUE, PAUSED, CANCELLED, EXPIRED
+    current_cycle_start = Column(String(32), nullable=True)
+    current_cycle_end = Column(String(32), nullable=True)
+    next_charge_date = Column(String(32), nullable=True)
+    grace_period_days = Column(Integer, default=7)
+    retry_count = Column(Integer, default=0)
+    max_retries = Column(Integer, default=3)
+    mandate_id = Column(String(128), nullable=True, index=True)
+    churn_risk = Column(String(32), default="LOW")  # LOW, MEDIUM, HIGH
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    cycles = relationship("SubscriptionCycle", back_populates="subscription")
+
+
+class SubscriptionCycle(Base):
+    __tablename__ = "subscription_cycles"
+
+    id = Column(String(64), primary_key=True, default=gen_uuid)
+    subscription_id = Column(String(64), ForeignKey("subscriptions.id"), nullable=False, index=True)
+    cycle_number = Column(Integer, nullable=False)
+    amount = Column(Float, nullable=False, default=0.0)
+    status = Column(String(64), default="PENDING", index=True)  # PENDING, CHARGED, FAILED, RETRYING
+    failure_code = Column(String(128), nullable=True)
+    attempted_at = Column(DateTime(timezone=True), nullable=True)
+    charged_at = Column(DateTime(timezone=True), nullable=True)
+    retry_count = Column(Integer, default=0)
+    next_retry_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    updated_at = Column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+
+    subscription = relationship("Subscription", back_populates="cycles")
+
+
 class VoiceInteraction(Base):
     __tablename__ = "voice_interactions"
 

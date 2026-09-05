@@ -29,6 +29,8 @@ from backend.app.db.models import (
     PaymentLink,
     Escalation,
     EscalationAction,
+    Subscription,
+    SubscriptionCycle,
     utcnow,
 )
 
@@ -1235,6 +1237,252 @@ class DBService:
             }
         except Exception as e:
             logger.error(f"Error computing metrics from DB: {e}")
+            return {}
+        finally:
+            session.close()
+
+    # ─── Subscription Methods ─────────────────────────────────────────────
+
+    @staticmethod
+    def upsert_subscription(
+        external_subscription_id: str,
+        customer_id: str,
+        amount: float,
+        plan_id: str = "",
+        frequency: str = "monthly",
+        status: str = "ACTIVE",
+        mandate_id: str = "",
+        grace_period_days: int = 7,
+        max_retries: int = 3,
+        current_cycle_start: str = "",
+        current_cycle_end: str = "",
+        next_charge_date: str = "",
+        churn_risk: str = "LOW",
+        notes: str = "",
+    ) -> Optional[str]:
+        session = get_db_session()
+        if not session:
+            return None
+        try:
+            existing = session.execute(
+                select(Subscription).where(Subscription.external_subscription_id == external_subscription_id)
+            ).scalar_one_or_none()
+            if existing:
+                existing.amount = amount
+                existing.status = status
+                existing.churn_risk = churn_risk
+                existing.updated_at = utcnow()
+                session.commit()
+                return existing.id
+            sub = Subscription(
+                external_subscription_id=external_subscription_id,
+                customer_id=customer_id,
+                amount=amount,
+                plan_id=plan_id,
+                frequency=frequency,
+                status=status,
+                mandate_id=mandate_id,
+                grace_period_days=grace_period_days,
+                max_retries=max_retries,
+                current_cycle_start=current_cycle_start,
+                current_cycle_end=current_cycle_end,
+                next_charge_date=next_charge_date,
+                churn_risk=churn_risk,
+                notes=notes,
+            )
+            session.add(sub)
+            session.commit()
+            return sub.id
+        except Exception as e:
+            logger.error(f"Error upserting subscription: {e}")
+            session.rollback()
+            return None
+        finally:
+            session.close()
+
+    @staticmethod
+    def get_subscription(external_subscription_id: str) -> Optional[Dict[str, Any]]:
+        session = get_db_session()
+        if not session:
+            return None
+        try:
+            sub = session.execute(
+                select(Subscription).where(Subscription.external_subscription_id == external_subscription_id)
+            ).scalar_one_or_none()
+            if not sub:
+                return None
+            return {
+                "id": sub.id,
+                "external_subscription_id": sub.external_subscription_id,
+                "customer_id": sub.customer_id,
+                "plan_id": sub.plan_id,
+                "amount": sub.amount,
+                "currency": sub.currency,
+                "frequency": sub.frequency,
+                "status": sub.status,
+                "current_cycle_start": sub.current_cycle_start,
+                "current_cycle_end": sub.current_cycle_end,
+                "next_charge_date": sub.next_charge_date,
+                "grace_period_days": sub.grace_period_days,
+                "retry_count": sub.retry_count,
+                "max_retries": sub.max_retries,
+                "mandate_id": sub.mandate_id,
+                "churn_risk": sub.churn_risk,
+                "created_at": sub.created_at.isoformat() if sub.created_at else None,
+                "updated_at": sub.updated_at.isoformat() if sub.updated_at else None,
+            }
+        except Exception as e:
+            logger.error(f"Error getting subscription: {e}")
+            return None
+        finally:
+            session.close()
+
+    @staticmethod
+    def list_subscriptions(status_filter: str = "") -> List[Dict[str, Any]]:
+        session = get_db_session()
+        if not session:
+            return []
+        try:
+            stmt = select(Subscription).order_by(desc(Subscription.created_at))
+            if status_filter:
+                stmt = stmt.where(Subscription.status == status_filter)
+            subs = session.execute(stmt).scalars().all()
+            return [
+                {
+                    "id": s.id,
+                    "external_subscription_id": s.external_subscription_id,
+                    "customer_id": s.customer_id,
+                    "plan_id": s.plan_id,
+                    "amount": s.amount,
+                    "currency": s.currency,
+                    "frequency": s.frequency,
+                    "status": s.status,
+                    "current_cycle_start": s.current_cycle_start,
+                    "current_cycle_end": s.current_cycle_end,
+                    "next_charge_date": s.next_charge_date,
+                    "grace_period_days": s.grace_period_days,
+                    "retry_count": s.retry_count,
+                    "max_retries": s.max_retries,
+                    "churn_risk": s.churn_risk,
+                    "created_at": s.created_at.isoformat() if s.created_at else None,
+                }
+                for s in subs
+            ]
+        except Exception as e:
+            logger.error(f"Error listing subscriptions: {e}")
+            return []
+        finally:
+            session.close()
+
+    @staticmethod
+    def update_subscription_status(external_subscription_id: str, new_status: str) -> bool:
+        session = get_db_session()
+        if not session:
+            return False
+        try:
+            sub = session.execute(
+                select(Subscription).where(Subscription.external_subscription_id == external_subscription_id)
+            ).scalar_one_or_none()
+            if not sub:
+                return False
+            sub.status = new_status
+            sub.updated_at = utcnow()
+            session.commit()
+            return True
+        except Exception as e:
+            logger.error(f"Error updating subscription status: {e}")
+            session.rollback()
+            return False
+        finally:
+            session.close()
+
+    @staticmethod
+    def record_subscription_cycle(
+        subscription_id: str,
+        cycle_number: int,
+        amount: float,
+        status: str = "PENDING",
+        failure_code: str = "",
+    ) -> Optional[str]:
+        session = get_db_session()
+        if not session:
+            return None
+        try:
+            cycle = SubscriptionCycle(
+                subscription_id=subscription_id,
+                cycle_number=cycle_number,
+                amount=amount,
+                status=status,
+                failure_code=failure_code,
+            )
+            session.add(cycle)
+            session.commit()
+            return cycle.id
+        except Exception as e:
+            logger.error(f"Error recording subscription cycle: {e}")
+            session.rollback()
+            return None
+        finally:
+            session.close()
+
+    @staticmethod
+    def get_subscription_payment_history(external_subscription_id: str) -> List[Dict[str, Any]]:
+        session = get_db_session()
+        if not session:
+            return []
+        try:
+            sub = session.execute(
+                select(Subscription).where(Subscription.external_subscription_id == external_subscription_id)
+            ).scalar_one_or_none()
+            if not sub:
+                return []
+            cycles = session.execute(
+                select(SubscriptionCycle).where(SubscriptionCycle.subscription_id == sub.id).order_by(desc(SubscriptionCycle.cycle_number))
+            ).scalars().all()
+            return [
+                {
+                    "id": c.id,
+                    "cycle_number": c.cycle_number,
+                    "amount": c.amount,
+                    "status": c.status,
+                    "failure_code": c.failure_code,
+                    "attempted_at": c.attempted_at.isoformat() if c.attempted_at else None,
+                    "charged_at": c.charged_at.isoformat() if c.charged_at else None,
+                    "retry_count": c.retry_count,
+                }
+                for c in cycles
+            ]
+        except Exception as e:
+            logger.error(f"Error getting subscription payment history: {e}")
+            return []
+        finally:
+            session.close()
+
+    @staticmethod
+    def get_subscription_metrics() -> Dict[str, Any]:
+        session = get_db_session()
+        if not session:
+            return {}
+        try:
+            subs = session.execute(select(Subscription)).scalars().all()
+            total = len(subs)
+            active = sum(1 for s in subs if s.status == "ACTIVE")
+            past_due = sum(1 for s in subs if s.status == "PAST_DUE")
+            paused = sum(1 for s in subs if s.status == "PAUSED")
+            cancelled = sum(1 for s in subs if s.status == "CANCELLED")
+            total_revenue = sum(s.amount for s in subs if s.status == "ACTIVE")
+            at_risk = sum(s.amount for s in subs if s.status in ("PAST_DUE", "PAUSED"))
+            return {
+                "total_subscriptions": total,
+                "active": active,
+                "past_due": past_due,
+                "paused": paused,
+                "cancelled": cancelled,
+                "total_monthly_revenue": total_revenue,
+                "revenue_at_risk": at_risk,
+            }
+        except Exception as e:
+            logger.error(f"Error computing subscription metrics: {e}")
             return {}
         finally:
             session.close()

@@ -115,6 +115,10 @@ async def razorpay_webhook(
     supported_events = [
         "payment.failed", "payment_failed", "order.failed",
         "subscription.failed", "subscription.halted",
+        "subscription.activated", "subscription.paused",
+        "subscription.resumed", "subscription.cancelled",
+        "subscription.charged", "subscription.charged_failed",
+        "subscription.renewed",
         "checkout.abandoned",
         "invoice.overdue", "receivable.overdue",
         "promise.updated", "promise.broken"
@@ -124,7 +128,44 @@ async def razorpay_webhook(
         # Ingest failure events
         if event_type in supported_events:
             ctx = ContextBuilder.build_context(payload)
-            
+
+            # Handle subscription lifecycle events that don't need the recovery pipeline
+            if event_type in ("subscription.activated", "subscription.resumed"):
+                sub_id = ctx.context.get("subscription_id") or ctx.mandate_id or ctx.case_id
+                DBService.update_subscription_status(sub_id, "ACTIVE")
+                DBService.record_audit_event(ctx.payment_id, "subscription_lifecycle_event", {
+                    "event_type": event_type,
+                    "subscription_id": sub_id,
+                    "status": "ACTIVE",
+                }, case_id=ctx.case_id)
+                _mark_webhook_completed(event_id)
+                return {"status": "ok", "subscription_id": sub_id, "status_updated": "ACTIVE"}
+
+            if event_type == "subscription.cancelled":
+                sub_id = ctx.context.get("subscription_id") or ctx.mandate_id or ctx.case_id
+                DBService.update_subscription_status(sub_id, "CANCELLED")
+                DBService.record_audit_event(ctx.payment_id, "subscription_lifecycle_event", {
+                    "event_type": event_type,
+                    "subscription_id": sub_id,
+                    "status": "CANCELLED",
+                }, case_id=ctx.case_id)
+                _mark_webhook_completed(event_id)
+                return {"status": "ok", "subscription_id": sub_id, "status_updated": "CANCELLED"}
+
+            if event_type == "subscription.charged":
+                sub_id = ctx.context.get("subscription_id") or ctx.mandate_id or ctx.case_id
+                DBService.record_audit_event(ctx.payment_id, "subscription_charged", {
+                    "subscription_id": sub_id,
+                    "amount_inr": ctx.amount_inr,
+                }, case_id=ctx.case_id)
+                _mark_webhook_completed(event_id)
+                return {"status": "ok", "subscription_id": sub_id, "charged": True}
+
+            if event_type in ("subscription.paused", "subscription.halted"):
+                sub_id = ctx.context.get("subscription_id") or ctx.mandate_id or ctx.case_id
+                DBService.update_subscription_status(sub_id, "PAST_DUE")
+                # Fall through to pipeline for recovery
+
             # If case_id is missing/unknown, it's not a valid case for recovery
             if ctx.case_id == "unknown" and not ctx.payment_id:
                 _mark_webhook_completed(event_id)

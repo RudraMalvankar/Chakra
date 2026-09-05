@@ -29,14 +29,40 @@ class RevenueRiskEngine:
             
         elif case.case_type == CaseType.SUBSCRIPTION:
             days_overdue = int(case.metadata.get("days_overdue", case.context.get("days_overdue", case.context.get("notes", {}).get("days_overdue", 0))))
+            past_failures = int(case.context.get("past_failed_payments_count", 0))
+            sub_age = int(case.context.get("subscription_age_days", 999))
+            churn_risk = str(case.context.get("churn_risk", "LOW")).upper()
+            grace_remaining = int(case.context.get("grace_period_remaining", 7))
+
             urgency = "HIGH" if days_overdue > 14 else "MEDIUM"
             if days_overdue == 0:
                 probability += 0.3
+                risk_factors.append("day0_high_recovery")
             elif days_overdue < 7:
                 probability += 0.1
+                risk_factors.append("within_grace_period")
+            elif days_overdue < 14:
+                probability -= 0.1
+                risk_factors.append("approaching_cancellation")
             else:
                 probability -= 0.2
                 risk_factors.append("high_days_overdue")
+
+            if past_failures >= 3:
+                probability -= 0.15
+                risk_factors.append("multiple_past_failures")
+            if sub_age < 30:
+                probability -= 0.1
+                risk_factors.append("new_subscriber_churn_risk")
+            if churn_risk == "HIGH":
+                probability -= 0.15
+                risk_factors.append("high_churn_risk")
+            elif churn_risk == "MEDIUM":
+                probability -= 0.05
+                risk_factors.append("medium_churn_risk")
+            if grace_remaining <= 0:
+                risk_factors.append("grace_period_expired")
+                urgency = "HIGH"
             window = "24h"
             
         elif case.case_type == CaseType.CHECKOUT_ABANDONMENT:

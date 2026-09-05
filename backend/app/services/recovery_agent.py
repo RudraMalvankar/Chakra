@@ -76,19 +76,33 @@ class RecoveryAgent:
             
         elif case.case_type == CaseType.SUBSCRIPTION:
             days_overdue = int(case.metadata.get("days_overdue", case.context.get("days_overdue", case.context.get("notes", {}).get("days_overdue", 0))))
+            past_failures = int(case.context.get("past_failed_payments_count", 0))
+            grace_remaining = int(case.context.get("grace_period_remaining", 7))
+            churn_risk = str(case.context.get("churn_risk", "LOW")).upper()
+
             if days_overdue == 0:
                 add_candidate(InterventionType.RETRY_NOW, 1.2, 0.0, "day 0 subscription failure ideal for immediate retry")
                 add_candidate(InterventionType.PAYMENT_LINK, 0.9, 10.0, "link is fallback if retry fails")
-            elif days_overdue < 7:
-                add_candidate(InterventionType.PAYMENT_LINK, 1.1, 10.0, "day 3-7 subscription failure needs link")
+            elif days_overdue < 7 and grace_remaining > 0:
+                add_candidate(InterventionType.RETRY_LATER, 1.1, 0.0, "within grace period, deferred retry appropriate")
+                add_candidate(InterventionType.PAYMENT_LINK, 1.0, 10.0, "payment link for manual update during grace")
             elif days_overdue < 14:
-                add_candidate(InterventionType.VOICE_RECOVERY, 1.5, 50.0, "high overdue days benefits from voice engagement")
-                add_candidate(InterventionType.PAYMENT_LINK, 0.8, 10.0, "payment link alone has lower conversion at this stage")
+                add_candidate(InterventionType.PAYMENT_LINK, 1.1, 10.0, "grace expiring, payment link for quick recovery")
+                add_candidate(InterventionType.VOICE_RECOVERY, 1.3, 50.0, "voice engagement before pause decision")
+            elif days_overdue < 30 and past_failures < 3:
+                add_candidate(InterventionType.VOICE_RECOVERY, 1.5, 50.0, "high overdue, voice as last automated attempt")
+                add_candidate(InterventionType.PAYMENT_LINK, 0.8, 10.0, "payment link lower conversion at this stage")
             else:
                 for c in candidates:
                     if c.action == "ESCALATE":
                         c.score += 100000.0
-                        c.reason = "severe subscription delinquency (>14 days)"
+                        c.reason = "severe subscription delinquency, pause/cancel decision required"
+
+            if churn_risk == "HIGH" and days_overdue > 7:
+                for c in candidates:
+                    if c.action == "ESCALATE":
+                        c.score += 50000.0
+                        c.reason = "high churn risk subscription requires human intervention"
 
         elif case.case_type == CaseType.CHECKOUT_ABANDONMENT:
             add_candidate(InterventionType.PAYMENT_LINK, 1.5, 10.0, "high-intent cart recovery link typically yields highest conversion")
