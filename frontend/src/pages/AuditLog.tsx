@@ -67,7 +67,7 @@ export const AuditLog = ({ auditLog }: any) => {
                     </thead>
                     <tbody className="divide-y divide-border">
                         {filtered.map((ev: any, i: number) => {
-                            const caseId = ev.case_id || ev.details?.case_id;
+                            const caseId = ev.case_id;
                             return (
                             <tr
                                 key={i}
@@ -83,9 +83,7 @@ export const AuditLog = ({ auditLog }: any) => {
                                 </td>
                                 <td className="px-6 py-3 text-text-main text-xs font-bold uppercase tracking-wider">{ev.event_type.replace(/_/g, ' ')}</td>
                                 <td className="px-6 py-3 font-mono text-xs text-text-muted max-w-xl truncate">
-                                    {ev.event_type === 'revenue_risk_assessed' ? `Risk Assessed: ${formatCurrency(ev.details.revenue_at_risk_inr)}` : 
-                                     ev.event_type === 'execution_outcome' ? `Outcome: ${ev.details.status}` : 
-                                     (ev.details.decision || ev.details.effective_action || ev.details.status || JSON.stringify(ev.details).substring(0, 50) + '...')}
+                                    {ev.action || ev.status || '—'}
                                 </td>
                             </tr>
                             );
