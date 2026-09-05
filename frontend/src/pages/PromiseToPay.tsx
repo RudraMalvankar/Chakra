@@ -21,11 +21,7 @@ export const PromiseToPay = () => {
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
 
-    useEffect(() => {
-        loadPromises();
-    }, []);
-
-    const loadPromises = async () => {
+    async function loadPromises() {
         try {
             const res = await fetch(`${API_BASE}/api/receivables/promises`);
             if (res.ok) {
@@ -43,7 +39,11 @@ export const PromiseToPay = () => {
         } finally {
             setLoading(false);
         }
-    };
+    }
+
+    useEffect(() => {
+        loadPromises();
+    }, []);
 
     const getStatusBadge = (status: string) => {
         switch (status) {
