@@ -266,6 +266,58 @@ class DBService:
             session.close()
 
     @staticmethod
+    def get_escalation_summary() -> Dict[str, Any]:
+        session = get_db_session()
+        if not session:
+            return {"open_count": 0, "high_priority_count": 0, "unassigned_count": 0, "sla_risk_count": 0, "unresolved_count": 0, "revenue_escalated_inr": 0.0}
+        try:
+            closed_statuses = ("RESOLVED", "CLOSED", "UNRECOVERABLE")
+            active_q = select(func.count()).select_from(Escalation).where(~Escalation.status.in_(closed_statuses))
+            open_count = session.execute(active_q).scalar() or 0
+
+            high_q = select(func.count()).select_from(Escalation).where(
+                ~Escalation.status.in_(closed_statuses), Escalation.priority.in_(("HIGH", "CRITICAL"))
+            )
+            high_priority_count = session.execute(high_q).scalar() or 0
+
+            unassigned_q = select(func.count()).select_from(Escalation).where(
+                ~Escalation.status.in_(closed_statuses), Escalation.assigned_to.is_(None)
+            )
+            unassigned_count = session.execute(unassigned_q).scalar() or 0
+
+            from datetime import datetime, timezone as tz
+            now = datetime.now(tz.utc)
+            sla_risk = 0
+            total_rev = 0.0
+            rows = session.execute(
+                select(Escalation.amount_at_risk_inr, Escalation.sla_deadline).where(
+                    ~Escalation.status.in_(closed_statuses)
+                )
+            ).all()
+            for amt, deadline in rows:
+                total_rev += float(amt or 0)
+                if deadline:
+                    try:
+                        dl = datetime.fromisoformat(str(deadline).replace("Z", "+00:00"))
+                        if dl.tzinfo is None:
+                            dl = dl.replace(tzinfo=tz.utc)
+                        if (dl - now).total_seconds() / 3600.0 <= 4:
+                            sla_risk += 1
+                    except (ValueError, TypeError):
+                        pass
+
+            return {
+                "open_count": open_count,
+                "high_priority_count": high_priority_count,
+                "unassigned_count": unassigned_count,
+                "sla_risk_count": sla_risk,
+                "unresolved_count": open_count,
+                "revenue_escalated_inr": total_rev,
+            }
+        finally:
+            session.close()
+
+    @staticmethod
     def get_escalation(escalation_id: str) -> Optional[Dict[str, Any]]:
         session = get_db_session()
         if not session:

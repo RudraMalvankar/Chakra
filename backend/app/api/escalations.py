@@ -93,36 +93,7 @@ def list_escalations(limit: int = 200):
 
 @router.get("/summary")
 def escalation_summary():
-    rows = DBService.list_escalations(limit=1000)
-    active = [row for row in rows if row["status"] not in {"RESOLVED", "CLOSED", "UNRECOVERABLE"}]
-    high = [row for row in active if row.get("priority") in {"HIGH", "CRITICAL"}]
-    unassigned = [row for row in active if not row.get("assigned_to")]
-    now = datetime.now(timezone.utc)
-    sla_risk = []
-    total_rev = 0.0
-    for row in active:
-        total_rev += float(row.get("amount_at_risk_inr") or 0.0)
-        deadline = row.get("sla_deadline")
-        if not deadline:
-            continue
-        try:
-            deadline_dt = datetime.fromisoformat(deadline.replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        if deadline_dt.tzinfo is None:
-            deadline_dt = deadline_dt.replace(tzinfo=timezone.utc)
-        hours_left = (deadline_dt - now).total_seconds() / 3600.0
-        if hours_left <= 4:
-            sla_risk.append(row)
-
-    return {
-        "open_count": len(active),
-        "high_priority_count": len(high),
-        "unassigned_count": len(unassigned),
-        "sla_risk_count": len(sla_risk),
-        "unresolved_count": len(active),
-        "revenue_escalated_inr": total_rev,
-    }
+    return DBService.get_escalation_summary()
 
 
 @router.get("/{escalation_id}")
