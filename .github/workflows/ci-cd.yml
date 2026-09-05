@@ -32,6 +32,9 @@ jobs:
         RAZORPAY_KEY_ID: ""
         DATABASE_URL: "sqlite:///./test.db"
         GEMINI_API_KEY: "mock_key_for_ci"
+        # Provider-integrity tests mock HTTP calls to the explicit synthetic
+        # adapter; declaring its endpoint prevents an early unavailable return.
+        MOCK_RAZORPAY_URL: "http://localhost:8001"
       run: |
         python -m pytest -q backend/tests
 
