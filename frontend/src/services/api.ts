@@ -61,6 +61,7 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 export const fetchMetrics = async (): Promise<Metrics> => {
   const data = await requestJson<any>('/api/metrics');
   return data.metrics || data;
+};
 
 export const fetchAuditLog = async (limit = 2000) => {
   const data = await requestJson<any>(`/api/audit?limit=${limit}`);
@@ -71,6 +72,7 @@ export const fetchAuditLog = async (limit = 2000) => {
     console.warn('Zod validation failed on audit log, falling back to raw data');
     return data.events || [];
   }
+};
 
 export const simulatePayment = async (payload: unknown) => {
   return requestJson<any>('/api/demo/simulate', {
@@ -78,6 +80,7 @@ export const simulatePayment = async (payload: unknown) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+};
 
 /** Provider payments — throws on network/HTTP failure; never pretends empty. */
 export const fetchProviderPayments = async (): Promise<any[]> => {
@@ -85,12 +88,14 @@ export const fetchProviderPayments = async (): Promise<any[]> => {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.items)) return data.items;
   throw new ApiError('Payments response was invalid', 'parse');
+};
 
 /** @deprecated Use fetchProviderPayments — kept for import compatibility during migration */
 export const fetchMockPayments = fetchProviderPayments;
 
 export const fetchConfig = async () => {
   return requestJson<{ provider: string; mode: string; razorpay_key_id?: string }>('/api/config');
+};
 
 export const fetchHealth = async () => {
   return requestJson<{
@@ -100,12 +105,19 @@ export const fetchHealth = async () => {
     twilio: string;
     gemini: string;
   }>('/health');
+};
 
 export const fetchCases = async (limit = 200) => {
   return requestJson<any[]>(`/api/cases?limit=${limit}`);
+};
+
+export const getCases = async () => {
+  return requestJson<any>('/api/cases');
+};
 
 export const fetchCaseDetail = async (caseId: string) => {
   return requestJson<any>(`/api/cases/${encodeURIComponent(caseId)}`);
+};
 
 export const createOrder = async (payload: { amount_inr: number; customer_id: string }) => {
   return requestJson<any>('/api/payments/create_order', {
@@ -113,6 +125,7 @@ export const createOrder = async (payload: { amount_inr: number; customer_id: st
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+};
 
 export const verifyPayment = async (payload: {
   razorpay_payment_id: string;
@@ -125,6 +138,7 @@ export const verifyPayment = async (payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+};
 
 export const abandonCheckout = async (payload: {
   order_id: string;
@@ -136,20 +150,29 @@ export const abandonCheckout = async (payload: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+};
 
 export const fetchPolicy = async () => {
   return requestJson<any>('/api/policy');
+};
 
-export { request, requestJson, apiUrl 
-export const startVoiceRecovery = async (payload: { case_id: string; to_number: string; amount: number; customer_name?: string }) => {
-    return fetchAPI('/api/voice/recovery/start', {
-        method: 'POST',
-        body: JSON.stringify(payload),
-    });
+// ─── Voice Recovery ───────────────────────────────────────────────────────────
 
- });
-
+export const startVoiceRecovery = async (payload: {
+  case_id: string;
+  to_number: string;
+  amount: number;
+  customer_name?: string;
+}) => {
+  return requestJson<any>('/api/voice/recovery/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+};
 
 export const getVoiceRecoveryStatus = async (call_sid: string) => {
-    return fetchAPI(`/api/voice/recovery/${call_sid}`);
+  return requestJson<any>(`/api/voice/recovery/${call_sid}`);
 };
+
+export { request, requestJson, apiUrl };

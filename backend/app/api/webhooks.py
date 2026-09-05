@@ -176,18 +176,36 @@ async def twilio_twiml(
     amount: str = "",
     x_twilio_signature: Optional[str] = Header(None),
 ):
+    # Parse form once — reused for both signature and CallSid
+    form_params = dict(await request.form()) if request.headers.get("content-type", "").startswith("application/x-www-form-urlencoded") else {}
+
     # Verify Twilio signature if configured
     if settings.twilio_auth_token:
-        form_params = dict(await request.form()) if request.headers.get("content-type", "").startswith("application/x-www-form-urlencoded") else {}
         if not verify_twilio_signature(request, form_params, x_twilio_signature):
             raise HTTPException(status_code=403, detail="Invalid Twilio signature")
 
+    greeting_text = "Namaste, main Chakra se bol raha hoon. Aapke payment ke regarding baat karni thi. Aap bataiye, payment kab kar paayenge?"
     twiml = f'''<?xml version="1.0" encoding="UTF-8"?>
 <Response>
     <Gather input="speech" action="/webhooks/twilio/gather?case_id={case_id}&amp;amount={amount}" language="hi-IN" timeout="5" speechTimeout="auto">
-        <Say language="hi-IN">Namaste, main Chakra se bol raha hoon. Aapke payment ke regarding baat karni thi. Aap bataiye, payment kab kar paayenge?</Say>
+        <Say language="hi-IN">{greeting_text}</Say>
     </Gather>
 </Response>'''
+
+    # Persist greeting as initial transcript entry
+    call_sid = form_params.get("CallSid")
+    if call_sid:
+        DBService.record_communication(
+            case_id=case_id or None,
+            customer_id=None,
+            channel="VOICE",
+            communication_type="VOICE_TRANSCRIPT",
+            provider="twilio",
+            provider_message_id=call_sid,
+            status="SENT",
+            metadata={"speaker": "CHAKRA", "text": greeting_text, "call_sid": call_sid},
+        )
+
     return HTMLResponse(content=twiml, media_type="text/xml")
 
 @router.post("/twilio/gather")
@@ -211,6 +229,19 @@ async def twilio_gather(
         "AI_VOICE_INTENT_REQUESTED",
         {"request_type": "voice_intent", "session_id": call_sid, "transcript_length": len(speech or "")},
     )
+
+    # Persist customer transcript as a communication record
+    DBService.record_communication(
+        case_id=case_id or None,
+        customer_id=None,
+        channel="VOICE",
+        communication_type="VOICE_TRANSCRIPT",
+        provider="twilio",
+        provider_message_id=call_sid,
+        status="RECEIVED",
+        metadata={"speaker": "CUSTOMER", "text": speech, "call_sid": call_sid},
+    )
+
     intent = await extract_voice_intent(speech)
     DBService.record_audit_event(
         case_id or call_sid or "voice_session",
@@ -220,9 +251,11 @@ async def twilio_gather(
             "session_id": call_sid,
             "intent": intent.intent,
             "confidence": intent.confidence,
+            "language": intent.language,
             "model": intent.model_used,
             "ai_used": intent.ai_used,
             "fallback_used": intent.fallback_used,
+            "transcript": speech[:500],
         },
     )
 
@@ -297,7 +330,7 @@ async def twilio_gather(
                 "transcript": speech,
             },
         )
-        amt_spoken = intent.amount or amount or "kuch"
+        amt_spoken = intent.promised_amount or amount or "kuch"
         date_spoken = intent.promised_date or "kal"
         twiml += f'<Say language="hi-IN">Thik hai, aapka {amt_spoken} rupaye ka payment {date_spoken} ke liye promise note kar raha hoon.</Say>'
         
@@ -385,6 +418,25 @@ async def twilio_gather(
         twiml += '<Say language="hi-IN">Theek hai. Hum baad me sampark karenge.</Say>'
         
     twiml += '</Response>'
+
+    # Extract the spoken text from the TwiML for transcript persistence
+    import re as _re
+    say_match = _re.findall(r'<Say[^>]*>([^<]+)</Say>', twiml)
+    chakra_text = " ".join(say_match) if say_match else ""
+
+    # Persist Chakra's response as transcript
+    if chakra_text:
+        DBService.record_communication(
+            case_id=case_id or None,
+            customer_id=receivable_customer,
+            channel="VOICE",
+            communication_type="VOICE_TRANSCRIPT",
+            provider="twilio" if settings.twilio_auth_token else "unavailable",
+            provider_message_id=call_sid,
+            status="SENT",
+            metadata={"speaker": "CHAKRA", "text": chakra_text, "call_sid": call_sid, "intent": intent.intent},
+        )
+
     return HTMLResponse(content=twiml, media_type="text/xml")
 
 

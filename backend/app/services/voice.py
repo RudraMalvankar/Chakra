@@ -52,12 +52,16 @@ class TwilioVoiceProvider(VoiceProvider):
             return {"status": "error", "message": "TWILIO WEBHOOK URL NOT CONFIGURED"}
         backend_url = settings.twilio_webhook_base_url.rstrip("/")
         webhook_url = f"{backend_url}/webhooks/twilio/twiml?case_id={context.get('case_id')}&amount={context.get('amount')}"
+        status_url = f"{backend_url}/webhooks/twilio/status?case_id={context.get('case_id')}"
 
         payload = {
             "To": to_number,
             "From": self.from_number,
             "Url": webhook_url,
-            "Method": "POST"
+            "Method": "POST",
+            "StatusCallback": status_url,
+            "StatusCallbackEvent": "initiated ringing answered completed",
+            "StatusCallbackMethod": "POST",
         }
 
         async with httpx.AsyncClient() as client:
@@ -102,7 +106,7 @@ def get_voice_provider() -> VoiceProvider:
 
 class VoiceIntent(BaseModel):
     intent: str = Field(..., description="One of: pay_now, promise_to_pay, unwilling, needs_more_time, dispute, wrong_person, unknown")
-    amount: Optional[float] = None
+    promised_amount: Optional[float] = None
     promised_date: Optional[str] = Field(None, description="ISO date YYYY-MM-DD if promised")
     confidence: float = 0.0
     language: Optional[str] = None
@@ -123,7 +127,7 @@ async def extract_voice_intent(transcript: str) -> VoiceIntent:
     result = gemini_voice_intent(safe_transcript)
     if result.ai_used:
         return VoiceIntent(
-            intent=result.intent, amount=result.promised_amount,
+            intent=result.intent, promised_amount=result.promised_amount,
             promised_date=result.promised_date, confidence=result.confidence,
             language=result.language, reasoning=result.reasoning,
             model_used=result.model_used, ai_used=True,
