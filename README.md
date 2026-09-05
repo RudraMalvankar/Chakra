@@ -6,6 +6,9 @@
 [![License](https://img.shields.io/badge/License-Apache%202.0-green.svg)](LICENSE)
 [![Benchmark](https://img.shields.io/badge/Benchmark-120--Case%20Synthetic-orange.svg)](metrics_report.json)
 [![Evaluation](https://img.shields.io/badge/Safety%20Eval-18%2F18%20(100%25)-brightgreen.svg)](eval_report.json)
+[![Tests](https://img.shields.io/badge/Tests-237%20Passed-brightgreen.svg)](backend/tests/)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED.svg?logo=docker&logoColor=white)](Dockerfile)
+[![Deploy](https://img.shields.io/badge/Deploy-Vercel%20%2B%20Render-black.svg)](render.yaml)
 
 > **Enterprise-grade Autonomous Revenue Recovery Infrastructure for India's Fintech & Recurring Payments Ecosystem.**
 
