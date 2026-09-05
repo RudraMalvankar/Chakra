@@ -164,3 +164,150 @@ async def get_voice_recovery_status(call_sid: str):
         "promise": promise,
         "actions": [],
     }
+
+
+class SimulateVoiceStartRequest(BaseModel):
+    case_id: str
+    amount: float
+    customer_name: Optional[str] = None
+
+
+@router.post("/api/voice/simulate/start")
+async def start_simulated_voice_call(req: SimulateVoiceStartRequest):
+    import uuid
+    session_id = f"CA_sim_{uuid.uuid4().hex[:12]}"
+    cust_name = req.customer_name or "Customer"
+    amount_str = f"₹{int(req.amount):,}" if req.amount else "pending amount"
+    greeting = f"Namaste {cust_name}! Main Chakra Revenue Recovery AI se bol raha hoon. Aapke {amount_str} ke overdue payment ke regarding call kiya hai. Aap bataiye, payment kab tak ho payega?"
+
+    DBService.record_audit_event(
+        req.case_id,
+        "voice_call_started",
+        {
+            "call_sid": session_id,
+            "to_number": "IN_BROWSER_SIMULATION",
+            "provider": "gemini_2.5_flash_native",
+            "amount": req.amount,
+        },
+    )
+
+    DBService.record_communication(
+        case_id=req.case_id,
+        customer_id=None,
+        channel="VOICE",
+        communication_type="VOICE_TRANSCRIPT",
+        provider="gemini_2.5_flash_native",
+        provider_message_id=session_id,
+        status="SENT",
+        metadata={"speaker": "CHAKRA", "text": greeting, "call_sid": session_id},
+    )
+
+    return {
+        "status": "success",
+        "call_sid": session_id,
+        "mode": "browser_simulation",
+        "provider": "gemini_2.5_flash_native",
+        "greeting": greeting,
+    }
+
+
+class SimulateVoiceTurnRequest(BaseModel):
+    case_id: str
+    call_sid: str
+    user_speech: str
+    amount: float
+    customer_name: Optional[str] = None
+
+
+@router.post("/api/voice/simulate/turn")
+async def simulate_voice_turn(req: SimulateVoiceTurnRequest):
+    from backend.app.services.voice import extract_voice_intent
+
+    intent_result = await extract_voice_intent(req.user_speech)
+    intent = intent_result.intent
+
+    ai_reply = ""
+    promise = None
+    payment_link = None
+
+    if intent == "pay_now":
+        payment_link = f"https://rzp.io/i/{req.case_id[:8]}"
+        ai_reply = f"Bahut badiya! Maine aapko turant payment link bhej diya hai: {payment_link}. Kripya us par click karke payment complete kar dijiye. Dhanyawad!"
+    elif intent == "promise_to_pay":
+        promised_date = intent_result.promised_date or "tomorrow"
+        amount = intent_result.promised_amount or req.amount
+        promise = {
+            "amount_inr": amount,
+            "promised_date": promised_date,
+            "source": "voice",
+        }
+        ai_reply = f"Ji shukriya, maine aapka promise record kar liya hai. Aap {promised_date} tak payment kar dijiyega. Have a great day!"
+        DBService.record_audit_event(
+            req.case_id,
+            "PROMISE_CREATED",
+            {
+                "call_sid": req.call_sid,
+                "amount_inr": amount,
+                "promised_date": promised_date,
+                "source": "voice",
+            },
+        )
+    elif intent == "dispute":
+        ai_reply = "Aapki pareshani samajh aayi. Maine ye case hamari dispute management team ko escalate kar diya hai. Wo aapse turant connect karenge."
+        DBService.record_audit_event(
+            req.case_id,
+            "VOICE_DISPUTE_ESCALATED",
+            {"case_id": req.case_id, "reason": "Dispute registered over voice call"},
+        )
+    elif intent == "needs_more_time":
+        ai_reply = "Hum samajhte hain. Kya aap aane wale Monday ya Friday tak payment arrange kar payenge? Kripya confirm karein."
+    elif intent == "unwilling":
+        ai_reply = "Kripya dhyan dein ki payment na hone par mandate revoke aur service interrupt ho sakti hai. Kripya reconsider karein."
+    else:
+        ai_reply = "Ji, kripya bataiye aap kis tarikh tak payment schedule karna chahenge?"
+
+    DBService.record_communication(
+        case_id=req.case_id,
+        customer_id=None,
+        channel="VOICE",
+        communication_type="VOICE_TRANSCRIPT",
+        provider="gemini_2.5_flash_native",
+        provider_message_id=req.call_sid,
+        status="PROCESSED",
+        metadata={"speaker": "CUSTOMER", "text": req.user_speech, "call_sid": req.call_sid},
+    )
+    DBService.record_communication(
+        case_id=req.case_id,
+        customer_id=None,
+        channel="VOICE",
+        communication_type="VOICE_TRANSCRIPT",
+        provider="gemini_2.5_flash_native",
+        provider_message_id=req.call_sid,
+        status="SENT",
+        metadata={"speaker": "CHAKRA", "text": ai_reply, "call_sid": req.call_sid},
+    )
+
+    DBService.record_audit_event(
+        req.case_id,
+        "AI_VOICE_INTENT_COMPLETED",
+        {
+            "session_id": req.call_sid,
+            "intent": intent,
+            "confidence": intent_result.confidence,
+            "language": intent_result.language or "hi-IN",
+            "model": intent_result.model_used or "gemini-2.5-flash",
+        },
+    )
+
+    return {
+        "user_speech": req.user_speech,
+        "ai_response": ai_reply,
+        "intent": intent,
+        "confidence": intent_result.confidence,
+        "language": intent_result.language or "hi-IN",
+        "model_used": intent_result.model_used or "gemini-2.5-flash",
+        "promise": promise,
+        "payment_link": payment_link,
+        "call_sid": req.call_sid,
+    }
+

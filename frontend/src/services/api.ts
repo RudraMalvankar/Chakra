@@ -175,6 +175,32 @@ export const getVoiceRecoveryStatus = async (call_sid: string) => {
   return requestJson<any>(`/api/voice/recovery/${call_sid}`);
 };
 
+export const startSimulatedVoiceCall = async (payload: {
+  case_id: string;
+  amount: number;
+  customer_name?: string;
+}) => {
+  return requestJson<any>('/api/voice/simulate/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+};
+
+export const sendSimulatedVoiceTurn = async (payload: {
+  case_id: string;
+  call_sid: string;
+  user_speech: string;
+  amount: number;
+  customer_name?: string;
+}) => {
+  return requestJson<any>('/api/voice/simulate/turn', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+};
+
 // ─── Twilio SMS & Reminders ───────────────────────────────────────────────────
 
 export const sendReceivableSms = async (
