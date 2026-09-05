@@ -1,7 +1,7 @@
 import { API_BASE, createOrder, verifyPayment, abandonCheckout, fetchConfig } from '../services/api';
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ShoppingBag, XCircle, Loader2, AlertTriangle, CheckCircle2 } from 'lucide-react';
+import { ShoppingBag, XCircle, Loader2, AlertTriangle, CheckCircle2, Repeat, Package, ArrowRight } from 'lucide-react';
 import { formatExact } from '../lib/format';
 
 type CheckoutStatus =
@@ -17,18 +17,51 @@ type CheckoutStatus =
     | 'RECOVERY_PENDING'
     | 'FAILED';
 
+type CheckoutMode = 'order' | 'subscription';
+
 export const CheckoutRecovery = ({ refresh }: any) => {
     const navigate = useNavigate();
+    const [mode, setMode] = useState<CheckoutMode>('order');
     const [loading, setLoading] = useState(false);
     const [orderId, setOrderId] = useState<string | null>(null);
     const [status, setStatus] = useState<CheckoutStatus>('READY');
     const [paymentLink, setPaymentLink] = useState<string | null>(null);
     const [caseId, setCaseId] = useState<string | null>(null);
     const [paymentId, setPaymentId] = useState<string | null>(null);
-    const [amountInr, setAmountInr] = useState(5000);
+    const [subscriptionId, setSubscriptionId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [scriptError, setScriptError] = useState(false);
     const scriptRef = useRef<HTMLScriptElement | null>(null);
+
+    // Mode-specific configurations
+    const orderConfig = {
+        title: 'Premium Headphones',
+        amount: 5000,
+        desc: 'One-time hardware purchase',
+    };
+
+    const subConfig = {
+        title: 'Enterprise SaaS Pro Plan',
+        amount: 2999,
+        desc: 'Monthly recurring subscription with e-Mandate auto-debit',
+        frequency: 'monthly',
+    };
+
+    const currentItem = mode === 'order' ? orderConfig : subConfig;
+    const [amountInr, setAmountInr] = useState(orderConfig.amount);
+
+    // Sync amount and reset lifecycle when switching mode
+    const handleModeSwitch = (newMode: CheckoutMode) => {
+        setMode(newMode);
+        setAmountInr(newMode === 'order' ? orderConfig.amount : subConfig.amount);
+        setOrderId(null);
+        setPaymentId(null);
+        setSubscriptionId(null);
+        setPaymentLink(null);
+        setCaseId(null);
+        setStatus('READY');
+        setError(null);
+    };
 
     useEffect(() => {
         const existing = document.querySelector('script[src="https://checkout.razorpay.com/v1/checkout.js"]');
@@ -59,10 +92,17 @@ export const CheckoutRecovery = ({ refresh }: any) => {
         setPaymentLink(null);
         setCaseId(null);
         setPaymentId(null);
+        setSubscriptionId(null);
         setStatus('ORDER_CREATED');
 
         try {
-            const orderData = await createOrder({ amount_inr: amountInr, customer_id: 'cust_demo_001' });
+            const orderData = await createOrder({
+                amount_inr: amountInr,
+                customer_id: 'cust_demo_001',
+                item_type: mode,
+                frequency: mode === 'subscription' ? 'monthly' : undefined,
+                plan_name: mode === 'subscription' ? 'Enterprise SaaS Pro' : undefined,
+            });
             if (!orderData.order_id) throw new Error('Provider did not return an order id');
             setOrderId(orderData.order_id);
             setAmountInr(orderData.amount_inr ?? amountInr);
@@ -90,9 +130,13 @@ export const CheckoutRecovery = ({ refresh }: any) => {
                 key: config.razorpay_key_id,
                 amount: Math.round(amount * 100),
                 currency: 'INR',
-                name: 'Chakra Demo Store',
-                description: 'Test Transaction',
+                name: mode === 'order' ? 'Chakra Demo Store' : 'Chakra Subscriptions',
+                description: mode === 'order' ? 'Test Hardware Purchase' : 'Monthly SaaS Recurring Subscription',
                 order_id: createdOrderId,
+                notes: {
+                    item_type: mode,
+                    plan: mode === 'subscription' ? 'Enterprise SaaS Pro' : 'Single Order',
+                },
                 handler: async function (response: any) {
                     setStatus('PAYMENT_VERIFIED');
                     try {
@@ -101,9 +145,15 @@ export const CheckoutRecovery = ({ refresh }: any) => {
                             razorpay_payment_id: response.razorpay_payment_id,
                             razorpay_signature: response.razorpay_signature,
                             customer_id: 'cust_demo_001',
+                            item_type: mode,
+                            frequency: mode === 'subscription' ? 'monthly' : undefined,
+                            plan_name: mode === 'subscription' ? 'Enterprise SaaS Pro' : undefined,
                         });
                         setPaymentId(verified.payment_id);
                         setAmountInr(verified.amount_inr ?? amount);
+                        if (verified.subscription_id) {
+                            setSubscriptionId(verified.subscription_id);
+                        }
                         setStatus('CAPTURED');
                         if (refresh) refresh();
                     } catch (verifyErr) {
@@ -171,13 +221,42 @@ export const CheckoutRecovery = ({ refresh }: any) => {
 
     return (
         <div className="max-w-4xl mx-auto space-y-6">
-            <div className="bg-white border border-border shadow-sm p-6 flex justify-between items-center">
+            {/* Header & Mode Switcher */}
+            <div className="bg-white border border-border shadow-sm p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                 <div>
                     <h2 className="text-lg font-bold text-text-main uppercase tracking-wider flex items-center">
                         <ShoppingBag className="mr-3 text-rzp-blue" size={20} />
-                        Checkout Recovery
+                        Checkout & Subscription Recovery
                     </h2>
-                    <p className="text-sm text-text-muted mt-1">SUCCESS, FAILURE, and ABANDONMENT are separate outcomes. Backend is authoritative.</p>
+                    <p className="text-sm text-text-muted mt-1">
+                        Test live Razorpay checkout for both single orders and recurring subscriptions.
+                    </p>
+                </div>
+
+                {/* 2-Mode Switcher */}
+                <div className="flex bg-gray-100 p-1 rounded border border-border self-start sm:self-auto">
+                    <button
+                        onClick={() => handleModeSwitch('order')}
+                        className={`flex items-center space-x-2 px-4 py-2 text-xs font-bold uppercase tracking-wider rounded transition-all ${
+                            mode === 'order'
+                                ? 'bg-white text-rzp-blue shadow-sm'
+                                : 'text-text-muted hover:text-text-main'
+                        }`}
+                    >
+                        <Package size={14} />
+                        <span>Normal Order</span>
+                    </button>
+                    <button
+                        onClick={() => handleModeSwitch('subscription')}
+                        className={`flex items-center space-x-2 px-4 py-2 text-xs font-bold uppercase tracking-wider rounded transition-all ${
+                            mode === 'subscription'
+                                ? 'bg-rzp-blue text-white shadow-sm'
+                                : 'text-text-muted hover:text-text-main'
+                        }`}
+                    >
+                        <Repeat size={14} />
+                        <span>Recurring Subscription</span>
+                    </button>
                 </div>
             </div>
 
@@ -194,17 +273,42 @@ export const CheckoutRecovery = ({ refresh }: any) => {
             )}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="bg-white border border-border shadow-sm flex flex-col items-center justify-center p-12">
-                    <div className="w-24 h-24 bg-gray-100 rounded-full flex items-center justify-center mb-6">
-                        <ShoppingBag size={48} className="text-gray-400" />
+                {/* Checkout Product Card */}
+                <div className="bg-white border border-border shadow-sm flex flex-col items-center justify-center p-10 relative">
+                    <div className="absolute top-4 right-4">
+                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-1 rounded font-mono border ${
+                            mode === 'subscription'
+                                ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                                : 'bg-gray-100 border-gray-200 text-gray-700'
+                        }`}>
+                            {mode === 'subscription' ? 'Auto-Debit e-Mandate' : 'One-Time Payment'}
+                        </span>
                     </div>
-                    <h3 className="text-xl font-bold font-mono uppercase mb-2">Premium Headphones</h3>
-                    <div className="text-2xl font-bold text-text-main font-mono mb-8">{formatExact(amountInr)}</div>
 
-                    <div className="w-full max-w-sm space-y-3 mb-8 text-sm">
+                    <div className={`w-20 h-20 rounded-full flex items-center justify-center mb-5 ${
+                        mode === 'subscription' ? 'bg-indigo-50 text-indigo-600' : 'bg-gray-100 text-gray-400'
+                    }`}>
+                        {mode === 'subscription' ? <Repeat size={40} /> : <ShoppingBag size={40} />}
+                    </div>
+
+                    <h3 className="text-lg font-bold font-mono uppercase text-center mb-1">{currentItem.title}</h3>
+                    <p className="text-xs text-text-muted text-center mb-4 max-w-xs">{currentItem.desc}</p>
+
+                    <div className="text-2xl font-bold text-text-main font-mono mb-6">
+                        {formatExact(amountInr)}
+                        {mode === 'subscription' && <span className="text-xs text-text-muted font-normal"> / month</span>}
+                    </div>
+
+                    <div className="w-full max-w-sm space-y-2.5 mb-6 text-sm">
                         <div className="flex justify-between border-b border-border pb-2">
                             <span className="text-text-muted">Customer</span>
                             <span className="font-mono">cust_demo_001</span>
+                        </div>
+                        <div className="flex justify-between border-b border-border pb-2">
+                            <span className="text-text-muted">Type</span>
+                            <span className="font-mono font-semibold uppercase text-xs">
+                                {mode === 'subscription' ? 'Subscription (Monthly)' : 'Standard Order'}
+                            </span>
                         </div>
                         <div className="flex justify-between border-b border-border pb-2">
                             <span className="text-text-muted">Order ID</span>
@@ -214,8 +318,14 @@ export const CheckoutRecovery = ({ refresh }: any) => {
                             <span className="text-text-muted">Payment ID</span>
                             <span className="font-mono text-xs">{paymentId || '—'}</span>
                         </div>
+                        {subscriptionId && (
+                            <div className="flex justify-between border-b border-border pb-2 bg-indigo-50/50 px-2 py-1 rounded">
+                                <span className="text-indigo-700 font-bold text-xs">Subscription ID</span>
+                                <span className="font-mono text-xs font-bold text-indigo-700">{subscriptionId}</span>
+                            </div>
+                        )}
                         <div className="flex justify-between border-b border-border pb-2">
-                            <span className="text-text-muted">Mode</span>
+                            <span className="text-text-muted">Gateway</span>
                             <span className="font-mono">{scriptError ? 'UNAVAILABLE' : 'Razorpay Test Mode'}</span>
                         </div>
                     </div>
@@ -223,64 +333,97 @@ export const CheckoutRecovery = ({ refresh }: any) => {
                     <button
                         onClick={startCheckout}
                         disabled={loading || status === 'CHECKOUT_OPENED' || scriptError}
-                        className="w-full max-w-sm bg-rzp-blue text-white font-bold tracking-widest uppercase py-3 rounded hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center"
+                        className={`w-full max-w-sm text-white font-bold tracking-widest uppercase py-3 rounded transition-colors disabled:opacity-50 flex items-center justify-center ${
+                            mode === 'subscription'
+                                ? 'bg-indigo-600 hover:bg-indigo-700'
+                                : 'bg-rzp-blue hover:bg-blue-700'
+                        }`}
                     >
                         {status === 'ORDER_CREATED' ? <Loader2 className="animate-spin mr-2" size={18} /> : null}
-                        {scriptError ? 'CHECKOUT UNAVAILABLE' : 'PAY WITH RAZORPAY'}
+                        {scriptError
+                            ? 'CHECKOUT UNAVAILABLE'
+                            : mode === 'subscription'
+                            ? 'SUBSCRIBE WITH RAZORPAY'
+                            : 'PAY WITH RAZORPAY'}
                     </button>
                 </div>
 
-                <div className="bg-gray-50 border border-border shadow-sm p-6">
-                    <h3 className="text-sm font-bold text-text-main uppercase tracking-wider mb-6">Lifecycle</h3>
+                {/* Lifecycle & Status Card */}
+                <div className="bg-gray-50 border border-border shadow-sm p-6 flex flex-col justify-between">
+                    <div>
+                        <h3 className="text-sm font-bold text-text-main uppercase tracking-wider mb-6">Lifecycle Flow</h3>
 
-                    <div className="space-y-4 font-mono text-sm">
-                        <Step active={status !== 'IDLE'} label="CHECKOUT READY" />
-                        <Step active={['ORDER_CREATED', 'CHECKOUT_OPENED', 'PAYMENT_VERIFIED', 'CAPTURED', 'ABANDONED', 'REVENUE_AT_RISK', 'RECOVERY_PENDING'].includes(status)} label="ORDER CREATED" />
-                        <Step active={['CHECKOUT_OPENED', 'PAYMENT_VERIFIED', 'CAPTURED', 'ABANDONED', 'REVENUE_AT_RISK', 'RECOVERY_PENDING'].includes(status)} label="CHECKOUT OPENED" />
+                        <div className="space-y-4 font-mono text-sm">
+                            <Step active={status !== 'IDLE'} label={mode === 'subscription' ? 'SUBSCRIPTION CHECKOUT READY' : 'CHECKOUT READY'} />
+                            <Step active={['ORDER_CREATED', 'CHECKOUT_OPENED', 'PAYMENT_VERIFIED', 'CAPTURED', 'ABANDONED', 'REVENUE_AT_RISK', 'RECOVERY_PENDING'].includes(status)} label="ORDER CREATED (RAZORPAY)" />
+                            <Step active={['CHECKOUT_OPENED', 'PAYMENT_VERIFIED', 'CAPTURED', 'ABANDONED', 'REVENUE_AT_RISK', 'RECOVERY_PENDING'].includes(status)} label="CHECKOUT MODAL OPENED" />
 
-                        {successPath && (
-                            <>
-                                <Step active={status === 'PAYMENT_VERIFIED' || status === 'CAPTURED'} label="SUCCESS → PAYMENT VERIFIED" />
-                                <Step active={status === 'CAPTURED'} label="CAPTURED" done={status === 'CAPTURED'} />
-                            </>
-                        )}
+                            {successPath && (
+                                <>
+                                    <Step active={status === 'PAYMENT_VERIFIED' || status === 'CAPTURED'} label="SUCCESS → PAYMENT VERIFIED" />
+                                    <Step
+                                        active={status === 'CAPTURED'}
+                                        label={mode === 'subscription' ? 'ACTIVE → RECURRING SUBSCRIPTION REGISTERED' : 'CAPTURED'}
+                                        done={status === 'CAPTURED'}
+                                    />
+                                </>
+                            )}
 
-                        {abandonPath && (
-                            <>
-                                <Step active error={status === 'ABANDONED'} label="ABANDONED → REVENUE AT RISK" />
-                                <Step active={status === 'REVENUE_AT_RISK' || status === 'RECOVERY_PENDING'} label="RISK → AGENT → SAFETY" />
-                                <Step active={status === 'RECOVERY_PENDING'} label="AWAITING PAYMENT / RECOVERY PENDING" />
-                            </>
-                        )}
+                            {abandonPath && (
+                                <>
+                                    <Step active error={status === 'ABANDONED'} label="MODAL DISMISSED → REVENUE AT RISK" />
+                                    <Step active={status === 'REVENUE_AT_RISK' || status === 'RECOVERY_PENDING'} label="RISK → AGENT → SAFETY GATE" />
+                                    <Step active={status === 'RECOVERY_PENDING'} label="RECOVERY PENDING → PAYMENT LINK SENT" />
+                                </>
+                            )}
 
-                        {status === 'CAPTURED' && (
-                            <div className="p-4 bg-green-50 border border-green-200 rounded mt-4 space-y-1">
-                                <div className="text-xs font-bold text-rzp-green uppercase tracking-wider flex items-center gap-2">
-                                    <CheckCircle2 size={14} /> PAYMENT COMPLETED
+                            {status === 'CAPTURED' && (
+                                <div className="p-4 bg-green-50 border border-green-200 rounded mt-4 space-y-2">
+                                    <div className="text-xs font-bold text-rzp-green uppercase tracking-wider flex items-center gap-2">
+                                        <CheckCircle2 size={14} /> {mode === 'subscription' ? 'SUBSCRIPTION ACTIVATED' : 'PAYMENT COMPLETED'}
+                                    </div>
+                                    <div className="text-xs">Razorpay Test Mode · {formatExact(amountInr)} · CAPTURED</div>
+                                    <div className="text-xs">Authoritative server verification: PASSED</div>
+                                    {mode === 'subscription' && subscriptionId && (
+                                        <div className="text-xs font-semibold text-indigo-700 pt-1">
+                                            Linked to Subscriptions table as {subscriptionId}
+                                        </div>
+                                    )}
                                 </div>
-                                <div className="text-xs">Razorpay Test Mode · {formatExact(amountInr)} · CAPTURED</div>
-                                <div className="text-xs">Provider verified: YES</div>
-                                <div className="text-[10px] text-text-muted">No fake recovery mission for successful checkout.</div>
+                            )}
+
+                            {paymentLink && (
+                                <div className="p-4 bg-blue-50 border border-blue-200 rounded mt-4">
+                                    <div className="text-xs font-bold text-rzp-blue uppercase tracking-wider mb-2">Recovery Payment Link Generated</div>
+                                    <a href={paymentLink} target="_blank" rel="noreferrer" className="text-rzp-blue underline break-all text-xs">
+                                        {paymentLink}
+                                    </a>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Quick navigation to Cases or Subscriptions page */}
+                    <div className="mt-8 pt-6 border-t border-border space-y-2">
+                        {caseId && (
+                            <div>
+                                <button onClick={() => navigate(`/cases/${caseId}`)} className="text-rzp-blue text-xs font-bold uppercase tracking-wider hover:underline flex items-center">
+                                    View Recovery Case ({caseId}) <ArrowRight size={12} className="ml-1" />
+                                </button>
                             </div>
                         )}
-
-                        {paymentLink && (
-                            <div className="p-4 bg-blue-50 border border-blue-200 rounded mt-4">
-                                <div className="text-xs font-bold text-rzp-blue uppercase tracking-wider mb-2">Payment Link Generated</div>
-                                <a href={paymentLink} target="_blank" rel="noreferrer" className="text-rzp-blue underline break-all text-xs">
-                                    {paymentLink}
-                                </a>
+                        {status === 'CAPTURED' && mode === 'subscription' && (
+                            <div>
+                                <button
+                                    onClick={() => navigate('/subscriptions')}
+                                    className="w-full py-2.5 px-4 bg-white border border-indigo-300 text-indigo-700 text-xs font-bold uppercase tracking-wider rounded hover:bg-indigo-50 transition-colors flex items-center justify-center"
+                                >
+                                    <span>View In Subscriptions Dashboard</span>
+                                    <ArrowRight size={14} className="ml-1.5" />
+                                </button>
                             </div>
                         )}
                     </div>
-
-                    {caseId && (
-                        <div className="mt-8 pt-6 border-t border-border">
-                            <button onClick={() => navigate(`/cases/${caseId}`)} className="text-rzp-blue text-xs font-bold uppercase tracking-wider hover:underline">
-                                View Recovery Case ({caseId}) →
-                            </button>
-                        </div>
-                    )}
                 </div>
             </div>
         </div>
@@ -299,3 +442,4 @@ const Step = ({ active, label, error, done }: { active: boolean; label: string; 
         <span className={active ? 'font-semibold' : ''}>{label}</span>
     </div>
 );
+

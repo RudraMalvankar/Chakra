@@ -112,7 +112,13 @@ export const fetchCaseDetail = async (caseId: string) => {
   return requestJson<any>(`/api/cases/${encodeURIComponent(caseId)}`);
 };
 
-export const createOrder = async (payload: { amount_inr: number; customer_id: string }) => {
+export const createOrder = async (payload: {
+  amount_inr: number;
+  customer_id: string;
+  item_type?: 'order' | 'subscription';
+  frequency?: string;
+  plan_name?: string;
+}) => {
   return requestJson<any>('/api/payments/create_order', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -125,6 +131,9 @@ export const verifyPayment = async (payload: {
   razorpay_order_id: string;
   razorpay_signature: string;
   customer_id?: string;
+  item_type?: 'order' | 'subscription';
+  frequency?: string;
+  plan_name?: string;
 }) => {
   return requestJson<any>('/api/payments/verify', {
     method: 'POST',

@@ -259,6 +259,9 @@ def get_config():
 class CreateOrderRequest(BaseModel):
     amount_inr: float
     customer_id: str
+    item_type: Optional[str] = "order"  # "order" or "subscription"
+    frequency: Optional[str] = "monthly"
+    plan_name: Optional[str] = None
 
 @app.post("/api/payments/orders")
 @app.post("/api/payments/create_order")
@@ -292,6 +295,9 @@ def create_order(req: CreateOrderRequest):
         "order_id": order_id,
         "amount_inr": amount,
         "customer_id": req.customer_id,
+        "item_type": req.item_type or "order",
+        "frequency": req.frequency or "monthly",
+        "plan_name": req.plan_name or "Pro Recurring Plan",
         "mode": "razorpay" if result["provider"] == "razorpay_test" else "synthetic",
     }
 
@@ -302,6 +308,9 @@ class VerifyPaymentRequest(BaseModel):
     # Client amount is ignored for authoritative persistence when a server order exists.
     amount_inr: Optional[float] = None
     customer_id: Optional[str] = None
+    item_type: Optional[str] = "order"
+    frequency: Optional[str] = "monthly"
+    plan_name: Optional[str] = None
 
 @app.post("/api/payments/verify")
 def verify_payment(req: VerifyPaymentRequest):
@@ -309,6 +318,8 @@ def verify_payment(req: VerifyPaymentRequest):
     Authoritative server-side verification of Razorpay Test Mode checkout success.
     Successful capture is a PAYMENT COMPLETED outcome — not a recovery case.
     Amount/customer come from the server-created order when available.
+    If item_type is 'subscription', provisions or updates the subscription in DBService
+    so it immediately reflects in the Subscriptions page.
     """
     if not settings.is_razorpay_configured:
         raise HTTPException(
@@ -357,6 +368,39 @@ def verify_payment(req: VerifyPaymentRequest):
         provider="razorpay_test",
     )
 
+    subscription_id = None
+    if req.item_type == "subscription":
+        # Provision recurring subscription in database so it reflects in Subscriptions dashboard
+        ext_sub_id = f"sub_rzp_{req.razorpay_payment_id[-8:]}"
+        plan_id = req.plan_name or "SaaS Pro Monthly"
+        now_dt = datetime.now(timezone.utc)
+        start_str = now_dt.strftime("%Y-%m-%d")
+        next_dt = now_dt.strftime("%Y-%m-%d")
+        sub_uuid = DBService.upsert_subscription(
+            external_subscription_id=ext_sub_id,
+            customer_id=customer_id,
+            amount=amount,
+            plan_id=plan_id,
+            frequency=req.frequency or "monthly",
+            status="ACTIVE",
+            mandate_id=f"man_rzp_{req.razorpay_payment_id[-6:]}",
+            grace_period_days=7,
+            max_retries=3,
+            current_cycle_start=start_str,
+            current_cycle_end=next_dt,
+            next_charge_date=next_dt,
+            churn_risk="LOW",
+            notes=f"Auto-provisioned via Razorpay Checkout payment {req.razorpay_payment_id}",
+        )
+        if sub_uuid:
+            DBService.record_subscription_cycle(
+                subscription_id=sub_uuid,
+                cycle_number=1,
+                amount=amount,
+                status="CHARGED",
+            )
+            subscription_id = ext_sub_id
+
     log_audit_event(req.razorpay_payment_id, "payment_captured", {
         "order_id": req.razorpay_order_id,
         "amount_inr": amount,
@@ -366,6 +410,8 @@ def verify_payment(req: VerifyPaymentRequest):
         "verified": True,
         "recovered": False,
         "workflow": "CHECKOUT_SUCCESS",
+        "item_type": req.item_type or "order",
+        "subscription_id": subscription_id,
     })
 
     return {
@@ -380,6 +426,8 @@ def verify_payment(req: VerifyPaymentRequest):
         "provider": "razorpay_test",
         "provider_verified": True,
         "case_id": None,
+        "subscription_id": subscription_id,
+        "item_type": req.item_type or "order",
     }
 
 

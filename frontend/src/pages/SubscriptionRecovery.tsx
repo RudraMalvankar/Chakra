@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Badge } from '../components/ui/Badge';
 import { RefreshCw, Pause, Play, XCircle, RotateCcw, AlertTriangle } from 'lucide-react';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+import { API_BASE } from '../services/api';
 
 export const SubscriptionRecovery = ({ refresh }: any) => {
     const [subscriptions, setSubscriptions] = useState<any[]>([]);
@@ -59,6 +58,12 @@ export const SubscriptionRecovery = ({ refresh }: any) => {
         }
     };
 
+    const displayAmount = (amt: number) => {
+        // Handle both raw INR and paise if stored
+        const val = amt > 100000 ? amt / 100 : amt;
+        return `₹${val.toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`;
+    };
+
     if (loading) return <div className="flex items-center justify-center h-64 text-text-muted font-mono text-sm">Loading subscriptions...</div>;
 
     return (
@@ -100,7 +105,9 @@ export const SubscriptionRecovery = ({ refresh }: any) => {
 
                 <div className="p-6">
                     {subscriptions.length === 0 ? (
-                        <div className="text-center text-text-muted font-mono text-sm py-8">No subscriptions found. Create one via the API.</div>
+                        <div className="text-center text-text-muted font-mono text-sm py-8">
+                            No subscriptions found. Complete a Subscription checkout in <span className="font-semibold text-rzp-blue">Checkout Recovery</span> or create one via the API.
+                        </div>
                     ) : (
                         <div className="space-y-3">
                             {subscriptions.map((sub: any) => (
@@ -118,7 +125,7 @@ export const SubscriptionRecovery = ({ refresh }: any) => {
                                             </div>
                                             <Badge status={statusColor(sub.status)}>{sub.status}</Badge>
                                             <div className="text-right">
-                                                <div className="font-mono text-sm font-bold text-text-main">₹{(sub.amount / 100).toLocaleString()}</div>
+                                                <div className="font-mono text-sm font-bold text-text-main">{displayAmount(sub.amount)}</div>
                                                 <div className="text-[10px] text-text-muted font-mono">retry {sub.retry_count}/{sub.max_retries}</div>
                                             </div>
                                         </div>
@@ -140,7 +147,7 @@ export const SubscriptionRecovery = ({ refresh }: any) => {
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm font-mono">
                             <div><span className="text-text-muted">ID:</span> {selected.external_subscription_id}</div>
                             <div><span className="text-text-muted">Customer:</span> {selected.customer_id}</div>
-                            <div><span className="text-text-muted">Amount:</span> ₹{(selected.amount / 100).toLocaleString()}</div>
+                            <div><span className="text-text-muted">Amount:</span> {displayAmount(selected.amount)}</div>
                             <div><span className="text-text-muted">Status:</span> <Badge status={statusColor(selected.status)}>{selected.status}</Badge></div>
                             <div><span className="text-text-muted">Frequency:</span> {selected.frequency}</div>
                             <div><span className="text-text-muted">Churn Risk:</span> <span className={churnColor(selected.churn_risk)}>{selected.churn_risk}</span></div>
