@@ -1,15 +1,23 @@
 import { API_BASE } from '../services/api';
-import React, { useState, useEffect } from 'react';
+import React, { useReducer, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatCurrency, formatExact } from '../lib/format';
 import { FileText } from 'lucide-react';
 import { Badge } from '../components/ui/Badge';
 
+type ReceivableLoadState = { receivables: any[]; loading: boolean; error: string | null };
+type ReceivableLoadAction = { type: 'loaded'; receivables: any[] } | { type: 'failed'; error: string };
+function receivableLoadReducer(state: ReceivableLoadState, action: ReceivableLoadAction): ReceivableLoadState {
+    return action.type === 'loaded'
+        ? { receivables: action.receivables, loading: false, error: null }
+        : { receivables: [], loading: false, error: action.error };
+}
 
 export const Receivables = () => {
     const navigate = useNavigate();
-    const [receivables, setReceivables] = useState<any[]>([]);
-    const [loading, setLoading] = useState(true);
+    const [{ receivables, loading }, dispatchLoad] = useReducer(receivableLoadReducer, {
+        receivables: [], loading: true, error: null,
+    });
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [promiseDate, setPromiseDate] = useState('');
     const [actionError, setActionError] = useState<string | null>(null);
@@ -20,14 +28,11 @@ export const Receivables = () => {
             if (!res.ok) throw new Error(`Unable to load receivables (${res.status})`);
             const data = await res.json();
             if (!Array.isArray(data)) throw new Error('Receivables response was invalid');
-            setReceivables(data);
+            dispatchLoad({ type: 'loaded', receivables: data });
             setActionError(null);
         } catch (e) {
             console.error(e);
-            setReceivables([]);
-            setActionError(e instanceof Error ? e.message : 'Unable to load receivables');
-        } finally {
-            setLoading(false);
+            dispatchLoad({ type: 'failed', error: e instanceof Error ? e.message : 'Unable to load receivables' });
         }
     };
 
