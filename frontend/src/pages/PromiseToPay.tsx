@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useReducer, useEffect } from 'react';
 import { API_BASE } from '../services/api';
 import { formatCurrency } from '../lib/format';
 import { Badge } from '../components/ui/Badge';
@@ -16,28 +16,33 @@ interface Promise {
     created_at: string;
 }
 
+type PromiseState = { promises: Promise[]; loading: boolean; loadError: string | null };
+type PromiseAction =
+    | { type: 'loaded'; promises: Promise[] }
+    | { type: 'failed'; message: string };
+
+function promiseReducer(state: PromiseState, action: PromiseAction): PromiseState {
+    if (action.type === 'loaded') return { promises: action.promises, loading: false, loadError: null };
+    return { promises: [], loading: false, loadError: action.message };
+}
+
 export const PromiseToPay = () => {
-    const [promises, setPromises] = useState<Promise[]>([]);
-    const [loading, setLoading] = useState(true);
-    const [loadError, setLoadError] = useState<string | null>(null);
+    const [{ promises, loading, loadError }, dispatch] = useReducer(promiseReducer, {
+        promises: [], loading: true, loadError: null,
+    });
 
     async function loadPromises() {
         try {
             const res = await fetch(`${API_BASE}/api/receivables/promises`);
             if (res.ok) {
                 const data = await res.json();
-                setPromises(data);
-                setLoadError(null);
+                dispatch({ type: 'loaded', promises: data });
             } else {
-                setPromises([]);
-                setLoadError(`Unable to load promises (${res.status})`);
+                dispatch({ type: 'failed', message: `Unable to load promises (${res.status})` });
             }
         } catch (err) {
             console.error('Failed to load promises:', err);
-            setPromises([]);
-            setLoadError('Unable to load promises');
-        } finally {
-            setLoading(false);
+            dispatch({ type: 'failed', message: 'Unable to load promises' });
         }
     }
 
