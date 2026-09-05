@@ -179,9 +179,9 @@ async def start_simulated_voice_call(req: SimulateVoiceStartRequest):
     from backend.app.services.voice import synthesize_neural_speech
 
     session_id = f"CA_sim_{uuid.uuid4().hex[:12]}"
-    cust_name = req.customer_name or "Customer"
+    cust_name = req.customer_name or "Sir"
     amount_str = f"₹{int(req.amount):,}" if req.amount else "pending amount"
-    greeting = f"Namaste {cust_name}! Main Chakra Revenue Recovery AI se bol raha hoon. Aapke {amount_str} ke overdue payment ke regarding call kiya hai. Aap bataiye, payment kab tak ho payega?"
+    greeting = f"Namaste {cust_name}! Main Chakra se Priya bol rahi hoon. Aapke {amount_str} ke overdue payment ke silsile mein call kiya tha. Aap bataiye, payment kab tak arrange ho payega?"
 
     DBService.record_audit_event(
         req.case_id,
@@ -191,6 +191,7 @@ async def start_simulated_voice_call(req: SimulateVoiceStartRequest):
             "to_number": "IN_BROWSER_SIMULATION",
             "provider": "gemini_2.5_flash_native",
             "amount": req.amount,
+            "caller_persona": "Priya (Voice Recovery Specialist)",
         },
     )
 
@@ -243,16 +244,16 @@ async def simulate_voice_turn(req: SimulateVoiceTurnRequest):
 
     if intent == "pay_now":
         payment_link = f"https://rzp.io/i/{req.case_id[:8]}"
-        ai_reply = f"Bahut badiya! Maine aapko turant payment link bhej diya hai: {payment_link}. Kripya us par click karke payment complete kar dijiye. Dhanyawad!"
+        ai_reply = f"Bahut accha! Maine aapko turant SMS aur WhatsApp par payment link bhej diya hai: {payment_link}. Aap link par click karke payment complete kar lijiye, main verify kar lungi. Shukriya!"
     elif intent == "promise_to_pay":
-        promised_date = intent_result.promised_date or "tomorrow"
+        promised_date = intent_result.promised_date or "kal"
         amount = intent_result.promised_amount or req.amount
         promise = {
             "amount_inr": amount,
             "promised_date": promised_date,
             "source": "voice",
         }
-        ai_reply = f"Ji shukriya, maine aapka promise record kar liya hai. Aap {promised_date} tak payment kar dijiyega. Have a great day!"
+        ai_reply = f"Ji bilkul, maine aapka promise note kar liya hai ki aap {promised_date} tak payment kar dengi. Main team ko update kar deti hoon. Have a wonderful day!"
         DBService.record_audit_event(
             req.case_id,
             "PROMISE_CREATED",
@@ -264,18 +265,18 @@ async def simulate_voice_turn(req: SimulateVoiceTurnRequest):
             },
         )
     elif intent == "dispute":
-        ai_reply = "Aapki pareshani samajh aayi. Maine ye case hamari dispute management team ko escalate kar diya hai. Wo aapse turant connect karenge."
+        ai_reply = "Aapki pareshani main samajh sakti hoon. Maine ye case turant hamari senior dispute management team ko escalate kar diya hai. Wo aapse personally connect karenge."
         DBService.record_audit_event(
             req.case_id,
             "VOICE_DISPUTE_ESCALATED",
             {"case_id": req.case_id, "reason": "Dispute registered over voice call"},
         )
     elif intent == "needs_more_time":
-        ai_reply = "Hum samajhte hain. Kya aap aane wale Monday ya Friday tak payment arrange kar payenge? Kripya confirm karein."
+        ai_reply = "Main aapki situation samajh rahi hoon. Kya aap aane wale somwar ya shukrawar tak ye clear kar payenge? Mujhe confirm kar dijiye."
     elif intent == "unwilling":
-        ai_reply = "Kripya dhyan dein ki payment na hone par mandate revoke aur service interrupt ho sakti hai. Kripya reconsider karein."
+        ai_reply = "Ji main samajh sakti hoon, lekin payment pending rehne par mandate cancel ho sakta hai aur service interrupt ho sakti hai. Kya main aapke liye koi flexible installment plan check karun?"
     else:
-        ai_reply = "Ji, kripya bataiye aap kis tarikh tak payment schedule karna chahenge?"
+        ai_reply = "Ji sun rahi hoon. Kripya bataiye aap payment kab tak schedule karna chahenge?"
 
     DBService.record_communication(
         case_id=req.case_id,

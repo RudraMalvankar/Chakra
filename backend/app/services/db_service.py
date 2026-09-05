@@ -214,10 +214,19 @@ class DBService:
         if not session:
             return None
         try:
+            valid_case_id = None
+            meta = dict(metadata or {})
+            if case_id:
+                case_exists = session.query(RecoveryCase.id).filter(RecoveryCase.id == case_id).first() is not None
+                if case_exists:
+                    valid_case_id = case_id
+                else:
+                    meta["requested_case_id"] = case_id
+
             item = Communication(
-                recovery_case_id=case_id, customer_id=customer_id, channel=channel,
+                recovery_case_id=valid_case_id, customer_id=customer_id, channel=channel,
                 status=status, provider=provider, communication_type=communication_type,
-                provider_message_id=provider_message_id, body_metadata=metadata or {},
+                provider_message_id=provider_message_id, body_metadata=meta,
                 sent_at=utcnow() if status in {"SENT", "QUEUED"} else None,
                 failed_at=utcnow() if status == "FAILED" else None,
             )
@@ -241,8 +250,14 @@ class DBService:
         if not session:
             return None
         try:
+            valid_case_id = None
+            if case_id:
+                case_exists = session.query(RecoveryCase.id).filter(RecoveryCase.id == case_id).first() is not None
+                if case_exists:
+                    valid_case_id = case_id
+
             item = PaymentLink(
-                recovery_case_id=case_id, customer_id=customer_id, provider=provider,
+                recovery_case_id=valid_case_id, customer_id=customer_id, provider=provider,
                 amount=amount, url=url, provider_link_id=provider_link_id, status=status,
             )
             session.add(item)

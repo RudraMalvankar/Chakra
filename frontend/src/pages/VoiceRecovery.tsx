@@ -14,17 +14,13 @@ import {
   Sparkles,
   Volume2,
   VolumeX,
-  Send,
-  ExternalLink,
   Calendar,
   Grid,
-  MessageSquare,
   Signal,
   Wifi,
-  ChevronDown,
-  ChevronUp,
   Copy,
   Check,
+  Headphones,
 } from "lucide-react";
 import {
   startVoiceRecovery,
@@ -52,10 +48,10 @@ const TERMINAL_STATUSES = [
 
 const SUGGESTED_RESPONSES = [
   { label: "Kal pakka pay kar dunga", intent: "Promise to Pay", icon: "📅" },
-  { label: "Abhi WhatsApp pe link bhej do, main pay karta hoon", intent: "Pay Now", icon: "💳" },
-  { label: "Yeh galat invoice amount hai, dispute raise karna hai", intent: "Dispute", icon: "⚠️" },
-  { label: "Mujhe 3 din ka time aur chahiye please", intent: "Needs More Time", icon: "⏳" },
-  { label: "Main abhi bilkul payment nahi kar sakta", intent: "Unwilling", icon: "🚫" },
+  { label: "Abhi WhatsApp pe link bhej do", intent: "Pay Now", icon: "💳" },
+  { label: "Yeh galat invoice hai, dispute hai", intent: "Dispute", icon: "⚠️" },
+  { label: "Mujhe 3 din ka time chahiye", intent: "Needs More Time", icon: "⏳" },
+  { label: "Main abhi payment nahi kar sakta", intent: "Unwilling", icon: "🚫" },
 ];
 
 export const VoiceRecovery: React.FC = () => {
@@ -84,12 +80,11 @@ export const VoiceRecovery: React.FC = () => {
   const [callDuration, setCallDuration] = useState<number>(0);
   const [showKeypad, setShowKeypad] = useState<boolean>(false);
   const [dialedDigits, setDialedDigits] = useState<string>("");
-  const [showTranscriptDrawer, setShowTranscriptDrawer] = useState<boolean>(false);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
   const [selectedVoice, setSelectedVoice] = useState<string>("hi-IN-SwaraNeural");
   const [activeVoiceMeta, setActiveVoiceMeta] = useState<{ engine?: string; voice?: string } | null>(null);
 
-  // Sync refs to prevent stale closures inside audio callbacks
+  // Sync refs to avoid stale closures in audio callbacks
   const isHandsFreeRef = useRef<boolean>(true);
   const isCallActiveRef = useRef<boolean>(false);
   const isMutedRef = useRef<boolean>(false);
@@ -192,7 +187,6 @@ export const VoiceRecovery: React.FC = () => {
     }
   };
 
-  // High-fidelity neural audio streaming player (plays base64 WAV/MP3 from Gemini or Neural Indian Voice)
   const playAudioStream = (audioBase64?: string, audioFormat?: string, fallbackText?: string) => {
     if (!audioEnabled) {
       if (isHandsFreeRef.current && isCallActiveRef.current && !isMutedRef.current) {
@@ -213,13 +207,13 @@ export const VoiceRecovery: React.FC = () => {
         audio.onended = () => {
           setIsSpeaking(false);
           currentAudioRef.current = null;
-          // Auto-resume microphone for seamless hands-free conversation
+          // Auto-resume microphone for hands-free conversation
           if (isHandsFreeRef.current && isCallActiveRef.current && !isMutedRef.current) {
             setTimeout(() => startListeningMic(), 300);
           }
         };
         audio.onerror = (err) => {
-          console.warn("Audio element playback error, falling back to speech synthesis", err);
+          console.warn("Audio element error, falling back to speech synthesis", err);
           setIsSpeaking(false);
           currentAudioRef.current = null;
           if (fallbackText) speakTextFallback(fallbackText);
@@ -230,7 +224,7 @@ export const VoiceRecovery: React.FC = () => {
         });
         return;
       } catch (err) {
-        console.warn("Failed to create Audio with stream data", err);
+        console.warn("Failed to create Audio stream", err);
       }
     }
 
@@ -239,7 +233,7 @@ export const VoiceRecovery: React.FC = () => {
     }
   };
 
-  // Setup Web Speech Recognition (Mic)
+  // Setup Web Speech Recognition
   useEffect(() => {
     if (typeof window !== "undefined") {
       const SpeechRecognition =
@@ -298,61 +292,62 @@ export const VoiceRecovery: React.FC = () => {
     setIsMuted(nextMuted);
     if (nextMuted) {
       stopListeningMic();
-    } else if (isHandsFree && !isSpeaking && !isAiThinking) {
+    } else if (isCallActive && !isSpeaking && isHandsFree) {
       startListeningMic();
     }
   };
 
-  // Realistic DTMF Dual-Tone Generator for In-Call Keypad
+  // Request browser microphone permission
+  const requestMicPermission = async () => {
+    try {
+      if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        stream.getTracks().forEach((t) => t.stop());
+      }
+    } catch (e) {
+      console.warn("Microphone permission requested:", e);
+    }
+  };
+
   const playDtmfTone = (digit: string) => {
-    setDialedDigits((prev) => prev + digit);
+    setDialedDigits((prev) => (prev + digit).slice(-12));
+    if (typeof window === "undefined") return;
     try {
       const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
-      const dtmfFreqs: Record<string, [number, number]> = {
-        "1": [697, 1209], "2": [697, 1336], "3": [697, 1477],
-        "4": [770, 1209], "5": [770, 1336], "6": [770, 1477],
-        "7": [852, 1209], "8": [852, 1336], "9": [852, 1477],
-        "*": [941, 1209], "0": [941, 1336], "#": [941, 1477],
-      };
-      const freqs = dtmfFreqs[digit] || [770, 1336];
-      [freqs[0], freqs[1]].forEach((freq) => {
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.frequency.value = freq;
-        gain.gain.value = 0.08;
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start();
-        osc.stop(ctx.currentTime + 0.12);
-      });
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(800 + parseInt(digit || "5", 10) * 50, ctx.currentTime);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.15);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.15);
     } catch (e) {}
   };
 
   const startRecovery = async () => {
     if (!selectedCaseId) {
-      setError("Please select a recovery case.");
+      setError("Please select a valid recovery case.");
       return;
     }
-    if (callMethod === "twilio" && !toNumber) {
-      setError("Please enter a target phone number for Twilio.");
-      return;
-    }
-
     setError("");
     setTranscript([]);
     setIntents([]);
     setPromise(null);
     setGeneratedLink(null);
-    setCallSid("");
     setCallDuration(0);
     setDialedDigits("");
-    setShowKeypad(false);
+    setIsMuted(false);
+
+    await requestMicPermission();
 
     if (callMethod === "browser_gemini") {
-      setStatus("IN_CALL");
-      setCallMode("GEMINI 2.5 FLASH NATIVE AUDIO");
+      setStatus("CALLING");
+      setCallMode("GEMINI 2.5 FLASH NATIVE");
       setIsAiThinking(true);
 
       try {
@@ -365,10 +360,14 @@ export const VoiceRecovery: React.FC = () => {
 
         setIsAiThinking(false);
         setCallSid(res.call_sid);
+        setStatus("IN_PROGRESS");
         if (res.voice_engine) {
           setActiveVoiceMeta({ engine: res.voice_engine, voice: res.voice_name });
         }
-        const greeting = res.greeting || "Namaste! Main Chakra se bol raha hoon. Aapke pending bill ke regarding call hai.";
+
+        const greeting =
+          res.greeting ||
+          `Namaste ${selectedCase?.customer_name || "Customer"} ji! Main Chakra se Priya bol rahi hoon. Aapke overdue payment ke silsile mein call kiya tha.`;
 
         setTranscript([
           {
@@ -381,11 +380,10 @@ export const VoiceRecovery: React.FC = () => {
         playAudioStream(res.audio_base64, res.audio_format, greeting);
       } catch (err: any) {
         setIsAiThinking(false);
-        setError(err?.message || "Failed to initialize Gemini 2.5 voice dialog.");
+        setError(err?.message || "Failed to initialize Gemini voice call.");
         setStatus("FAILED");
       }
     } else {
-      // Twilio Mode
       setStatus("CONNECTING");
       setCallMode("LIVE TWILIO");
       try {
@@ -419,7 +417,6 @@ export const VoiceRecovery: React.FC = () => {
     setIsAiThinking(true);
     stopListeningMic();
 
-    // 1. Append Customer speech to transcript
     const userMessage = {
       speaker: "CUSTOMER",
       text: textToSend,
@@ -428,7 +425,6 @@ export const VoiceRecovery: React.FC = () => {
     setTranscript((prev) => [...prev, userMessage]);
 
     try {
-      // 2. Call backend Gemini 2.5 Flash turn evaluation
       const res = await sendSimulatedVoiceTurn({
         case_id: selectedCaseId,
         call_sid: callSid,
@@ -443,7 +439,6 @@ export const VoiceRecovery: React.FC = () => {
         setActiveVoiceMeta({ engine: res.voice_engine, voice: res.voice_name });
       }
 
-      // 3. Append AI response
       const aiMessage = {
         speaker: "CHAKRA",
         text: res.ai_response,
@@ -451,36 +446,34 @@ export const VoiceRecovery: React.FC = () => {
       };
       setTranscript((prev) => [...prev, aiMessage]);
 
-      // 4. Update intents and actions
       if (res.intent) {
         setIntents((prev) => [
           ...prev,
           {
             intent: res.intent,
             confidence: res.confidence,
-            language: res.language,
-            model_used: res.model_used,
+            language: "hi-IN (Hinglish)",
+            model_used: res.voice_engine || "gemini-2.5-flash",
           },
         ]);
       }
-      if (res.promise) {
-        setPromise(res.promise);
-      }
-      if (res.payment_link) {
-        setGeneratedLink(res.payment_link);
-      }
 
-      // 5. Play natural high-fidelity neural audio (which will auto-resume mic when done)
+      if (res.promise) setPromise(res.promise);
+      if (res.payment_link) setGeneratedLink(res.payment_link);
+
       playAudioStream(res.audio_base64, res.audio_format, res.ai_response);
     } catch (err: any) {
       setIsAiThinking(false);
-      const fallbackAi = {
-        speaker: "CHAKRA",
-        text: "Ji samajh gaya, humne aapki baat record kar li hai. Hamari team aapse jald sampark karegi.",
-        timestamp: new Date().toISOString(),
-      };
-      setTranscript((prev) => [...prev, fallbackAi]);
-      playAudioStream(undefined, undefined, fallbackAi.text);
+      const fallbackAi = "Ji shukriya! Maine aapka note record kar liya hai aur team ko inform kar diya hai.";
+      setTranscript((prev) => [
+        ...prev,
+        {
+          speaker: "CHAKRA",
+          text: fallbackAi,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+      playAudioStream(undefined, undefined, fallbackAi);
     }
   };
 
@@ -488,15 +481,16 @@ export const VoiceRecovery: React.FC = () => {
     stopAudioPlayback();
     stopListeningMic();
     setStatus("completed");
+    setIsAiThinking(false);
+    setShowKeypad(false);
   };
 
-  // Poll Twilio status if in Twilio mode
   const pollStatus = async () => {
-    if (callMethod !== "twilio" || !callSid || isTerminal) return;
+    if (!callSid || isTerminal) return;
     try {
       const data = await getVoiceRecoveryStatus(callSid);
       if (data.status && data.status !== "unknown") {
-        setStatus(data.status.toUpperCase());
+        setStatus(data.status);
       }
       if (data.transcript && data.transcript.length > 0) setTranscript(data.transcript);
       if (data.intents && data.intents.length > 0) setIntents(data.intents);
@@ -516,7 +510,6 @@ export const VoiceRecovery: React.FC = () => {
     };
   }, [callSid, status, callMethod]);
 
-  // Auto-scroll transcript drawer
   useEffect(() => {
     transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [transcript, isAiThinking]);
@@ -525,41 +518,39 @@ export const VoiceRecovery: React.FC = () => {
   const latestMessage = transcript.length > 0 ? transcript[transcript.length - 1] : null;
 
   return (
-    <div className="p-6 h-full flex flex-col bg-[#0d131f] text-slate-100 min-h-screen">
+    <div className="flex flex-col space-y-4 max-w-full bg-background text-text-main">
       {/* Header Bar */}
-      <div className="flex items-center justify-between mb-5 border-b border-slate-800 pb-4">
+      <div className="flex items-center justify-between pb-3 border-b border-border">
         <div>
-          <h1 className="text-xl font-black text-white tracking-tight uppercase flex items-center gap-2.5">
-            <span className="p-2 rounded-lg bg-purple-600/20 text-purple-400 border border-purple-500/30">
-              <PhoneCall size={20} />
+          <h1 className="text-lg font-black text-text-main tracking-tight uppercase flex items-center gap-2">
+            <span className="p-1.5 rounded-lg bg-purple-50 text-purple-700 border border-purple-200">
+              <PhoneCall size={18} />
             </span>
-            <span>CHAKRA AI VOICE CALL CONSOLE</span>
+            <span>Chakra AI Voice Recovery</span>
           </h1>
-          <p className="text-xs text-slate-400 mt-1 font-mono flex items-center gap-2">
-            <span>Hands-Free Natural Audio Dialog</span>
-            <span className="text-slate-600">•</span>
-            <span>Google Gemini 2.5 Flash Native Audio + Neural Indian Voices</span>
+          <p className="text-xs text-text-muted mt-0.5 font-mono flex items-center gap-2">
+            <span>Conversational Audio Dialog</span>
+            <span className="text-border">•</span>
+            <span>Priya (AI Voice Specialist) • Hands-Free Laptop Mic</span>
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Hands-Free Auto-Turn Toggle */}
+        <div className="flex items-center gap-2">
           {callMethod === "browser_gemini" && (
             <button
               onClick={() => setIsHandsFree(!isHandsFree)}
               title="Toggle Hands-Free Continuous Speech"
-              className={`px-3 py-1.5 rounded-full border text-xs font-mono font-bold flex items-center gap-2 transition-all ${
+              className={`px-3 py-1.5 rounded-md border text-xs font-mono font-bold flex items-center gap-1.5 transition-all ${
                 isHandsFree
-                  ? "bg-emerald-500/10 border-emerald-500/40 text-emerald-400"
-                  : "bg-slate-800 border-slate-700 text-slate-400"
+                  ? "bg-emerald-50 border-emerald-300 text-emerald-700"
+                  : "bg-white border-border text-text-muted hover:bg-gray-50"
               }`}
             >
-              <span className={`w-2 h-2 rounded-full ${isHandsFree ? "bg-emerald-400 animate-pulse" : "bg-slate-500"}`} />
-              <span>Hands-Free: {isHandsFree ? "AUTO-LISTEN ON" : "MANUAL"}</span>
+              <span className={`w-2 h-2 rounded-full ${isHandsFree ? "bg-emerald-600 animate-pulse" : "bg-gray-400"}`} />
+              <span>Hands-Free Mic: {isHandsFree ? "ON" : "OFF"}</span>
             </button>
           )}
 
-          {/* Audio Speaker Mute Toggle */}
           {callMethod === "browser_gemini" && (
             <button
               onClick={() => {
@@ -568,10 +559,10 @@ export const VoiceRecovery: React.FC = () => {
                 if (!next) stopAudioPlayback();
               }}
               title={audioEnabled ? "Mute Speaker Output" : "Unmute Speaker Output"}
-              className={`p-2 rounded-lg border text-xs font-bold flex items-center gap-1.5 transition-colors ${
+              className={`p-1.5 rounded-md border text-xs font-bold flex items-center gap-1 transition-colors ${
                 audioEnabled
-                  ? "bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700"
-                  : "bg-red-500/10 border-red-500/30 text-red-400"
+                  ? "bg-white border-border text-text-main hover:bg-gray-50"
+                  : "bg-red-50 border-red-200 text-red-600"
               }`}
             >
               {audioEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
@@ -580,107 +571,99 @@ export const VoiceRecovery: React.FC = () => {
 
           {callMode && (
             <div
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-mono font-bold uppercase tracking-wider ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-bold uppercase tracking-wider ${
                 callMode.includes("GEMINI")
-                  ? "bg-purple-500/10 text-purple-300 border border-purple-500/30"
-                  : "bg-blue-500/10 text-blue-300 border border-blue-500/30"
+                  ? "bg-purple-50 text-purple-700 border border-purple-200"
+                  : "bg-blue-50 text-blue-700 border border-blue-200"
               }`}
             >
-              {callMode.includes("GEMINI") ? <Sparkles size={13} className="text-purple-400" /> : <Radio size={13} />}
+              {callMode.includes("GEMINI") ? <Sparkles size={12} className="text-purple-600" /> : <Radio size={12} />}
               {callMode}
             </div>
           )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1 min-h-0">
-        {/* Left Config Panel (3 cols) */}
-        <div className="lg:col-span-3 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex flex-col space-y-4 backdrop-blur-sm">
-          {/* Method Switcher */}
+      {/* Main 3-Column Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* Left Column: Call Configuration (3 cols) */}
+        <div className="lg:col-span-3 bg-white border border-border rounded-xl p-4 flex flex-col space-y-3.5 shadow-sm">
+          {/* Call Engine Switcher */}
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 font-mono">
+            <label className="block text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1.5 font-mono">
               Call Engine
             </label>
-            <div className="grid grid-cols-2 gap-2 p-1 bg-slate-950 rounded-xl border border-slate-800">
+            <div className="grid grid-cols-2 gap-1.5 p-1 bg-gray-50 rounded-lg border border-border">
               <button
                 type="button"
                 onClick={() => setCallMethod("browser_gemini")}
                 disabled={isCallActive}
-                className={`py-2 px-2.5 rounded-lg text-xs font-bold uppercase transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-1.5 px-2 rounded text-xs font-bold transition-all flex items-center justify-center gap-1 ${
                   callMethod === "browser_gemini"
-                    ? "bg-purple-600 text-white shadow-md shadow-purple-600/30 font-mono"
-                    : "text-slate-400 hover:text-white"
+                    ? "bg-white text-purple-700 shadow-sm border border-purple-200 font-mono"
+                    : "text-text-muted hover:text-text-main"
                 }`}
               >
-                <Sparkles size={13} />
-                <span>Gemini Audio</span>
+                <Sparkles size={12} />
+                <span>AI Voice</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setCallMethod("twilio")}
                 disabled={isCallActive}
-                className={`py-2 px-2.5 rounded-lg text-xs font-bold uppercase transition-all flex items-center justify-center gap-1.5 ${
+                className={`py-1.5 px-2 rounded text-xs font-bold transition-all flex items-center justify-center gap-1 ${
                   callMethod === "twilio"
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-600/30 font-mono"
-                    : "text-slate-400 hover:text-white"
+                    ? "bg-white text-rzp-blue shadow-sm border border-blue-200 font-mono"
+                    : "text-text-muted hover:text-text-main"
                 }`}
               >
-                <Phone size={13} />
+                <Phone size={12} />
                 <span>Twilio GSM</span>
               </button>
             </div>
-            <p className="text-[10px] text-slate-500 mt-1.5 font-mono">
-              {callMethod === "browser_gemini"
-                ? "Direct in-browser phone dialog with duplex microphone & neural voice output."
-                : "Initiates real GSM outbound phone call via Twilio carrier network."}
-            </p>
           </div>
 
-          {/* Neural Voice Profile Selector */}
+          {/* Voice Persona Selector */}
           {callMethod === "browser_gemini" && (
             <div>
-              <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest font-mono">
-                  Neural Voice Profile
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-[10px] font-bold text-text-muted uppercase tracking-widest font-mono">
+                  AI Voice Persona
                 </label>
-                {activeVoiceMeta?.engine && (
-                  <span className="text-[9px] px-2 py-0.5 rounded-full font-mono bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30">
-                    Active: {activeVoiceMeta.voice}
-                  </span>
-                )}
+                <span className="text-[9px] px-1.5 py-0.5 rounded font-mono bg-purple-50 text-purple-700 font-bold border border-purple-200">
+                  Priya (Female)
+                </span>
               </div>
               <select
-                className="w-full border border-slate-700 p-2.5 rounded-xl text-xs bg-slate-950 text-slate-200 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                className="w-full border border-border p-2 rounded-lg text-xs bg-white text-text-main focus:outline-none focus:ring-1 focus:ring-purple-500 font-sans"
                 value={selectedVoice}
                 onChange={(e) => setSelectedVoice(e.target.value)}
                 disabled={isCallActive}
               >
-                <optgroup label="🇮🇳 Neural Indian Voices (Natural Human Flow)">
-                  <option value="hi-IN-SwaraNeural">Swara (Female) — Hindi / Hinglish Natural Human</option>
-                  <option value="en-IN-NeerjaNeural">Neerja (Female) — Indian English Professional</option>
-                  <option value="hi-IN-MadhurNeural">Madhur (Male) — Hindi Natural Human</option>
+                <optgroup label="Natural Indian Female Voices (Recommended)">
+                  <option value="hi-IN-SwaraNeural">Priya • Hindi / Hinglish (Swara Neural)</option>
+                  <option value="en-IN-NeerjaNeural">Neerja • Indian English (Neerja Neural)</option>
                 </optgroup>
-                <optgroup label="✨ Google Gemini 3.1 Flash Native TTS">
-                  <option value="gemini-Sulafat">Gemini Sulafat (Female) — Warm & Conversational</option>
-                  <option value="gemini-Kore">Gemini Kore (Female) — Firm Recovery Agent</option>
-                  <option value="gemini-Aoede">Gemini Aoede (Female) — Breezy & Calm</option>
-                  <option value="gemini-Puck">Gemini Puck (Male) — Upbeat & Clear</option>
+                <optgroup label="Gemini Native Voices">
+                  <option value="gemini-Sulafat">Gemini Sulafat (Warm Female)</option>
+                  <option value="gemini-Kore">Gemini Kore (Firm Female)</option>
                 </optgroup>
               </select>
-              <p className="text-[10px] text-purple-400/80 mt-1.5 font-mono flex items-center gap-1">
-                <Sparkles size={11} /> High-fidelity neural audio streaming enabled.
+              <p className="text-[10px] text-text-muted mt-1 font-mono flex items-center gap-1">
+                <Headphones size={11} className="text-purple-600" />
+                Polite female recovery specialist persona.
               </p>
             </div>
           )}
 
-          {/* Target Customer Case Selection */}
+          {/* Target Recovery Case Selection */}
           <div>
-            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 font-mono">
+            <label className="block text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1 font-mono">
               Target Recovery Case
             </label>
             <select
-              className="w-full border border-slate-700 p-2.5 rounded-xl text-xs bg-slate-950 text-slate-200 font-mono focus:outline-none focus:ring-1 focus:ring-purple-500"
+              className="w-full border border-border p-2 rounded-lg text-xs bg-white text-text-main font-mono focus:outline-none focus:ring-1 focus:ring-purple-500"
               value={selectedCaseId}
               onChange={(e) => setSelectedCaseId(e.target.value)}
               disabled={isCallActive}
@@ -696,28 +679,28 @@ export const VoiceRecovery: React.FC = () => {
 
           {/* Selected Case Summary Card */}
           {selectedCase && (
-            <div className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-xl text-xs font-mono space-y-2">
+            <div className="p-3 bg-gray-50 border border-border rounded-lg text-xs font-mono space-y-1.5">
               <div className="flex justify-between items-center">
-                <span className="text-slate-500">Customer</span>
-                <span className="font-bold text-white">
+                <span className="text-text-muted">Customer</span>
+                <span className="font-bold text-text-main truncate max-w-[140px]">
                   {selectedCase.customer_name || selectedCase.customer_id}
                 </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-slate-500">Overdue Bill</span>
-                <span className="font-bold text-red-400">
+                <span className="text-text-muted">Overdue</span>
+                <span className="font-bold text-red-600">
                   {formatCurrency(selectedCase.amount_inr || selectedCase.amount_at_risk || 0)}
                 </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-slate-500">Mandate State</span>
-                <span className="font-bold text-emerald-400">
+                <span className="text-text-muted">Mandate</span>
+                <span className="font-bold text-emerald-700">
                   {selectedCase.mandate_state || "ACTIVE"}
                 </span>
               </div>
               <div className="flex justify-between items-center">
-                <span className="text-slate-500">Status</span>
-                <span className="font-bold text-purple-400">{selectedCase.status}</span>
+                <span className="text-text-muted">Status</span>
+                <span className="font-bold text-purple-700">{selectedCase.status}</span>
               </div>
             </div>
           )}
@@ -725,104 +708,89 @@ export const VoiceRecovery: React.FC = () => {
           {/* Twilio Phone Field */}
           {callMethod === "twilio" && (
             <div>
-              <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 font-mono">
-                Customer Phone Number
+              <label className="block text-[10px] font-bold text-text-muted uppercase tracking-widest mb-1 font-mono">
+                Phone Number
               </label>
               <input
                 type="text"
                 placeholder="+919876543210"
-                className="w-full border border-slate-700 p-2.5 rounded-xl text-xs font-mono bg-slate-950 text-slate-200"
+                className="w-full border border-border p-2 rounded-lg text-xs font-mono bg-white text-text-main"
                 value={toNumber}
                 onChange={(e) => setToNumber(e.target.value)}
                 disabled={isCallActive}
               />
-              <div className="text-[10px] text-slate-500 mt-1 font-mono">
-                Verified caller ID required on Twilio Trial accounts.
-              </div>
             </div>
           )}
 
           {/* Error Banner */}
           {error && (
-            <div className="p-3 bg-red-950/60 border border-red-800 text-red-300 text-xs font-mono rounded-xl flex items-center gap-2">
-              <AlertCircle size={15} className="shrink-0 text-red-400" />
+            <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 text-xs font-mono rounded-lg flex items-center gap-1.5">
+              <AlertCircle size={14} className="shrink-0 text-red-500" />
               <span>{error}</span>
             </div>
           )}
 
-          {/* Call Metadata & Status Footer */}
-          <div className="mt-auto pt-4 border-t border-slate-800 space-y-2 font-mono">
-            <div className="flex justify-between items-center text-xs">
-              <span className="text-slate-500 uppercase tracking-wider text-[10px]">Session Status</span>
-              <span
-                className={`font-bold px-2.5 py-0.5 rounded-full text-[11px] ${
-                  isCallActive
-                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 animate-pulse"
-                    : isTerminal
-                    ? "bg-slate-800 text-slate-400"
-                    : "bg-slate-800 text-purple-300"
-                }`}
-              >
-                {status.toUpperCase()}
-              </span>
-            </div>
-            {callSid && (
-              <div className="text-[10px] text-slate-500 truncate">
-                SID: {callSid}
-              </div>
-            )}
+          {/* Status Footer */}
+          <div className="pt-2 border-t border-border flex justify-between items-center text-xs font-mono">
+            <span className="text-text-muted text-[10px] uppercase tracking-wider">Session</span>
+            <span
+              className={`font-bold px-2 py-0.5 rounded text-[11px] ${
+                isCallActive
+                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200 animate-pulse"
+                  : isTerminal
+                  ? "bg-gray-100 text-text-muted"
+                  : "bg-purple-50 text-purple-700 border border-purple-200"
+              }`}
+            >
+              {status.toUpperCase()}
+            </span>
           </div>
         </div>
 
-        {/* Center: Smartphone In-Call Canvas (5 cols) */}
-        <div className="lg:col-span-5 flex flex-col items-center justify-center">
-          {/* Smartphone Frame */}
-          <div className="w-full max-w-[380px] bg-gradient-to-b from-slate-950 via-[#0e1626] to-slate-950 border-4 border-slate-800 rounded-[42px] shadow-2xl p-5 flex flex-col min-h-[580px] relative overflow-hidden backdrop-blur-md">
-            {/* Top Phone Notch / Dynamic Island */}
-            <div className="w-full flex items-center justify-between px-2 pt-1 mb-6 text-slate-400 font-mono text-[11px]">
-              <div className="flex items-center gap-1.5 font-bold">
-                <Signal size={12} className="text-emerald-400" />
-                <span>Chakra 5G</span>
+        {/* Center Column: Clean White Phone Call Console (5 cols) */}
+        <div className="lg:col-span-5 flex flex-col items-center">
+          <div className="w-full max-w-[420px] bg-white border border-border rounded-2xl shadow-sm p-6 flex flex-col min-h-[560px] relative">
+            {/* Top Status Bar */}
+            <div className="w-full flex items-center justify-between pb-3 mb-4 border-b border-gray-100 text-text-muted font-mono text-[11px]">
+              <div className="flex items-center gap-1.5 font-medium text-emerald-600">
+                <Signal size={12} />
+                <span>Chakra HD Voice</span>
               </div>
-              <div className="w-20 h-4 bg-slate-900 rounded-full flex items-center justify-center border border-slate-800">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-700" />
-              </div>
-              <div className="flex items-center gap-1.5">
-                <Wifi size={12} className="text-emerald-400" />
-                <span>VoLTE</span>
+              <div className="flex items-center gap-1">
+                <Wifi size={12} className="text-emerald-600" />
+                <span className="text-[10px] text-text-muted">VoIP</span>
               </div>
             </div>
 
-            {/* Caller Identity Header */}
-            <div className="text-center space-y-1 mb-6">
-              <span className="inline-block text-[10px] uppercase font-mono tracking-widest px-2.5 py-0.5 rounded-full bg-slate-900 text-purple-400 border border-slate-800">
-                {callMethod === "browser_gemini" ? "AI Revenue Recovery" : "Outbound Cellular Line"}
-              </span>
-              <h2 className="text-xl font-bold text-white tracking-wide">
-                {selectedCase?.customer_name || "Chakra AI Agent"}
+            {/* Caller Identity */}
+            <div className="text-center space-y-1 mb-4">
+              <div className="inline-flex items-center gap-1 text-[10px] uppercase font-mono font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-200">
+                <Sparkles size={11} />
+                <span>Priya • AI Voice Specialist</span>
+              </div>
+              <h2 className="text-xl font-bold text-text-main tracking-tight">
+                {selectedCase?.customer_name || "Customer"}
               </h2>
-              <p className="text-xs text-slate-400 font-mono">
-                {callMethod === "browser_gemini"
-                  ? "+91 80 4718 9000 (Bengaluru)"
-                  : toNumber || "+91 98765 43210"}
+              <p className="text-xs text-text-muted font-mono">
+                {selectedCase ? formatCurrency(selectedCase.amount_inr || selectedCase.amount_at_risk || 0) : "Pending Bill"}
               </p>
               {isCallActive && (
-                <div className="pt-1 flex items-center justify-center gap-1.5 text-xs font-mono font-bold text-emerald-400">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <div className="pt-1 flex items-center justify-center gap-1.5 text-xs font-mono font-bold text-emerald-600">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                   <span>{formatDuration(callDuration)}</span>
                 </div>
               )}
             </div>
 
-            {/* Center Call Visualizer / DTMF Keypad View */}
-            <div className="flex-1 flex flex-col items-center justify-center relative w-full my-2">
+            {/* Calling Visualizer Orb / DTMF Keypad View */}
+            <div className="flex-1 flex flex-col items-center justify-center my-3 relative w-full">
               {showKeypad ? (
-                /* DTMF Phone Keypad Modal */
-                <div className="w-full max-w-[280px] bg-slate-900/90 border border-slate-800 rounded-3xl p-4 shadow-xl backdrop-blur-md animate-in fade-in zoom-in duration-200">
-                  <div className="text-center font-mono text-lg font-bold text-white mb-3 tracking-widest h-6 overflow-hidden">
+                /* DTMF Phone Keypad */
+                <div className="w-full max-w-[260px] bg-gray-50 border border-border rounded-2xl p-3 shadow-inner">
+                  <div className="text-center font-mono text-base font-bold text-text-main mb-2 tracking-widest h-6">
                     {dialedDigits || "Dial keypad..."}
                   </div>
-                  <div className="grid grid-cols-3 gap-2.5 font-mono">
+                  <div className="grid grid-cols-3 gap-2 font-mono">
                     {[
                       { num: "1", sub: "" }, { num: "2", sub: "ABC" }, { num: "3", sub: "DEF" },
                       { num: "4", sub: "GHI" }, { num: "5", sub: "JKL" }, { num: "6", sub: "MNO" },
@@ -832,168 +800,165 @@ export const VoiceRecovery: React.FC = () => {
                       <button
                         key={key.num}
                         onClick={() => playDtmfTone(key.num)}
-                        className="h-12 rounded-full bg-slate-800/80 hover:bg-purple-600 text-white font-bold flex flex-col items-center justify-center transition-all border border-slate-700/60 active:scale-95"
+                        className="h-10 rounded-xl bg-white hover:bg-purple-50 hover:text-purple-700 text-text-main font-bold flex flex-col items-center justify-center transition-all border border-border shadow-xs active:scale-95"
                       >
                         <span className="text-sm leading-none">{key.num}</span>
-                        {key.sub && <span className="text-[8px] text-slate-400 leading-none mt-0.5">{key.sub}</span>}
+                        {key.sub && <span className="text-[8px] text-text-muted leading-none mt-0.5">{key.sub}</span>}
                       </button>
                     ))}
                   </div>
                   <button
                     onClick={() => setShowKeypad(false)}
-                    className="w-full mt-3 py-1 text-[11px] font-mono text-slate-400 hover:text-white uppercase tracking-wider text-center"
+                    className="w-full mt-2.5 py-1 text-[11px] font-mono text-text-muted hover:text-text-main uppercase tracking-wider text-center"
                   >
                     Hide Keypad
                   </button>
                 </div>
               ) : isCallActive ? (
-                /* Active Call Audio Orb & Visualizer */
-                <div className="flex flex-col items-center justify-center space-y-6">
-                  {/* Concentric Pulsing Audio Orb */}
+                /* Active Call Concentric Orb */
+                <div className="flex flex-col items-center justify-center space-y-4">
                   <div className="relative flex items-center justify-center">
                     {/* Ring 3 */}
                     <div
-                      className={`absolute w-44 h-44 rounded-full transition-all duration-500 ${
+                      className={`absolute w-40 h-40 rounded-full transition-all duration-500 ${
                         isSpeaking
-                          ? "bg-purple-600/15 animate-ping scale-110"
+                          ? "bg-purple-100 animate-ping scale-110"
                           : isListening
-                          ? "bg-emerald-500/15 animate-ping scale-110"
-                          : "bg-slate-800/20"
+                          ? "bg-emerald-100 animate-ping scale-110"
+                          : "bg-gray-100"
                       }`}
                     />
                     {/* Ring 2 */}
                     <div
-                      className={`absolute w-36 h-36 rounded-full transition-all duration-300 ${
+                      className={`absolute w-32 h-32 rounded-full transition-all duration-300 ${
                         isSpeaking
-                          ? "bg-purple-500/25 animate-pulse"
+                          ? "bg-purple-200/60 animate-pulse"
                           : isListening
-                          ? "bg-emerald-400/25 animate-pulse"
+                          ? "bg-emerald-200/60 animate-pulse"
                           : isAiThinking
-                          ? "bg-amber-500/20 animate-spin"
-                          : "bg-slate-800/40"
+                          ? "bg-amber-100 animate-spin"
+                          : "bg-gray-200/60"
                       }`}
                     />
                     {/* Core Orb */}
                     <div
-                      className={`w-28 h-28 rounded-full shadow-2xl flex items-center justify-center z-10 transition-all duration-300 border-2 ${
+                      className={`w-24 h-24 rounded-full shadow-md flex items-center justify-center z-10 transition-all duration-300 border-2 ${
                         isSpeaking
-                          ? "bg-gradient-to-tr from-purple-700 to-indigo-500 border-purple-300 shadow-purple-500/40 scale-105"
+                          ? "bg-gradient-to-tr from-purple-600 to-indigo-600 border-purple-300 text-white scale-105"
                           : isListening
-                          ? "bg-gradient-to-tr from-emerald-600 to-teal-500 border-emerald-300 shadow-emerald-500/40 scale-105"
+                          ? "bg-gradient-to-tr from-emerald-600 to-teal-600 border-emerald-300 text-white scale-105"
                           : isAiThinking
-                          ? "bg-gradient-to-tr from-amber-600 to-orange-500 border-amber-300 shadow-amber-500/40"
-                          : "bg-slate-800 border-slate-700 shadow-black"
+                          ? "bg-gradient-to-tr from-amber-500 to-orange-500 border-amber-300 text-white"
+                          : "bg-white border-border text-text-muted"
                       }`}
                     >
                       {isSpeaking ? (
                         <div className="flex items-center gap-1">
                           <span className="w-1.5 h-6 bg-white rounded-full animate-bounce" />
-                          <span className="w-1.5 h-10 bg-white rounded-full animate-bounce delay-100" />
-                          <span className="w-1.5 h-8 bg-white rounded-full animate-bounce delay-200" />
+                          <span className="w-1.5 h-9 bg-white rounded-full animate-bounce delay-100" />
+                          <span className="w-1.5 h-7 bg-white rounded-full animate-bounce delay-200" />
                           <span className="w-1.5 h-4 bg-white rounded-full animate-bounce delay-75" />
                         </div>
                       ) : isListening ? (
-                        <Mic size={36} className="text-white animate-pulse" />
+                        <Mic size={32} className="text-white animate-pulse" />
                       ) : isAiThinking ? (
-                        <Sparkles size={36} className="text-white animate-spin" />
+                        <Sparkles size={32} className="text-white animate-spin" />
                       ) : (
-                        <Phone size={36} className="text-slate-400" />
+                        <Phone size={32} className="text-text-muted" />
                       )}
                     </div>
                   </div>
 
-                  {/* Status Indicator Pill */}
+                  {/* Status Banner */}
                   <div className="text-center font-mono">
                     <span
                       className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
                         isSpeaking
-                          ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
+                          ? "bg-purple-50 text-purple-700 border border-purple-200"
                           : isListening
-                          ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 animate-pulse"
+                          ? "bg-emerald-50 text-emerald-700 border border-emerald-300 animate-pulse"
                           : isAiThinking
-                          ? "bg-amber-500/20 text-amber-300 border border-amber-500/40"
+                          ? "bg-amber-50 text-amber-700 border border-amber-200"
                           : isMuted
-                          ? "bg-red-500/20 text-red-300 border border-red-500/40"
-                          : "bg-slate-800 text-slate-400"
+                          ? "bg-red-50 text-red-700 border border-red-200"
+                          : "bg-gray-100 text-text-muted"
                       }`}
                     >
-                      {isSpeaking && <span>🔊 Speaking aloud...</span>}
-                      {isListening && <span>🎤 Listening (Speak now)...</span>}
-                      {isAiThinking && <span>✨ Gemini 2.5 thinking...</span>}
+                      {isSpeaking && <span>🔊 Priya speaking...</span>}
+                      {isListening && <span>🎤 Listening to your mic... (Speak now)</span>}
+                      {isAiThinking && <span>✨ Priya thinking...</span>}
                       {!isSpeaking && !isListening && !isAiThinking && (
-                        <span>{isMuted ? "🔇 Muted" : "● Connected"}</span>
+                        <span>{isMuted ? "🔇 Mic Muted" : "● Connected"}</span>
                       )}
                     </span>
                   </div>
                 </div>
               ) : (
-                /* Ready / Idle Call Screen */
-                <div className="flex flex-col items-center justify-center text-center space-y-4 py-8">
-                  <div className="w-24 h-24 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-purple-400 shadow-inner">
-                    <PhoneCall size={38} className="text-purple-400 animate-pulse" />
+                /* Ready State */
+                <div className="flex flex-col items-center justify-center text-center space-y-3 py-6">
+                  <div className="w-20 h-20 rounded-full bg-purple-50 border border-purple-200 flex items-center justify-center text-purple-600 shadow-sm">
+                    <PhoneCall size={32} className="text-purple-600" />
                   </div>
                   <div>
-                    <h3 className="text-base font-bold text-white">Call Ready</h3>
-                    <p className="text-xs text-slate-400 font-mono mt-1 max-w-[240px]">
+                    <h3 className="text-sm font-bold text-text-main">Ready to Connect</h3>
+                    <p className="text-xs text-text-muted font-mono mt-0.5 max-w-[260px]">
                       {selectedCase
-                        ? `Ready to connect to ${selectedCase.customer_name || "Customer"} for ${formatCurrency(selectedCase.amount_inr || selectedCase.amount_at_risk || 0)}`
-                        : "Select a recovery case to initiate phone dialog"}
+                        ? `Speak naturally with Priya regarding ${selectedCase.customer_name || "Customer"}'s overdue ${formatCurrency(selectedCase.amount_inr || selectedCase.amount_at_risk || 0)}`
+                        : "Select a recovery case to initiate the call"}
                     </p>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Live Subtitle / Caption Pill (Frosted glass overlay) */}
+            {/* Live Subtitle Strip */}
             {isCallActive && latestMessage && (
-              <div className="w-full bg-slate-900/80 border border-slate-800/80 rounded-2xl p-3 my-2 shadow-lg backdrop-blur-md">
-                <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 mb-1">
+              <div className="w-full bg-gray-50 border border-border rounded-xl p-3 my-2 shadow-xs">
+                <div className="flex items-center justify-between text-[10px] font-mono text-text-muted mb-1">
                   <span className="font-bold flex items-center gap-1">
                     {latestMessage.speaker === "CHAKRA" ? (
-                      <span className="text-purple-400 flex items-center gap-1">
-                        <Sparkles size={10} /> Chakra AI
+                      <span className="text-purple-700 flex items-center gap-1">
+                        <Sparkles size={10} /> Priya (AI)
                       </span>
                     ) : (
-                      <span className="text-emerald-400 flex items-center gap-1">
-                        <User size={10} /> Customer
+                      <span className="text-emerald-700 flex items-center gap-1">
+                        <User size={10} /> You (Customer)
                       </span>
                     )}
                   </span>
                   <span>{new Date(latestMessage.timestamp).toLocaleTimeString()}</span>
                 </div>
-                <p className="text-xs text-slate-200 line-clamp-2 leading-relaxed font-sans">
+                <p className="text-xs text-text-main line-clamp-2 leading-relaxed font-sans font-medium">
                   "{latestMessage.text}"
                 </p>
               </div>
             )}
 
-            {/* In-Call Circular Phone Control Buttons */}
-            <div className="w-full pt-4 mt-auto">
+            {/* Call Controls */}
+            <div className="w-full pt-3 mt-auto">
               {!isCallActive ? (
-                /* Call Start Button */
                 <button
                   onClick={startRecovery}
                   disabled={!selectedCaseId}
-                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-sm uppercase tracking-widest rounded-full transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2"
+                  className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-bold text-xs uppercase tracking-widest rounded-xl transition-all shadow-sm flex items-center justify-center gap-2"
                 >
-                  <Phone size={18} />
-                  <span>Call Customer Now</span>
+                  <Phone size={16} />
+                  <span>Start Voice Call Now</span>
                 </button>
               ) : (
-                /* Active Call Control Row */
-                <div className="space-y-4">
-                  <div className="grid grid-cols-4 gap-2 text-center font-mono text-[10px]">
+                <div className="space-y-3">
+                  <div className="grid grid-cols-3 gap-2 text-center font-mono text-[10px]">
                     {/* Mute Mic */}
                     <button
                       onClick={toggleMuteMic}
-                      className={`flex flex-col items-center justify-center p-2 rounded-2xl transition-all ${
+                      className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all ${
                         isMuted
-                          ? "bg-red-500 text-white shadow-lg shadow-red-500/30"
-                          : "bg-slate-800 hover:bg-slate-700 text-slate-300"
+                          ? "bg-red-500 text-white shadow-sm"
+                          : "bg-gray-100 hover:bg-gray-200 text-text-main"
                       }`}
                     >
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center mb-1">
-                        {isMuted ? <MicOff size={18} /> : <Mic size={18} />}
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center mb-0.5">
+                        {isMuted ? <MicOff size={16} /> : <Mic size={16} />}
                       </div>
                       <span>{isMuted ? "Unmute" : "Mute"}</span>
                     </button>
@@ -1001,61 +966,46 @@ export const VoiceRecovery: React.FC = () => {
                     {/* Keypad */}
                     <button
                       onClick={() => setShowKeypad(!showKeypad)}
-                      className={`flex flex-col items-center justify-center p-2 rounded-2xl transition-all ${
+                      className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all ${
                         showKeypad
-                          ? "bg-purple-600 text-white shadow-lg shadow-purple-600/30"
-                          : "bg-slate-800 hover:bg-slate-700 text-slate-300"
+                          ? "bg-purple-600 text-white shadow-sm"
+                          : "bg-gray-100 hover:bg-gray-200 text-text-main"
                       }`}
                     >
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center mb-1">
-                        <Grid size={18} />
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center mb-0.5">
+                        <Grid size={16} />
                       </div>
                       <span>Keypad</span>
                     </button>
 
-                    {/* Speaker */}
+                    {/* Speaker Output */}
                     <button
                       onClick={() => {
                         const next = !audioEnabled;
                         setAudioEnabled(next);
                         if (!next) stopAudioPlayback();
                       }}
-                      className={`flex flex-col items-center justify-center p-2 rounded-2xl transition-all ${
+                      className={`flex flex-col items-center justify-center p-2 rounded-xl transition-all ${
                         !audioEnabled
-                          ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
-                          : "bg-slate-800 hover:bg-slate-700 text-slate-300"
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-gray-100 hover:bg-gray-200 text-text-main"
                       }`}
                     >
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center mb-1">
-                        {audioEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+                      <div className="w-8 h-8 rounded-full flex items-center justify-center mb-0.5">
+                        {audioEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
                       </div>
                       <span>Speaker</span>
                     </button>
-
-                    {/* Transcript Drawer Toggle */}
-                    <button
-                      onClick={() => setShowTranscriptDrawer(!showTranscriptDrawer)}
-                      className={`flex flex-col items-center justify-center p-2 rounded-2xl transition-all ${
-                        showTranscriptDrawer
-                          ? "bg-blue-600 text-white shadow-lg shadow-blue-600/30"
-                          : "bg-slate-800 hover:bg-slate-700 text-slate-300"
-                      }`}
-                    >
-                      <div className="w-10 h-10 rounded-full flex items-center justify-center mb-1">
-                        <MessageSquare size={18} />
-                      </div>
-                      <span>History</span>
-                    </button>
                   </div>
 
-                  {/* Hang Up Button */}
-                  <div className="flex justify-center pt-2">
+                  {/* Hangup Button */}
+                  <div className="flex justify-center pt-1">
                     <button
                       onClick={handleEndCall}
-                      className="w-16 h-16 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-xl shadow-red-600/40 flex items-center justify-center transition-all active:scale-95"
+                      className="w-14 h-14 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-md flex items-center justify-center transition-all active:scale-95"
                       title="End Call"
                     >
-                      <PhoneOff size={26} />
+                      <PhoneOff size={22} />
                     </button>
                   </div>
                 </div>
@@ -1064,88 +1014,79 @@ export const VoiceRecovery: React.FC = () => {
           </div>
         </div>
 
-        {/* Right Panel: Live Call Intelligence HUD (4 cols) */}
-        <div className="lg:col-span-4 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 flex flex-col space-y-4 backdrop-blur-sm overflow-hidden">
-          <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-300 flex items-center gap-2 font-mono">
-              <Activity size={15} className="text-purple-400" />
+        {/* Right Column: Live Call Intelligence & Audit (4 cols) */}
+        <div className="lg:col-span-4 bg-white border border-border rounded-xl p-4 flex flex-col space-y-3 shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between border-b border-border pb-2.5">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-text-main flex items-center gap-1.5 font-mono">
+              <Activity size={14} className="text-purple-600" />
               <span>Real-Time Call Intelligence</span>
             </h3>
-            {latestIntent?.model_used && (
-              <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 font-bold border border-purple-500/30">
-                {latestIntent.model_used}
-              </span>
-            )}
+            <span className="text-[9px] font-mono px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-bold border border-emerald-200">
+              SAFETY PASSED
+            </span>
           </div>
 
-          {/* Gemini Intent Extraction Card */}
+          {/* Gemini Spoken Intent Card */}
           {latestIntent ? (
-            <div className="p-4 bg-slate-950 border border-slate-800 rounded-xl space-y-3 font-mono">
-              <div className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">
-                Detected Spoken Intent
+            <div className="p-3 bg-purple-50/60 border border-purple-200 rounded-lg space-y-2 font-mono">
+              <div className="text-[9px] text-text-muted uppercase tracking-widest font-bold">
+                Spoken Intent Detected
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-base font-bold text-purple-400 uppercase">
+                <span className="text-sm font-bold text-purple-800 uppercase">
                   {latestIntent.intent?.replace(/_/g, " ") || "ANALYZING..."}
                 </span>
-                <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-300 border border-purple-500/20">
+                <span className="text-xs font-bold px-2 py-0.5 rounded bg-white text-purple-700 border border-purple-200">
                   {latestIntent.confidence != null ? `${(latestIntent.confidence * 100).toFixed(0)}% Confidence` : "95%"}
                 </span>
               </div>
-
-              <div className="grid grid-cols-2 gap-2 text-[11px] pt-1">
-                <div className="p-2 rounded bg-slate-900 border border-slate-800/80">
-                  <div className="text-slate-500 text-[9px] mb-0.5">LANGUAGE</div>
-                  <div className="font-bold text-slate-200 uppercase">{latestIntent.language || "hi-IN (Hinglish)"}</div>
-                </div>
-                <div className="p-2 rounded bg-slate-900 border border-slate-800/80">
-                  <div className="text-slate-500 text-[9px] mb-0.5">SAFETY GATE</div>
-                  <div className="font-bold text-emerald-400 uppercase">PASSED</div>
-                </div>
+              <div className="text-[10px] text-text-muted">
+                Model: <span className="font-semibold text-text-main">{latestIntent.model_used || "gemini-2.5-flash"}</span>
               </div>
             </div>
           ) : (
-            <div className="p-4 bg-slate-950/60 border border-slate-800/60 rounded-xl text-center py-6 font-mono text-slate-500 text-xs">
-              <Sparkles size={20} className="mx-auto mb-2 text-slate-600" />
-              <span>Awaiting customer utterance for real-time intent extraction</span>
+            <div className="p-3 bg-gray-50 border border-border rounded-lg text-center py-4 font-mono text-text-muted text-xs">
+              <Sparkles size={16} className="mx-auto mb-1 text-purple-500" />
+              <span>Awaiting customer utterance for real-time intent classification</span>
             </div>
           )}
 
-          {/* Real-time Generated Recovery Artifacts */}
+          {/* Promise to Pay Card */}
           {promise && (
-            <div className="p-3.5 bg-emerald-950/40 border border-emerald-800/60 text-emerald-300 rounded-xl font-mono text-xs flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+            <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-900 rounded-lg font-mono text-xs flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
                 <div>
-                  <div className="font-bold uppercase text-[11px]">Promise to Pay Recorded</div>
-                  <div className="text-[11px] text-emerald-400/90 mt-0.5">
-                    Amount: {formatCurrency(promise.amount_inr)} • Due: {promise.promised_date || "Tomorrow"}
+                  <div className="font-bold uppercase text-[10px]">Promise to Pay Recorded</div>
+                  <div className="text-[11px] text-emerald-700 mt-0.5">
+                    {formatCurrency(promise.amount_inr)} • Due: {promise.promised_date || "Kal"}
                   </div>
                 </div>
               </div>
-              <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-full text-[9px] font-bold border border-emerald-500/30">
-                SCHEDULED
+              <span className="px-2 py-0.5 bg-white text-emerald-700 rounded text-[9px] font-bold border border-emerald-300">
+                RECORDED
               </span>
             </div>
           )}
 
+          {/* Generated Payment Link Card */}
           {generatedLink && (
-            <div className="p-3.5 bg-blue-950/40 border border-blue-800/60 text-blue-300 rounded-xl font-mono text-xs space-y-2">
+            <div className="p-3 bg-blue-50 border border-blue-200 text-blue-900 rounded-lg font-mono text-xs space-y-1.5">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Calendar size={15} className="text-blue-400 shrink-0" />
-                  <span className="font-bold uppercase text-[11px]">Payment Link Dispatched</span>
+                <div className="flex items-center gap-1.5">
+                  <Calendar size={13} className="text-rzp-blue shrink-0" />
+                  <span className="font-bold uppercase text-[10px]">Payment Link Dispatched</span>
                 </div>
-                <span className="px-2 py-0.5 bg-blue-500/20 text-blue-300 rounded-full text-[9px] font-bold border border-blue-500/30">
+                <span className="px-1.5 py-0.5 bg-white text-rzp-blue rounded text-[9px] font-bold border border-blue-200">
                   SMS / WHATSAPP
                 </span>
               </div>
-              <div className="flex items-center justify-between bg-slate-950 p-2 rounded-lg border border-slate-800">
+              <div className="flex items-center justify-between bg-white p-1.5 rounded border border-blue-200">
                 <a
                   href={generatedLink}
                   target="_blank"
                   rel="noreferrer"
-                  className="underline text-blue-400 hover:text-blue-300 truncate max-w-[200px]"
+                  className="underline text-rzp-blue hover:text-blue-800 truncate max-w-[190px] text-[11px]"
                 >
                   {generatedLink}
                 </a>
@@ -1155,29 +1096,28 @@ export const VoiceRecovery: React.FC = () => {
                     setCopiedLink(true);
                     setTimeout(() => setCopiedLink(false), 2000);
                   }}
-                  className="p-1 hover:bg-slate-800 rounded text-slate-400 hover:text-white"
+                  className="p-1 hover:bg-gray-100 rounded text-text-muted hover:text-text-main"
                   title="Copy payment link"
                 >
-                  {copiedLink ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+                  {copiedLink ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
                 </button>
               </div>
             </div>
           )}
 
-          {/* Quick Speech Simulator Phrases (Hands-free backup) */}
+          {/* Quick Voice Phrases (Click-to-speak fallback) */}
           {isCallActive && (
-            <div className="space-y-2 pt-2 border-t border-slate-800">
-              <div className="flex items-center justify-between text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest">
-                <span>Quick Utterance Simulator</span>
-                <span className="text-[9px] text-slate-500 font-normal">Click to speak phrase</span>
+            <div className="space-y-1.5 pt-2 border-t border-border">
+              <div className="flex items-center justify-between text-[10px] font-mono font-bold text-text-muted uppercase tracking-wider">
+                <span>Or Click Quick Response</span>
               </div>
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1">
                 {SUGGESTED_RESPONSES.map((chip, idx) => (
                   <button
                     key={idx}
                     onClick={() => handleSendUtterance(chip.label)}
                     disabled={isAiThinking}
-                    className="text-[11px] font-mono py-1 px-2.5 bg-slate-950 hover:bg-purple-600/20 hover:text-purple-300 hover:border-purple-500/40 border border-slate-800 rounded-full transition-all text-left flex items-center gap-1 text-slate-300 disabled:opacity-40"
+                    className="text-[10px] font-mono py-1 px-2 bg-gray-50 hover:bg-purple-50 hover:text-purple-700 hover:border-purple-300 border border-border rounded-md transition-all text-left flex items-center gap-1 text-text-main disabled:opacity-40"
                   >
                     <span>{chip.icon}</span>
                     <span>"{chip.label}"</span>
@@ -1187,35 +1127,35 @@ export const VoiceRecovery: React.FC = () => {
             </div>
           )}
 
-          {/* Full Audit Transcript Drawer (Expandable) */}
-          <div className="mt-auto border-t border-slate-800 pt-3 flex flex-col flex-1 min-h-[140px] max-h-[220px]">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                <FileText size={12} className="text-purple-400" />
-                <span>Call Transcript Ticker</span>
+          {/* Live Transcript Log */}
+          <div className="border-t border-border pt-2 flex flex-col flex-1 min-h-[160px] max-h-[220px]">
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] font-mono font-bold text-text-muted uppercase tracking-wider flex items-center gap-1">
+                <FileText size={12} className="text-purple-600" />
+                <span>Call Dialog Ticker</span>
               </span>
-              <span className="text-[10px] text-slate-500 font-mono">
+              <span className="text-[10px] text-text-muted font-mono">
                 {transcript.length} turns
               </span>
             </div>
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1 text-xs font-sans">
+            <div className="flex-1 overflow-y-auto space-y-1.5 pr-1 text-xs">
               {transcript.length === 0 ? (
-                <div className="text-slate-600 text-xs font-mono text-center py-6">
+                <div className="text-text-muted text-xs font-mono text-center py-5">
                   No dialog history yet
                 </div>
               ) : (
                 transcript.map((t, idx) => (
                   <div
                     key={idx}
-                    className={`p-2 rounded-lg text-xs leading-relaxed ${
+                    className={`p-2 rounded-lg text-xs leading-relaxed border ${
                       t.speaker === "CHAKRA"
-                        ? "bg-purple-950/30 border border-purple-800/30 text-slate-200"
-                        : "bg-slate-950 border border-slate-800 text-slate-300"
+                        ? "bg-purple-50/50 border-purple-200 text-purple-900"
+                        : "bg-gray-50 border-border text-text-main"
                     }`}
                   >
-                    <div className="text-[9px] font-mono font-bold text-slate-500 mb-0.5 flex justify-between">
-                      <span className={t.speaker === "CHAKRA" ? "text-purple-400" : "text-emerald-400"}>
-                        {t.speaker === "CHAKRA" ? "CHAKRA" : "CUSTOMER"}
+                    <div className="text-[9px] font-mono font-bold text-text-muted mb-0.5 flex justify-between">
+                      <span className={t.speaker === "CHAKRA" ? "text-purple-700" : "text-emerald-700"}>
+                        {t.speaker === "CHAKRA" ? "PRIYA (AI)" : "CUSTOMER"}
                       </span>
                       {t.timestamp && <span>{new Date(t.timestamp).toLocaleTimeString()}</span>}
                     </div>
