@@ -266,18 +266,93 @@ def get_batch(batch_id: str):
 
 
 @router.get("/{batch_id}/cases")
-def get_batch_cases(batch_id: str, limit: int = 100):
-    """Returns individual cases for a batch."""
+def get_batch_cases(batch_id: str, limit: int = 200):
+    """Returns individual cases for a batch with full recovery case details."""
     factory = get_session_factory()
     with factory() as session:
-        stmt = select(BatchCase).where(BatchCase.batch_id == batch_id).order_by(BatchCase.sequence).limit(limit)
-        cases = session.execute(stmt).scalars().all()
-        return [
-            {
-                "sequence": c.sequence,
-                "case_id": c.recovery_case_id,
-                "status": c.status,
-                "error": c.error_message,
+        stmt = (
+            select(BatchCase)
+            .where(BatchCase.batch_id == batch_id)
+            .order_by(BatchCase.sequence)
+            .limit(limit)
+        )
+        batch_cases = session.execute(stmt).scalars().all()
+
+        results = []
+        for bc in batch_cases:
+            case_data = {
+                "sequence": bc.sequence,
+                "batch_case_id": bc.id,
+                "batch_id": bc.batch_id,
+                "case_id": bc.recovery_case_id,
+                "status": bc.status,
+                "error": bc.error_message,
+                "amount": 0.0,
+                "case_type": None,
+                "current_action": None,
+                "risk_probability": None,
+                "ai_used": None,
+                "ai_classification": None,
+                "ai_confidence": None,
+                "ai_reasoning": None,
+                "selected_action": None,
+                "decision_confidence": None,
+                "expected_recovery": None,
+                "safety_eligibility": None,
+                "safety_reason_code": None,
+                "events": [],
             }
-            for c in cases
-        ]
+
+            if bc.recovery_case_id:
+                rc = session.execute(
+                    select(RecoveryCase).where(RecoveryCase.id == bc.recovery_case_id)
+                ).scalar_one_or_none()
+                if rc:
+                    case_data["amount"] = rc.amount_at_risk
+                    case_data["case_type"] = rc.case_type
+                    case_data["current_action"] = rc.current_action
+                    case_data["risk_probability"] = rc.risk_probability
+                    case_data["ai_used"] = rc.ai_used
+                    case_data["ai_classification"] = rc.ai_classification
+                    case_data["ai_confidence"] = rc.ai_confidence
+                    case_data["ai_reasoning"] = rc.ai_reasoning
+
+                    from backend.app.db.models import RecoveryDecision as RecoveryDecisionModel, RecoveryEvent
+                    latest_decision = session.execute(
+                        select(RecoveryDecisionModel)
+                        .where(RecoveryDecisionModel.recovery_case_id == bc.recovery_case_id)
+                        .order_by(desc(RecoveryDecisionModel.created_at))
+                        .limit(1)
+                    ).scalar_one_or_none()
+                    if latest_decision:
+                        case_data["selected_action"] = latest_decision.selected_action
+                        case_data["decision_confidence"] = latest_decision.confidence
+                        case_data["expected_recovery"] = latest_decision.expected_recovery
+
+                    events = session.execute(
+                        select(RecoveryEvent)
+                        .where(RecoveryEvent.recovery_case_id == bc.recovery_case_id)
+                        .order_by(RecoveryEvent.created_at)
+                    ).scalars().all()
+                    case_data["events"] = [
+                        {
+                            "event_type": e.event_type,
+                            "action": e.action,
+                            "status": e.status,
+                            "amount": e.amount,
+                            "metadata": e.metadata_json,
+                            "created_at": e.created_at.isoformat() if e.created_at else None,
+                        }
+                        for e in events
+                    ]
+
+                    safety_event = None
+                    for e in events:
+                        if e.event_type == "safety_check_completed":
+                            safety_event = e
+                    if safety_event and safety_event.metadata_json:
+                        case_data["safety_eligibility"] = safety_event.metadata_json.get("eligibility")
+                        case_data["safety_reason_code"] = safety_event.metadata_json.get("reason_code")
+
+            results.append(case_data)
+        return results
