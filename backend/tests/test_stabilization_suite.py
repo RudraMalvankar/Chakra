@@ -157,7 +157,9 @@ def test_razorpay_checkout_verify_valid():
     assert "not configured" in res.json()["detail"].lower()
 
 
-def test_razorpay_checkout_abandon():
+@patch("backend.app.services.recovery_executor.razorpay_client.create_payment_link")
+def test_razorpay_checkout_abandon(mock_create_payment_link):
+    mock_create_payment_link.return_value = {"id": "plink_123", "status": "created", "short_url": "https://rzp.io/test"}
     """Verifies abandonment handling when checkout modal is closed."""
     res = client.post("/api/payments/abandon", json={
         "order_id": "order_abandon_12345",

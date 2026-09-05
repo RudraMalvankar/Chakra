@@ -60,7 +60,7 @@ class RazorpayTestProvider(PaymentProvider):
         }
 
     async def create_payment_link(self, customer_id: str, amount: int, template: str, payment_id: str) -> Dict[str, Any]:
-        payload = {"customer": {"contact": "9999999999", "email": "test@example.com"}, "amount": amount, "currency": "INR", "notes": {"payment_id": payment_id, "template": template}}
+        payload = {"customer": {"contact": "9999999999", "email": "test@example.com"}, "amount": amount, "currency": "INR", "description": "Recovery Payment", "notes": {"payment_id": payment_id, "template": template}}
         async with httpx.AsyncClient() as client:
             response = await client.post(f"{self.base_url}/v1/payment_links", json=payload, auth=(self.key_id, self.key_secret))
             if response.status_code == 200:

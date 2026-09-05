@@ -404,7 +404,7 @@ async def abandon_payment(req: AbandonPaymentRequest):
         }
     }
     
-    final_case = await execute_recovery_pipeline(payload, dry_run=False)
+    final_case = await execute_recovery_pipeline(payload, dry_run=settings.dry_run)
     final_status = getattr(getattr(final_case, "current_state", None), "value", None) or "RECOVERY_PENDING"
     
     log_audit_event(case_id, "checkout_abandoned", {
