@@ -110,6 +110,36 @@ def get_policy():
             "standard_hours": recovery.get("standard_retry_delay_hours"),
         },
         "llm_confidence_threshold": recovery.get("llm_confidence_threshold"),
+        "default_treatment_strategy": recovery.get("default_treatment_strategy") or {
+            "INSUFFICIENT_FUNDS": {
+                "strategy_flow": "wait / retry later -> payment reminder -> payment link if appropriate",
+                "actions": ["RETRY_LATER", "REMINDER", "PAYMENT_LINK"],
+                "cooldown_hours": 24,
+            },
+            "BANK_TIMEOUT_TRANSIENT_NETWORK": {
+                "strategy_flow": "retry later -> respect retry/cooldown limits",
+                "actions": ["RETRY_LATER"],
+                "cooldown_hours": 1,
+                "max_retries": 3,
+            },
+            "EXPIRED_CARD": {
+                "strategy_flow": "payment link / update payment method -> avoid blind retrying the same instrument",
+                "actions": ["PAYMENT_LINK"],
+                "template_id": "dlt_card_update_v1",
+                "avoid_blind_retry": True,
+            },
+            "FRAUD": {
+                "strategy_flow": "STOP -> BLOCK -> ESCALATE",
+                "actions": ["STOP", "BLOCK", "ESCALATE"],
+                "is_hard_stop": True,
+            },
+            "MANDATE_REVOKED": {
+                "strategy_flow": "STOP automatic retry -> BLOCK -> ESCALATE / customer remediation",
+                "actions": ["STOP", "BLOCK", "ESCALATE"],
+                "is_hard_stop": True,
+                "customer_remediation_required": True,
+            },
+        },
     }
 
 @app.get("/api/metrics")

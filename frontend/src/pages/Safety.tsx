@@ -99,6 +99,69 @@ export const Safety = ({ cases }: any) => {
                 </div>
             </div>
 
+            {/* Default Treatment Strategy Section */}
+            <div className="bg-white border border-border shadow-sm p-6 rounded-lg space-y-4">
+                <div className="flex justify-between items-center border-b border-border pb-3">
+                    <div>
+                        <h3 className="text-sm font-bold text-text-main uppercase tracking-wider flex items-center gap-2">
+                            <ShieldCheck className="text-rzp-blue" size={16} />
+                            Default Treatment Strategy
+                        </h3>
+                        <p className="text-xs text-text-muted mt-0.5">Canonical deterministic recovery mappings across primary failure modes</p>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold bg-purple-50 text-purple-700 px-2.5 py-1 rounded border border-purple-200 uppercase">
+                        Active Invariant
+                    </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-3 text-xs font-mono">
+                    <div className="p-3.5 bg-gray-50 border border-border rounded-lg space-y-2">
+                        <div className="font-bold text-text-main uppercase text-[11px] text-blue-700">INSUFFICIENT FUNDS</div>
+                        <ul className="space-y-1 text-text-muted text-[11px]">
+                            <li>→ Wait / retry later (24h)</li>
+                            <li>→ Payment reminder</li>
+                            <li>→ Payment link if appropriate</li>
+                        </ul>
+                    </div>
+
+                    <div className="p-3.5 bg-gray-50 border border-border rounded-lg space-y-2">
+                        <div className="font-bold text-text-main uppercase text-[11px] text-amber-700">BANK / NETWORK TIMEOUT</div>
+                        <ul className="space-y-1 text-text-muted text-[11px]">
+                            <li>→ Retry later with cooldown (1h)</li>
+                            <li>→ Respect retry caps (max 3)</li>
+                            <li>→ Escalate on limit reached</li>
+                        </ul>
+                    </div>
+
+                    <div className="p-3.5 bg-gray-50 border border-border rounded-lg space-y-2">
+                        <div className="font-bold text-text-main uppercase text-[11px] text-purple-700">EXPIRED CARD</div>
+                        <ul className="space-y-1 text-text-muted text-[11px]">
+                            <li>→ Payment link dispatch</li>
+                            <li>→ Update payment method</li>
+                            <li>→ Avoid blind retrying instrument</li>
+                        </ul>
+                    </div>
+
+                    <div className="p-3.5 bg-red-50/50 border border-red-200 rounded-lg space-y-2">
+                        <div className="font-bold text-red-700 uppercase text-[11px]">FRAUD ALERT</div>
+                        <ul className="space-y-1 text-red-800 text-[11px] font-semibold">
+                            <li>→ STOP automated execution</li>
+                            <li>→ BLOCK all recovery retries</li>
+                            <li>→ ESCALATE to human risk team</li>
+                        </ul>
+                    </div>
+
+                    <div className="p-3.5 bg-amber-50/50 border border-amber-200 rounded-lg space-y-2">
+                        <div className="font-bold text-amber-700 uppercase text-[11px]">MANDATE REVOKED</div>
+                        <ul className="space-y-1 text-amber-800 text-[11px] font-semibold">
+                            <li>→ STOP automatic retry</li>
+                            <li>→ BLOCK debit channel</li>
+                            <li>→ ESCALATE / customer remediation</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="bg-white border border-border shadow-sm flex flex-col h-[600px]">
                     <div className="px-6 py-4 border-b border-border bg-gray-50">

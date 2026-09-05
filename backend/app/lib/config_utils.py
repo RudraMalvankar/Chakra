@@ -10,14 +10,18 @@ from backend.app.config import settings
 
 
 def load_yaml_policy(path: str) -> Dict[str, Any]:
-    """Loads a YAML policy file and returns the 'policy.rules' section."""
+    """Loads a YAML policy file and returns the 'policy.rules' section along with policy fields."""
     policy_path = Path(path)
     if policy_path.exists():
         try:
             with open(policy_path, "r") as f:
                 data = yaml.safe_load(f)
                 if data and "policy" in data:
-                    return data["policy"].get("rules", {})
+                    res = dict(data["policy"].get("rules", {}))
+                    for k, v in data["policy"].items():
+                        if k != "rules":
+                            res[k] = v
+                    return res
         except Exception:
             pass
     return {}

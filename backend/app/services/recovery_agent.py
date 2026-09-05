@@ -46,8 +46,8 @@ class RecoveryAgent:
         add_candidate(InterventionType.ESCALATE, 0.0, 0.0, "default escalation path / stop recovery")
         
         # 2. Hard Blockers (Fraud / Revoked)
-        if case.error_code in ["fraud_flag", "mandate_revoked"] or case.fraud_flag:
-            add_candidate(InterventionType.BLOCK, 0.0, 0.0, f"strict policy constraint: {case.error_code}")
+        if case.error_code in ["fraud_flag", "fraud_suspected", "mandate_revoked"] or case.fraud_flag:
+            add_candidate(InterventionType.BLOCK, 0.0, 0.0, f"strict policy constraint: {case.error_code} -> STOP automatic retry, BLOCK, ESCALATE")
             # Ensure block wins
             for c in candidates:
                 if c.action == "BLOCK":
@@ -57,22 +57,34 @@ class RecoveryAgent:
                     c.eligible = False
                     c.score = -999999.0
 
-        # 3. Candidate Generation by Case Type
+        # 3. Candidate Generation by Case Type (Default Treatment Strategies)
         elif case.case_type == CaseType.PAYMENT_FAILURE:
             if case.retry_count >= 3:
+                # Respect retry/cooldown limits
                 add_candidate(InterventionType.RETRY_NOW, 0.0, 0.0, "retry cap exceeded", eligible=False)
+                add_candidate(InterventionType.RETRY_LATER, 0.0, 0.0, "cooldown and retry limit reached", eligible=False)
                 # Escalate becomes the only eligible path
                 for c in candidates:
                     if c.action == "ESCALATE":
                         c.score += 100000.0
                         c.reason = "retry cap exceeded, forcing escalation"
-            elif case.error_code in ["insufficient_funds", "payment_timed_out"]:
-                add_candidate(InterventionType.RETRY_LATER, 1.1, 0.0, "soft failure favors delayed retry")
+            elif case.error_code == "insufficient_funds":
+                # Strategy: wait / retry later -> payment reminder -> payment link if appropriate
+                add_candidate(InterventionType.RETRY_LATER, 1.1, 0.0, "insufficient funds: wait / retry later (cooldown 24h)")
                 add_candidate(InterventionType.RETRY_NOW, 0.8, 0.0, "immediate retry less effective for NSF")
-                add_candidate(InterventionType.PAYMENT_LINK, 0.9, 10.0, "payment link is viable but adds friction")
+                add_candidate(InterventionType.REMINDER, 0.95, 5.0, "insufficient funds: payment reminder notification")
+                add_candidate(InterventionType.PAYMENT_LINK, 0.9, 10.0, "insufficient funds: payment link if appropriate")
+            elif case.error_code in ["payment_timed_out", "timed_out", "timeout", "bank_technical_error_503"]:
+                # Strategy: retry later -> respect retry/cooldown limits
+                add_candidate(InterventionType.RETRY_LATER, 1.2, 0.0, "bank timeout / transient network: retry later with cooldown")
+                add_candidate(InterventionType.RETRY_NOW, 0.8, 0.0, "immediate retry before bank recovers")
+                add_candidate(InterventionType.PAYMENT_LINK, 0.7, 10.0, "payment link fallback if network continues failing")
             elif case.error_code in ["card_declined", "expired_card"]:
-                add_candidate(InterventionType.RETRY_LATER, 0.0, 0.0, "hard failure cannot be fixed by silent retry", eligible=False)
-                add_candidate(InterventionType.PAYMENT_LINK, 1.2, 10.0, "hard failure requires customer action")
+                # Strategy: payment link / update payment method -> avoid blind retrying the same instrument
+                add_candidate(InterventionType.RETRY_NOW, 0.0, 0.0, "avoid blind retrying the same expired/declined instrument", eligible=False)
+                add_candidate(InterventionType.RETRY_LATER, 0.0, 0.0, "avoid blind retrying the same expired/declined instrument", eligible=False)
+                add_candidate(InterventionType.PAYMENT_LINK, 1.3, 10.0, "payment link / update payment method")
+
             
         elif case.case_type == CaseType.SUBSCRIPTION:
             days_overdue = int(case.metadata.get("days_overdue", case.context.get("days_overdue", case.context.get("notes", {}).get("days_overdue", 0))))
@@ -139,6 +151,7 @@ class RecoveryAgent:
                 elif c.action == "PAYMENT_LINK" and c.eligible:
                     # Upgrade generic payment link to AFA payment link
                     c.action = InterventionType.AFA_PAYMENT_LINK.value
+                    c.score += 50000.0
                     c.reason = "high value transaction requires AFA authenticated flow"
 
         # 5. Select Best Candidate

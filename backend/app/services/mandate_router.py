@@ -63,12 +63,120 @@ class MandateRouter:
         mandate_state = ctx.mandate_state or MandateState.UNKNOWN
         afa_threshold = float(REGULATORY_RULES.get("afa_free_threshold_standard_inr", 15000.0))
 
-        if mandate_state == MandateState.REVOKED or ctx.error_code == "mandate_revoked":
-            return RecoveryDecision(decision=InterventionType.BLOCK, eligibility="PENDING_SAFETY", reason_code="MANDATE_REVOKED_NO_RETRY", policy_id="mandate_lifecycle_v1", confidence=1.0)
+        # 1. MANDATE REVOKED: STOP automatic retry -> BLOCK -> ESCALATE / customer remediation
+        if mandate_state == MandateState.REVOKED or ctx.error_code in ["mandate_revoked", "mandate_cancelled"]:
+            return RecoveryDecision(
+                decision=InterventionType.BLOCK,
+                eligibility="PENDING_SAFETY",
+                reason_code="MANDATE_REVOKED_NO_RETRY",
+                policy_id="mandate_lifecycle_v1",
+                confidence=1.0,
+                requires_human=False,
+            )
 
+        # 2. FRAUD: STOP -> BLOCK -> ESCALATE
+        if ctx.fraud_flag or ctx.error_code in ["fraud_flag", "fraud_suspected", "stolen_card"] or triage.diagnosis == "FRAUD_SIGNAL":
+            return RecoveryDecision(
+                decision=InterventionType.BLOCK,
+                eligibility="PENDING_SAFETY",
+                reason_code="FRAUD_STOP_BLOCK_ESCALATE",
+                policy_id="fraud_risk_policy_v1",
+                confidence=1.0,
+                requires_human=True,
+            )
+
+        # 3. Regulatory AFA for New Mandate / First Transaction
         if mandate_state == MandateState.NEW or ctx.is_first_transaction:
-            return RecoveryDecision(decision=InterventionType.AFA_PAYMENT_LINK, eligibility="PENDING_SAFETY", reason_code="NEW_MANDATE_AFA_REQUIRED", policy_id="mandate_lifecycle_v1", confidence=1.0, template_id="dlt_first_txn_v1")
+            return RecoveryDecision(
+                decision=InterventionType.AFA_PAYMENT_LINK,
+                eligibility="PENDING_SAFETY",
+                reason_code="NEW_MANDATE_AFA_REQUIRED",
+                policy_id="mandate_lifecycle_v1",
+                confidence=1.0,
+                template_id="dlt_first_txn_v1",
+            )
 
+        # 4. EXPIRED CARD: payment link / update payment method -> avoid blind retrying the same instrument
+        if ctx.error_code in ["expired_card", "card_expired"] or triage.diagnosis == "EXPIRED_CARD":
+            return RecoveryDecision(
+                decision=InterventionType.PAYMENT_LINK,
+                eligibility="PENDING_SAFETY",
+                reason_code="ALTERNATIVE_PAYMENT_LINK_EXPIRED_CARD",
+                policy_id="mandate_link_v1",
+                confidence=triage.confidence or 0.99,
+                requires_human=False,
+                template_id="dlt_card_update_v1",
+            )
+
+        # 5. BANK TIMEOUT / TRANSIENT NETWORK: retry later -> respect retry/cooldown limits
+        if ctx.error_code in ["payment_timed_out", "timed_out", "timeout", "bank_technical_error_503"] or "timeout" in triage.reason.lower() or triage.diagnosis == "TRANSIENT_NETWORK_FAILURE":
+            if ctx.retry_count >= 3:
+                return RecoveryDecision(
+                    decision=InterventionType.ESCALATE,
+                    eligibility="PENDING_SAFETY",
+                    reason_code="TRANSIENT_RETRY_LIMIT_EXCEEDED",
+                    policy_id="mandate_active_retry_v1",
+                    confidence=triage.confidence,
+                    requires_human=True,
+                )
+            cooldown = triage.delay_hours or RECOVERY_RULES.get("transient_failure_retry_delay_hours", 1)
+            return RecoveryDecision(
+                decision=InterventionType.RETRY_LATER,
+                eligibility="PENDING_SAFETY",
+                reason_code="TRANSIENT_TIMEOUT",
+                policy_id="mandate_active_retry_v1",
+                confidence=triage.confidence,
+                requires_human=False,
+                delay_hours=cooldown,
+            )
+
+        # 6. INSUFFICIENT FUNDS: wait / retry later -> payment reminder -> payment link if appropriate
+        if ctx.error_code in ["insufficient_funds", "nsf", "low_balance"] or triage.diagnosis == "INSUFFICIENT_FUNDS":
+            if ctx.amount_inr > afa_threshold:
+                return RecoveryDecision(
+                    decision=InterventionType.AFA_PAYMENT_LINK,
+                    eligibility="PENDING_SAFETY",
+                    reason_code="AFA_THRESHOLD_EXCEEDED",
+                    policy_id="regulatory_afa_v1",
+                    confidence=triage.confidence,
+                    template_id="dlt_afa_threshold_v1",
+                )
+            if ctx.retry_count == 0:
+                # Stage 1: wait / retry later
+                delay = triage.delay_hours or RECOVERY_RULES.get("standard_retry_delay_hours", 24)
+                return RecoveryDecision(
+                    decision=InterventionType.RETRY_LATER,
+                    eligibility="PENDING_SAFETY",
+                    reason_code="TRANSIENT_FAILURE",
+                    policy_id="mandate_active_retry_v1",
+                    confidence=triage.confidence,
+                    requires_human=False,
+                    delay_hours=delay,
+                )
+            elif ctx.retry_count == 1:
+                # Stage 2: payment reminder
+                return RecoveryDecision(
+                    decision=InterventionType.REMINDER,
+                    eligibility="PENDING_SAFETY",
+                    reason_code="INSUFFICIENT_FUNDS_REMINDER",
+                    policy_id="mandate_active_retry_v1",
+                    confidence=triage.confidence,
+                    requires_human=False,
+                    template_id="dlt_afa_threshold_v1",
+                )
+            else:
+                # Stage 3: payment link if appropriate
+                return RecoveryDecision(
+                    decision=InterventionType.PAYMENT_LINK,
+                    eligibility="PENDING_SAFETY",
+                    reason_code="ALTERNATIVE_PAYMENT_LINK_INSUFFICIENT_FUNDS",
+                    policy_id="mandate_link_v1",
+                    confidence=triage.confidence,
+                    requires_human=False,
+                    template_id="dlt_upi_alternate_v1",
+                )
+
+        # General Action Dispatch from Triage
         action = triage.recommended_action
 
         if action in [InterventionType.RETRY_LATER, InterventionType.RETRY_NOW]:

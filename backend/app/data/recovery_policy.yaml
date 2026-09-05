@@ -6,3 +6,39 @@ policy:
     transient_failure_retry_delay_hours: 1
     standard_retry_delay_hours: 24
     llm_confidence_threshold: 0.90
+  default_treatment_strategy:
+    INSUFFICIENT_FUNDS:
+      actions:
+        - "RETRY_LATER"
+        - "REMINDER"
+        - "PAYMENT_LINK"
+      strategy_flow: "wait / retry later -> payment reminder -> payment link if appropriate"
+      cooldown_hours: 24
+    BANK_TIMEOUT_TRANSIENT_NETWORK:
+      actions:
+        - "RETRY_LATER"
+      strategy_flow: "retry later -> respect retry/cooldown limits"
+      cooldown_hours: 1
+      max_retries: 3
+    EXPIRED_CARD:
+      actions:
+        - "PAYMENT_LINK"
+      strategy_flow: "payment link / update payment method -> avoid blind retrying the same instrument"
+      template_id: "dlt_card_update_v1"
+      avoid_blind_retry: true
+    FRAUD:
+      actions:
+        - "STOP"
+        - "BLOCK"
+        - "ESCALATE"
+      strategy_flow: "STOP -> BLOCK -> ESCALATE"
+      is_hard_stop: true
+    MANDATE_REVOKED:
+      actions:
+        - "STOP"
+        - "BLOCK"
+        - "ESCALATE"
+      strategy_flow: "STOP automatic retry -> BLOCK -> ESCALATE / customer remediation"
+      is_hard_stop: true
+      customer_remediation_required: true
+
