@@ -913,7 +913,6 @@ class DBService:
                 select(RecoveryCase)
                 .options(
                     selectinload(RecoveryCase.decisions),
-                    selectinload(RecoveryCase.events),
                 )
                 .order_by(desc(RecoveryCase.created_at))
                 .limit(limit)
@@ -921,7 +920,20 @@ class DBService:
             cases = session.execute(stmt).scalars().all()
             results = []
             for c in cases:
-                ops = DBService._case_summary_ops(c)
+                decisions = sorted(c.decisions or [], key=lambda d: d.created_at or datetime.min.replace(tzinfo=timezone.utc))
+                latest_decision = decisions[-1] if decisions else None
+
+                priority = "LOW"
+                if c.risk_probability is not None:
+                    if c.risk_probability >= 0.85:
+                        priority = "CRITICAL"
+                    elif c.risk_probability >= 0.65:
+                        priority = "HIGH"
+                    elif c.risk_probability >= 0.4:
+                        priority = "MEDIUM"
+
+                eligibility = c.current_action or "PENDING"
+
                 results.append({
                     "id": c.id,
                     "case_id": c.id,
@@ -938,11 +950,31 @@ class DBService:
                     "ai_fallback_used": c.ai_fallback_used,
                     "created_at": c.created_at.isoformat() if c.created_at else None,
                     "last_updated": c.updated_at.isoformat() if c.updated_at else None,
-                    "risk": ops["risk"],
-                    "agent": ops["agent"],
-                    "safety": ops["safety"],
-                    "outcome": ops["outcome"],
-                    "ai": ops["ai"],
+                    "risk": {
+                        "probability": c.risk_probability,
+                        "priority": priority,
+                        "amount_at_risk": c.amount_at_risk,
+                    },
+                    "agent": {
+                        "selected_action": (latest_decision.selected_action if latest_decision else None) or c.current_action,
+                        "confidence": latest_decision.confidence if latest_decision else None,
+                        "expected_recovery": latest_decision.expected_recovery if latest_decision else None,
+                        "score": latest_decision.score if latest_decision else None,
+                    },
+                    "safety": {
+                        "eligibility": eligibility,
+                    },
+                    "outcome": {
+                        "status": c.status,
+                        "amount_recovered_inr": c.amount_at_risk if c.status == "RECOVERED" else 0.0,
+                        "recovered": c.status == "RECOVERED",
+                    },
+                    "ai": {
+                        "used": bool(c.ai_used),
+                        "classification": c.ai_classification,
+                        "confidence": c.ai_confidence,
+                        "reasoning": c.ai_reasoning,
+                    },
                 })
             return results
         except Exception as e:
@@ -1168,9 +1200,8 @@ class DBService:
                     ),
                     "event_type": e.event_type,
                     "actor": e.actor,
-                    "action": e.action,
+                    "action": e.action or (e.metadata_json or {}).get("effective_action"),
                     "status": e.status,
-                    "details": e.metadata_json,
                     "pii_redacted": True,
                 }
                 for e in events

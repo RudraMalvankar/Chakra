@@ -75,9 +75,9 @@ export const useChakraData = () => {
 
     const refresh = useCallback(async () => {
         const results = await Promise.allSettled([
-            fetchAuditLog(2000),
+            fetchAuditLog(500),
             fetchMetrics(),
-            fetchCases(),
+            fetchCases(100),
         ]);
 
         const partial: ChakraDataState['partialErrors'] = {};

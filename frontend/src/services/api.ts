@@ -1,5 +1,4 @@
 import type { Metrics } from '../types';
-import { AuditLogSchema } from '../types/schemas';
 
 // Production deploys may set VITE_API_BASE_URL. Local Vite uses same-origin
 // paths so /api/* is proxied to FastAPI (see vite.config.ts).
@@ -63,15 +62,9 @@ export const fetchMetrics = async (): Promise<Metrics> => {
   return data.metrics || data;
 };
 
-export const fetchAuditLog = async (limit = 2000) => {
+export const fetchAuditLog = async (limit = 500) => {
   const data = await requestJson<any>(`/api/audit?limit=${limit}`);
-  try {
-    const valid = AuditLogSchema.parse(data);
-    return valid.events;
-  } catch {
-    console.warn('Zod validation failed on audit log, falling back to raw data');
-    return data.events || [];
-  }
+  return data.events || [];
 };
 
 export const simulatePayment = async (payload: unknown) => {
