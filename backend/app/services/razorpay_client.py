@@ -21,6 +21,25 @@ class PaymentProvider:
     async def get_payments(self) -> List[Dict[str, Any]]:
         raise NotImplementedError
 
+    async def fetch_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        raise NotImplementedError
+
+    async def pause_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        raise NotImplementedError
+
+    async def resume_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        raise NotImplementedError
+
+    async def cancel_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        raise NotImplementedError
+
+    async def retry_subscription_payment(self, subscription_id: str) -> Dict[str, Any]:
+        raise NotImplementedError
+
+    async def list_subscription_payments(self, subscription_id: str) -> List[Dict[str, Any]]:
+        raise NotImplementedError
+
+
 class RazorpayTestProvider(PaymentProvider):
     def __init__(self, key_id: str, key_secret: str):
         self.key_id = key_id
@@ -75,6 +94,48 @@ class RazorpayTestProvider(PaymentProvider):
                 return response.json().get("items", [])
             return []
 
+    async def fetch_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{self.base_url}/v1/subscriptions/{subscription_id}", auth=(self.key_id, self.key_secret))
+            if response.status_code == 200:
+                return response.json()
+            return {"status": "failed", "error": f"HTTP {response.status_code}"}
+
+    async def pause_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(f"{self.base_url}/v1/subscriptions/{subscription_id}/pause", auth=(self.key_id, self.key_secret))
+            if response.status_code == 200:
+                return response.json()
+            return {"status": "failed", "error": f"HTTP {response.status_code}"}
+
+    async def resume_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(f"{self.base_url}/v1/subscriptions/{subscription_id}/resume", auth=(self.key_id, self.key_secret))
+            if response.status_code == 200:
+                return response.json()
+            return {"status": "failed", "error": f"HTTP {response.status_code}"}
+
+    async def cancel_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(f"{self.base_url}/v1/subscriptions/{subscription_id}/cancel", auth=(self.key_id, self.key_secret))
+            if response.status_code == 200:
+                return response.json()
+            return {"status": "failed", "error": f"HTTP {response.status_code}"}
+
+    async def retry_subscription_payment(self, subscription_id: str) -> Dict[str, Any]:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(f"{self.base_url}/v1/subscriptions/{subscription_id}/fetch-retry", auth=(self.key_id, self.key_secret))
+            if response.status_code == 200:
+                return response.json()
+            return {"status": "failed", "error": f"HTTP {response.status_code}"}
+
+    async def list_subscription_payments(self, subscription_id: str) -> List[Dict[str, Any]]:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(f"{self.base_url}/v1/subscriptions/{subscription_id}/payments", auth=(self.key_id, self.key_secret))
+            if response.status_code == 200:
+                return response.json().get("items", [])
+            return []
+
 
 class SyntheticPaymentProvider(PaymentProvider):
     def __init__(self):
@@ -121,6 +182,35 @@ class SyntheticPaymentProvider(PaymentProvider):
         if not self.base_url:
             return []
 
+    async def fetch_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        return {
+            "id": subscription_id,
+            "status": "active",
+            "amount": 99900,
+            "currency": "INR",
+            "plan_id": "plan_synth_001",
+            "customer_id": "cust_synth_001",
+            "current_start": 1725000000,
+            "current_end": 1727592000,
+            "charge_at": 1727592000,
+            "notes": {},
+        }
+
+    async def pause_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        return {"id": subscription_id, "status": "paused", "pause_reason": "payment_failure"}
+
+    async def resume_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        return {"id": subscription_id, "status": "active"}
+
+    async def cancel_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        return {"id": subscription_id, "status": "cancelled", "cancel_reason": "payment_failure"}
+
+    async def retry_subscription_payment(self, subscription_id: str) -> Dict[str, Any]:
+        return {"id": subscription_id, "status": "active", "retry_attempt": True}
+
+    async def list_subscription_payments(self, subscription_id: str) -> List[Dict[str, Any]]:
+        return []
+
 
 class UnavailablePaymentProvider(PaymentProvider):
     def create_order(self, amount_inr: float, currency: str, customer_id: str) -> Dict[str, Any]:
@@ -137,14 +227,24 @@ class UnavailablePaymentProvider(PaymentProvider):
 
     async def get_payments(self) -> List[Dict[str, Any]]:
         return []
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            try:
-                response = await client.get(f"{self.base_url}/v1/payments")
-                if response.status_code == 200:
-                    return response.json().get("items", [])
-            except httpx.RequestError:
-                pass
-            return []
+
+    async def fetch_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        return {"status": "failed", "error": "razorpay_not_configured"}
+
+    async def pause_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        return {"status": "failed", "error": "razorpay_not_configured"}
+
+    async def resume_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        return {"status": "failed", "error": "razorpay_not_configured"}
+
+    async def cancel_subscription(self, subscription_id: str) -> Dict[str, Any]:
+        return {"status": "failed", "error": "razorpay_not_configured"}
+
+    async def retry_subscription_payment(self, subscription_id: str) -> Dict[str, Any]:
+        return {"status": "failed", "error": "razorpay_not_configured"}
+
+    async def list_subscription_payments(self, subscription_id: str) -> List[Dict[str, Any]]:
+        return []
 
 
 def get_payment_provider() -> PaymentProvider:

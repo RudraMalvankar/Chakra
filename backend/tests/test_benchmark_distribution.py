@@ -6,7 +6,7 @@ from backend.app.services.context_builder import ContextBuilder
 from backend.app.models.case import CaseType
 
 def test_benchmark_case_distribution():
-    assert len(SEED_DATA) == 120, "Benchmark must contain exactly 120 cases."
+    assert len(SEED_DATA) == 127, "Benchmark must contain exactly 127 cases."
     
     distribution = {
         CaseType.PAYMENT_FAILURE: 0,
@@ -21,7 +21,7 @@ def test_benchmark_case_distribution():
         distribution[ctx.case_type] += 1
         
     assert distribution[CaseType.PAYMENT_FAILURE] == 24
-    assert distribution[CaseType.SUBSCRIPTION] == 24
+    assert distribution[CaseType.SUBSCRIPTION] == 31
     assert distribution[CaseType.CHECKOUT_ABANDONMENT] == 24
     assert distribution[CaseType.RECEIVABLE] == 24
     assert distribution[CaseType.PROMISE_TO_PAY] == 24

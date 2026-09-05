@@ -12,6 +12,7 @@ import { CheckoutRecovery } from './pages/CheckoutRecovery';
 import { Receivables } from './pages/Receivables';
 import { PromiseToPay } from './pages/PromiseToPay';
 import { VoiceRecovery } from './pages/VoiceRecovery';
+import { SubscriptionRecovery } from './pages/SubscriptionRecovery';
 import { Safety } from './pages/Safety';
 import { Analytics } from './pages/Analytics';
 import { AuditLog } from './pages/AuditLog';
@@ -62,6 +63,7 @@ export default function App() {
           <Route path="/receivables" element={<Receivables {...data} />} />
           <Route path="/promise-to-pay" element={<PromiseToPay {...data} />} />
           <Route path="/voice-recovery" element={<VoiceRecovery {...data} />} />
+          <Route path="/subscriptions" element={<SubscriptionRecovery {...data} />} />
           <Route path="/recovery/voice" element={<VoiceRecovery {...data} />} />
 
           <Route path="/scenario-lab" element={<ScenarioLab {...data} />} />
