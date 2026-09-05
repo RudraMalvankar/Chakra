@@ -622,6 +622,10 @@ def test_receivable_email_endpoint(mock_twilio_settings):
         mock_rec = MagicMock()
         mock_rec.id = "rec_test_123"
         mock_rec.customer_id = "cust_test_123"
+        mock_rec.customer_name = "Rudra"
+        mock_rec.amount = 5000.0
+        mock_rec.invoice_number = "INV-101"
+        mock_rec.days_overdue = 3
         mock_session.execute.return_value.scalar_one_or_none.return_value = mock_rec
         mock_factory.return_value.__enter__.return_value = mock_session
 

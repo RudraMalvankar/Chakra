@@ -831,16 +831,31 @@ class EmailRequest(BaseModel):
 
 @router.post("/{id}/email")
 async def send_receivable_email(id: str, req: EmailRequest):
-    """Send an email via Twilio Comms API with constant recipient and approved template."""
-    from backend.app.services.notify import send_email
+    """Send a dynamic, tailored payment recovery email via Twilio Comms API."""
+    from backend.app.services.notify import build_receivable_email_content, send_email
     factory = get_session_factory()
     with factory() as session:
         rec = session.execute(select(Receivable).where(Receivable.id == id)).scalar_one_or_none()
         if not rec:
             raise HTTPException(status_code=404, detail="Receivable not found")
         customer_id = rec.customer_id
+        customer_name = rec.customer_name
+        amount = rec.amount
+        invoice_number = rec.invoice_number
+        days_overdue = rec.days_overdue
 
-    result = await send_email(to_email=req.to_email, subject=req.subject, html_content=req.html_content)
+    payment_link = f"https://rzp.io/l/inv_{id[:8]}"
+    default_subject, default_html = build_receivable_email_content(
+        customer_name=customer_name or "Valued Customer",
+        amount_inr=amount,
+        invoice_number=invoice_number or id,
+        payment_link=payment_link,
+        days_overdue=days_overdue or 0,
+    )
+    subject = req.subject or default_subject
+    html_content = req.html_content or default_html
+
+    result = await send_email(to_email=req.to_email, subject=subject, html_content=html_content)
     provider_status = (result.get("status") or "").lower()
     persist_status = "SENT" if provider_status == "sent" else "FAILED"
 
@@ -852,7 +867,13 @@ async def send_receivable_email(id: str, req: EmailRequest):
         provider="twilio_email",
         provider_message_id=result.get("provider_message_id"),
         status=persist_status,
-        metadata={"provider_result": result, "receivable_id": id},
+        metadata={
+            "provider_result": result,
+            "receivable_id": id,
+            "subject": subject,
+            "customer_name": customer_name,
+            "amount": amount,
+        },
     )
     DBService.record_audit_event(
         id,
@@ -860,25 +881,40 @@ async def send_receivable_email(id: str, req: EmailRequest):
         {
             "receivable_id": id,
             "to_email": result.get("to"),
+            "subject": subject,
             "status": persist_status,
             "operation_id": result.get("provider_message_id"),
+            "trial_fallback": result.get("trial_fallback", False),
         },
     )
-    return {**result, "persisted_status": persist_status}
+    return {**result, "persisted_status": persist_status, "email_subject": subject}
 
 
 @router.post("/promises/{promise_id}/email")
 async def send_promise_email(promise_id: str, req: EmailRequest):
-    """Send a promise reminder email via Twilio Comms API."""
-    from backend.app.services.notify import send_email
+    """Send a dynamic promise reminder email via Twilio Comms API."""
+    from backend.app.services.notify import build_promise_email_content, send_email
     factory = get_session_factory()
     with factory() as session:
         promise = session.execute(select(PromiseToPay).where(PromiseToPay.id == promise_id)).scalar_one_or_none()
         if not promise:
             raise HTTPException(status_code=404, detail="Promise not found")
         receivable_id = promise.receivable_id
+        customer_name = promise.customer_name
+        amount = promise.promised_amount
+        promise_date = promise.promise_date
 
-    result = await send_email(to_email=req.to_email, subject=req.subject, html_content=req.html_content)
+    payment_link = f"https://rzp.io/l/p_{promise_id[:8]}"
+    default_subject, default_html = build_promise_email_content(
+        customer_name=customer_name or "Valued Customer",
+        amount_inr=amount,
+        promise_date=promise_date,
+        payment_link=payment_link,
+    )
+    subject = req.subject or default_subject
+    html_content = req.html_content or default_html
+
+    result = await send_email(to_email=req.to_email, subject=subject, html_content=html_content)
     provider_status = (result.get("status") or "").lower()
     persist_status = "SENT" if provider_status == "sent" else "FAILED"
 
@@ -890,7 +926,13 @@ async def send_promise_email(promise_id: str, req: EmailRequest):
         provider="twilio_email",
         provider_message_id=result.get("provider_message_id"),
         status=persist_status,
-        metadata={"promise_id": promise_id, "provider_result": result},
+        metadata={
+            "promise_id": promise_id,
+            "provider_result": result,
+            "subject": subject,
+            "customer_name": customer_name,
+            "amount": amount,
+        },
     )
     DBService.record_audit_event(
         promise_id,
@@ -898,11 +940,13 @@ async def send_promise_email(promise_id: str, req: EmailRequest):
         {
             "promise_id": promise_id,
             "to_email": result.get("to"),
+            "subject": subject,
             "status": persist_status,
             "operation_id": result.get("provider_message_id"),
+            "trial_fallback": result.get("trial_fallback", False),
         },
     )
-    return {**result, "persisted_status": persist_status}
+    return {**result, "persisted_status": persist_status, "email_subject": subject}
 
 
 

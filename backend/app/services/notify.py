@@ -5,7 +5,7 @@ in India (pre-registered templates only via DLT platforms).
 """
 import os
 import sys
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional, List, Tuple
 import yaml
 import asyncio
 
@@ -223,6 +223,85 @@ TWILIO_EMAIL_APPROVED_HTML = (
 )
 
 
+def build_receivable_email_content(
+    customer_name: str,
+    amount_inr: float,
+    invoice_number: str,
+    payment_link: str,
+    days_overdue: int = 0,
+    merchant_name: str = "Chakra",
+) -> Tuple[str, str]:
+    """Construct dynamic, professional Chakra payment recovery email content."""
+    try:
+        amt = int(amount_inr)
+    except Exception:
+        amt = 0
+    try:
+        days = int(days_overdue)
+    except Exception:
+        days = 0
+    subject = f"[{merchant_name}] Payment Notice: Invoice #{invoice_number} for Rs. {amt}"
+    overdue_note = f"<p style='color: #dc2626; font-weight: bold;'>Status: Overdue by {days} days</p>" if days > 0 else ""
+    html = f"""<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
+    <h2 style="color: #0c2340; margin-top: 0;">{merchant_name} Revenue Recovery</h2>
+    <p>Dear <b>{customer_name}</b>,</p>
+    <p>We are writing to notify you regarding your pending invoice <b>#{invoice_number}</b>.</p>
+    <div style="background-color: #f8fafc; padding: 16px; border-radius: 6px; margin: 16px 0;">
+        <p style="margin: 4px 0;"><b>Invoice:</b> #{invoice_number}</p>
+        <p style="margin: 4px 0;"><b>Amount Outstanding:</b> Rs. {amt}</p>
+        {overdue_note}
+    </div>
+    <div style="margin: 24px 0;">
+        <a href="{payment_link}" style="background-color: #0052cc; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">Pay Rs. {amt} Securely</a>
+    </div>
+    <p style="font-size: 13px; color: #64748b;">If you have already processed this payment, please disregard this notice.</p>
+    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+    <p style="font-size: 11px; color: #94a3b8;">Sent via {merchant_name} Automated Revenue Recovery Control Plane.</p>
+</div>"""
+    return subject, html
+
+
+def build_promise_email_content(
+    customer_name: str,
+    amount_inr: float,
+    promise_date: str,
+    timing: str = "due",
+    payment_link: Optional[str] = None,
+    merchant_name: str = "Chakra",
+) -> Tuple[str, str]:
+    """Construct dynamic Chakra promise-to-pay reminder email content."""
+    amt = int(amount_inr)
+    link = payment_link or "https://rzp.io/l/recovery"
+    
+    if timing == "before":
+        headline = "Payment Promise Due Tomorrow"
+        intro = f"This is a friendly reminder that your scheduled payment promise of <b>Rs. {amt}</b> is due tomorrow (<b>{promise_date}</b>)."
+    elif timing == "after":
+        headline = "Payment Promise Overdue Notice"
+        intro = f"Your scheduled payment promise of <b>Rs. {amt}</b> was due on <b>{promise_date}</b> and is currently overdue. Please clear it immediately to avoid account escalation."
+    else:
+        headline = "Payment Promise Due Today"
+        intro = f"This is a reminder that your payment promise of <b>Rs. {amt}</b> is due today (<b>{promise_date}</b>)."
+
+    subject = f"[{merchant_name}] {headline}: Rs. {amt}"
+    html = f"""<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
+    <h2 style="color: #0c2340; margin-top: 0;">{merchant_name} Promise-to-Pay Reminder</h2>
+    <p>Dear <b>{customer_name}</b>,</p>
+    <p>{intro}</p>
+    <div style="background-color: #f8fafc; padding: 16px; border-radius: 6px; margin: 16px 0;">
+        <p style="margin: 4px 0;"><b>Promised Amount:</b> Rs. {amt}</p>
+        <p style="margin: 4px 0;"><b>Scheduled Date:</b> {promise_date}</p>
+    </div>
+    <div style="margin: 24px 0;">
+        <a href="{link}" style="background-color: #0052cc; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 4px; font-weight: bold; display: inline-block;">Complete Payment of Rs. {amt}</a>
+    </div>
+    <p style="font-size: 13px; color: #64748b;">Thank you for coordinating with {merchant_name} Revenue Recovery.</p>
+    <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;" />
+    <p style="font-size: 11px; color: #94a3b8;">Sent via {merchant_name} Automated Revenue Recovery Control Plane.</p>
+</div>"""
+    return subject, html
+
+
 async def send_email(
     to_email: Optional[str] = None,
     subject: Optional[str] = None,
@@ -230,8 +309,8 @@ async def send_email(
 ) -> Dict[str, Any]:
     """Send an email via Twilio Comms API (https://comms.twilio.com/v1/Emails).
 
-    Guarantees delivery on Twilio trial by using the approved trial template and constant
-    recipient (rudracmalvankar@gmail.com) as required by Twilio's trial policy.
+    Supports dynamic, customized Chakra recovery content. If Twilio's trial sandbox restricts
+    freeform content, safely falls back to the approved trial template so delivery succeeds.
     """
     if not settings.is_twilio_configured:
         return {"status": "unavailable", "provider": "twilio_email", "message": "TWILIO NOT CONFIGURED"}
@@ -244,13 +323,13 @@ async def send_email(
         f"{settings.twilio_account_sid}:{settings.twilio_auth_token}".encode()
     ).decode()
 
-    # Twilio trial strictly enforces the constant recipient and approved HTML content
+    # Twilio trial strictly enforces the constant recipient
     effective_recipient = to_email if (to_email and "@" in to_email and to_email == TWILIO_EMAIL_RECIPIENT) else TWILIO_EMAIL_RECIPIENT
     effective_subject = subject or TWILIO_EMAIL_APPROVED_SUBJECT
     effective_html = html_content or TWILIO_EMAIL_APPROVED_HTML
 
     payload = {
-        "from": {"address": from_address, "name": "Trial with Twilio"},
+        "from": {"address": from_address, "name": "Chakra Payment Recovery"},
         "to": [{"address": effective_recipient}],
         "content": {
             "subject": effective_subject,
@@ -266,8 +345,10 @@ async def send_email(
                 headers={"Authorization": auth_header, "Content-Type": "application/json"},
             )
 
-            # If trial account rejects custom text because of template mismatch, fallback to approved template
+            # If Twilio trial account rejects custom content because of template mismatch:
+            trial_fallback = False
             if res.status_code == 400 and "template" in res.text.lower():
+                trial_fallback = True
                 payload["to"] = [{"address": TWILIO_EMAIL_RECIPIENT}]
                 payload["content"]["subject"] = TWILIO_EMAIL_APPROVED_SUBJECT
                 payload["content"]["html"] = TWILIO_EMAIL_APPROVED_HTML
@@ -286,6 +367,13 @@ async def send_email(
                     "provider_message_id": op_id,
                     "to": effective_recipient,
                     "subject": effective_subject,
+                    "intended_subject": subject or TWILIO_EMAIL_APPROVED_SUBJECT,
+                    "intended_html": html_content or TWILIO_EMAIL_APPROVED_HTML,
+                    "trial_fallback": trial_fallback,
+                    "trial_note": (
+                        "Twilio Trial sandbox enforces approved template for delivery until account is upgraded or domain is verified."
+                        if trial_fallback else None
+                    ),
                 }
             return {
                 "status": "failed",
@@ -294,5 +382,6 @@ async def send_email(
             }
     except Exception as exc:
         return {"status": "failed", "provider": "twilio_email", "message": str(exc)[:240]}
+
 
 
