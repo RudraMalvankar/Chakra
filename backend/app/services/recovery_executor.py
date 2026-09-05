@@ -211,7 +211,7 @@ async def execute_recovery_pipeline(
     triage_result = TriageEngine.triage(ctx)
     if triage_result.is_ambiguous:
         log_audit_event(ctx.payment_id, "ai_triage_requested", {"error_code": ctx.error_code})
-        action_val = triage_result.recommended_action.value if hasattr(triage_result.recommended_action, 'value') else str(triage_result.recommended_action)
+        action_val = triage_result.diagnosis
         
         log_audit_event(ctx.payment_id, "ai_triage_completed", {
             "error_code": ctx.error_code,
@@ -236,15 +236,7 @@ async def execute_recovery_pipeline(
             ai_fallback_used=getattr(triage_result, "fallback_used", False),
         )
 
-        # Map LLM output to standard error codes for RecoveryAgent
-        if action_val == "RETRY_LATER":
-            ctx.failure_reason = "payment_timed_out"
-        elif action_val == "PAYMENT_LINK":
-            ctx.failure_reason = "card_declined"
-        elif action_val == "BLOCK":
-            ctx.failure_reason = "fraud_flag"
-        else:
-            ctx.failure_reason = "escalated_by_triage"
+        # Triage diagnoses only. RecoveryAgent below selects the final action.
 
     # 1. Detect & Assess Revenue Risk
     risk_assessment = RevenueRiskEngine.assess(ctx)

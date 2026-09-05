@@ -45,6 +45,7 @@ class TriageEngine:
         if error_code == "insufficient_funds":
             return TriageResult(
                 error_code="insufficient_funds",
+                diagnosis="INSUFFICIENT_FUNDS",
                 is_ambiguous=False,
                 recommended_action=InterventionType.RETRY_LATER,
                 reason="insufficient_funds",
@@ -56,6 +57,7 @@ class TriageEngine:
         if error_code in ["payment_timed_out", "timed_out", "timeout"]:
             return TriageResult(
                 error_code=ctx.error_code,
+                diagnosis="TRANSIENT_NETWORK_FAILURE",
                 is_ambiguous=False,
                 recommended_action=InterventionType.RETRY_LATER,
                 reason="transient_timeout",
@@ -67,6 +69,7 @@ class TriageEngine:
         if error_code == "expired_card":
             return TriageResult(
                 error_code="expired_card",
+                diagnosis="EXPIRED_CARD",
                 is_ambiguous=False,
                 recommended_action=InterventionType.PAYMENT_LINK,
                 reason="expired_card",
@@ -78,6 +81,7 @@ class TriageEngine:
         if error_code == "card_declined":
             return TriageResult(
                 error_code="card_declined",
+                diagnosis="ISSUER_DECLINE",
                 is_ambiguous=False,
                 recommended_action=InterventionType.PAYMENT_LINK,
                 reason="card_declined",
@@ -89,6 +93,7 @@ class TriageEngine:
         if error_code == "fraud_flag" or ctx.fraud_flag:
             return TriageResult(
                 error_code="fraud_flag",
+                diagnosis="FRAUD_SIGNAL",
                 is_ambiguous=False,
                 recommended_action=InterventionType.BLOCK,
                 reason="fraud_flag",
@@ -99,6 +104,7 @@ class TriageEngine:
         if error_code == "mandate_revoked" or ctx.mandate_state == MandateState.REVOKED:
             return TriageResult(
                 error_code="mandate_revoked",
+                diagnosis="MANDATE_REVOKED",
                 is_ambiguous=False,
                 recommended_action=InterventionType.BLOCK,
                 reason="mandate_revoked",
@@ -111,6 +117,7 @@ class TriageEngine:
         if ctx.case_type != CaseType.PAYMENT_FAILURE:
             return TriageResult(
                 error_code=ctx.error_code or "unknown",
+                diagnosis=f"{ctx.case_type.value}_DIAGNOSIS",
                 is_ambiguous=False,
                 recommended_action=InterventionType.ESCALATE, # MandateRouter handles actual logic
                 reason=f"{ctx.case_type.value}_triage",
@@ -143,6 +150,7 @@ class TriageEngine:
 
         return TriageResult(
             error_code=ctx.error_code,
+            diagnosis="AMBIGUOUS_PROVIDER_FAILURE",
             is_ambiguous=True,
             recommended_action=decision_type,
             reason=llm_decision.reason or "llm_classified",

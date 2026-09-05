@@ -35,7 +35,9 @@ class InterventionType(str, Enum):
 
 class TriageResult(BaseModel):
     error_code: str
+    diagnosis: str = "UNKNOWN_PROVIDER_FAILURE"
     is_ambiguous: bool = False
+    # Compatibility hint for older callers; RecoveryAgent owns final action selection.
     recommended_action: InterventionType = InterventionType.ESCALATE
     reason: str = ""
     confidence: float = 1.0
